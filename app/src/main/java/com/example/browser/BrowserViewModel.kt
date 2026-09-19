@@ -124,8 +124,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // Convert query to URL if not a standard URL format
         val targetUrl = resolveUrl(trimmed)
 
-        // Check the resolved target URL as well
-        val resolvedCheck = ProtectionEngine.checkUrlOrQuery(targetUrl, _uiState.value.customKeywords)
+        // Check the resolved target URL as well (skip duplicate evaluation if targetUrl == trimmed)
+        val resolvedCheck = if (targetUrl == trimmed) {
+            checkResult
+        } else {
+            ProtectionEngine.checkUrlOrQuery(targetUrl, _uiState.value.customKeywords)
+        }
         if (resolvedCheck is ProtectionEngine.FilterResult.Blocked) {
             _uiState.update {
                 it.copy(

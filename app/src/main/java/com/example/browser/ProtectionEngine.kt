@@ -135,11 +135,21 @@ object ProtectionEngine {
         input: String,
         customKeywords: Set<String>
     ): FilterResult {
-        val normalized = input.trim().lowercase(Locale.ROOT)
-        if (normalized.isEmpty()) return FilterResult.Allowed
+        val trimmed = input.trim()
+        if (trimmed.isEmpty()) return FilterResult.Allowed
+        val normalized = trimmed.lowercase(Locale.ROOT)
 
         // 1. Adult Content Protection (Permanently Enabled)
-        // Check known adult domains
+        // Fast O(1) host & subdomain check if input contains a host
+        val host = extractHost(normalized)
+        if (host != null && host.isNotEmpty() && matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
+            return FilterResult.Blocked(
+                reason = "Adult Content Protection",
+                detail = "Access to adult entertainment domains is permanently restricted."
+            )
+        }
+
+        // Fallback domain check in search query or raw input
         for (domain in KNOWN_ADULT_DOMAINS) {
             if (normalized.contains(domain)) {
                 return FilterResult.Blocked(
@@ -151,7 +161,7 @@ object ProtectionEngine {
 
         // Check adult keywords in search query or URL
         for (kw in ADULT_KEYWORDS) {
-            if (containsWord(normalized, kw)) {
+            if (normalized.contains(kw)) {
                 return FilterResult.Blocked(
                     reason = "Adult Content Protection",
                     detail = "Content containing explicit or adult terms is blocked."
@@ -160,13 +170,15 @@ object ProtectionEngine {
         }
 
         // 2. Custom Keyword Protection
-        for (customKw in customKeywords) {
-            val kwNormalized = customKw.trim().lowercase(Locale.ROOT)
-            if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
-                return FilterResult.Blocked(
-                    reason = "Custom Keyword Protection",
-                    detail = "Blocked due to protected keyword: \"$customKw\""
-                )
+        if (customKeywords.isNotEmpty()) {
+            for (customKw in customKeywords) {
+                val kwNormalized = customKw.trim().lowercase(Locale.ROOT)
+                if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
+                    return FilterResult.Blocked(
+                        reason = "Custom Keyword Protection",
+                        detail = "Blocked due to protected keyword: \"$customKw\""
+                    )
+                }
             }
         }
 
@@ -174,16 +186,65 @@ object ProtectionEngine {
     }
 
     /**
-     * Case-insensitive substring/word check helper.
+     * Extracts lowercase host name from URL or web address.
+     * Avoids heavy Uri object creation and extra string allocations.
      */
-    private fun containsWord(target: String, word: String): Boolean {
-        return target.contains(word)
+    fun extractHost(url: String): String? {
+        if (url.isEmpty()) return null
+        var start = 0
+        val schemeEnd = url.indexOf("://")
+        if (schemeEnd != -1) {
+            start = schemeEnd + 3
+        } else if (url.startsWith("//")) {
+            start = 2
+        }
+
+        // Skip userinfo if present (e.g. user:pass@host)
+        val atIndex = url.indexOf('@', start)
+        val nextSlash = url.indexOf('/', start)
+        if (atIndex != -1 && (nextSlash == -1 || atIndex < nextSlash)) {
+            start = atIndex + 1
+        }
+
+        var end = start
+        while (end < url.length) {
+            val c = url[end]
+            if (c == '/' || c == '?' || c == '#' || c == ':') {
+                break
+            }
+            end++
+        }
+        if (start >= end) return null
+        return url.substring(start, end).lowercase(Locale.ROOT)
+    }
+
+    /**
+     * Checks if a host matches a domain or any of its parent subdomains against a HashSet.
+     * Takes O(1) set lookups proportional to subdomain depth rather than O(N) string searches.
+     */
+    fun matchesDomainOrSubdomain(host: String, domainSet: Set<String>): Boolean {
+        if (domainSet.contains(host)) return true
+        var dotIndex = host.indexOf('.')
+        while (dotIndex != -1) {
+            val parent = host.substring(dotIndex + 1)
+            if (domainSet.contains(parent)) return true
+            dotIndex = host.indexOf('.', dotIndex + 1)
+        }
+        return false
     }
 
     /**
      * Checks if a network request is directed at a known advertisement network.
+     * Uses fast host matching first for maximum performance on frequent subresource requests.
      */
     fun isAdRequest(url: String): Boolean {
+        val host = extractHost(url)
+        if (host != null && host.isNotEmpty()) {
+            if (matchesDomainOrSubdomain(host, KNOWN_AD_DOMAINS)) {
+                return true
+            }
+        }
+        // Fallback for relative or malformed URLs
         val normalized = url.lowercase(Locale.ROOT)
         for (adDomain in KNOWN_AD_DOMAINS) {
             if (normalized.contains(adDomain)) {

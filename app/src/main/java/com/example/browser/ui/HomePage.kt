@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -38,6 +38,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +58,8 @@ import com.example.R
 import com.example.browser.BrowserUiState
 import com.example.browser.FavoriteSite
 
+private val CATEGORIES = listOf("All", "Favorites", "Tools", "Study", "News", "Social")
+
 @Composable
 fun HomePage(
     uiState: BrowserUiState,
@@ -66,11 +69,12 @@ fun HomePage(
     onSelectCategory: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val categories = listOf("All", "Favorites", "Tools", "Study", "News", "Social")
-    val filteredSites = if (uiState.selectedCategory == "All") {
-        favoriteSites
-    } else {
-        favoriteSites.filter { it.category.equals(uiState.selectedCategory, ignoreCase = true) }
+    val filteredSites = remember(uiState.selectedCategory, favoriteSites) {
+        if (uiState.selectedCategory == "All") {
+            favoriteSites
+        } else {
+            favoriteSites.filter { it.category.equals(uiState.selectedCategory, ignoreCase = true) }
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -219,7 +223,7 @@ fun HomePage(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Default.ArrowForward,
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = "Go",
                                     tint = Color(0xFF0A0F1D),
                                     modifier = Modifier.size(18.dp)
@@ -239,7 +243,7 @@ fun HomePage(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                categories.forEach { category ->
+                CATEGORIES.forEach { category ->
                     val isSelected = uiState.selectedCategory.equals(category, ignoreCase = true)
                     Surface(
                         shape = RoundedCornerShape(16.dp),

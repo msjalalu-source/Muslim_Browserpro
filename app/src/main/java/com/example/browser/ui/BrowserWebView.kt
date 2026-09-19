@@ -177,7 +177,7 @@ fun BrowserWebView(
                 // Progress indicator during loading
                 if (uiState.isLoading) {
                     LinearProgressIndicator(
-                        progress = uiState.loadingProgress / 100f,
+                        progress = { uiState.loadingProgress / 100f },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(2.dp),
