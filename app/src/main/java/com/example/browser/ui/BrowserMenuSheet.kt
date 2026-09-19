@@ -23,12 +23,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,11 +69,117 @@ fun BrowserMenuSheet(
     onAddKeyword: (String) -> Boolean,
     onTogglePopupBlocking: (Boolean) -> Unit,
     onToggleAdBlocking: (Boolean) -> Unit,
+    onClearAllData: () -> Unit,
+    onClearCacheAndCookies: () -> Unit,
+    onToggleDesktopMode: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newKeywordInput by remember { mutableStateOf("") }
     var keywordError by remember { mutableStateOf<String?>(null) }
+    var showClearAllDataDialog by remember { mutableStateOf(false) }
+    var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
+
+    // Dialog: Clear All Data
+    if (showClearAllDataDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDataDialog = false },
+            title = {
+                Text(
+                    text = "Clear All Data?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.White
+                )
+            },
+            text = {
+                Text(
+                    text = "This will clear your browsing data, including history, cache and cookies.",
+                    color = Color(0xFFCFD8DC),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearAllDataDialog = false
+                        onClearAllData()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF5350),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("confirm_clear_all_data_button")
+                ) {
+                    Text("Clear All Data", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showClearAllDataDialog = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0x3390A4AE),
+                        contentColor = Color(0xFFECEFF1)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("cancel_clear_all_data_button")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = Color(0xFF162036),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.testTag("dialog_clear_all_data")
+        )
+    }
+
+    // Dialog: Clear Cache & Cookies
+    if (showClearCacheCookiesDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheCookiesDialog = false },
+            title = {
+                Text(
+                    text = "Clear Cache & Cookies?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.White
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearCacheCookiesDialog = false
+                        onClearCacheAndCookies()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF00E5FF),
+                        contentColor = Color(0xFF0A0F1D)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("confirm_clear_cache_cookies_button")
+                ) {
+                    Text("Clear", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = { showClearCacheCookiesDialog = false },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0x3390A4AE),
+                        contentColor = Color(0xFFECEFF1)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("cancel_clear_cache_cookies_button")
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = Color(0xFF162036),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.testTag("dialog_clear_cache_cookies")
+        )
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -127,6 +237,204 @@ fun BrowserMenuSheet(
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
+            HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // =========================================================================
+            // BROWSING ACTIONS & TOOLS (Requested Order: Clear All Data, Clear Cache & Cookies, Desktop Mode)
+            // =========================================================================
+
+            // 1. Clear All Data
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("section_clear_all_data"),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF162036),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33EF5350))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0x33EF5350),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteSweep,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEF5350),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Clear All Data",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "History, cache, cookies & website data",
+                                color = Color(0xFF90A4AE),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showClearAllDataDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0x33EF5350),
+                            contentColor = Color(0xFFFF8A80)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_clear_all_data")
+                    ) {
+                        Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 2. Clear Cache & Cookies
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("section_clear_cache_cookies"),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF162036),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x2242A5F5))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0x33FFB74D),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.CleaningServices,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFB74D),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Clear Cache & Cookies",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Cache & cookies only (history preserved)",
+                                color = Color(0xFF90A4AE),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = { showClearCacheCookiesDialog = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0x3342A5F5),
+                            contentColor = Color(0xFF81D4FA)
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_clear_cache_cookies")
+                    ) {
+                        Text("Clear", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 3. Desktop Mode
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("section_desktop_mode"),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF162036),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x2242A5F5))
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0x3300E5FF),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.DesktopWindows,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Desktop Mode",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = if (uiState.isDesktopModeEnabled) "Desktop mode active" else "Request desktop version of websites",
+                                color = Color(0xFF90A4AE),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = uiState.isDesktopModeEnabled,
+                        onCheckedChange = onToggleDesktopMode,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color(0xFF0A0F1D),
+                            checkedTrackColor = Color(0xFF00E5FF),
+                            uncheckedThumbColor = Color(0xFF78909C),
+                            uncheckedTrackColor = Color(0xFF263238)
+                        ),
+                        modifier = Modifier.testTag("desktop_mode_switch")
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
             Spacer(modifier = Modifier.height(16.dp))
 

@@ -40,7 +40,8 @@ data class BrowserUiState(
     val selectedCategory: String = "All",
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
-    val isAdBlockingEnabled: Boolean = true
+    val isAdBlockingEnabled: Boolean = true,
+    val isDesktopModeEnabled: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -51,7 +52,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         BrowserUiState(
             customKeywords = repository.getCustomKeywords(),
             isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
-            isAdBlockingEnabled = repository.isAdBlockingEnabled
+            isAdBlockingEnabled = repository.isAdBlockingEnabled,
+            isDesktopModeEnabled = repository.isDesktopModeEnabled
         )
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
@@ -273,6 +275,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleAdBlocking(enabled: Boolean) {
         repository.isAdBlockingEnabled = enabled
         _uiState.update { it.copy(isAdBlockingEnabled = enabled) }
+    }
+
+    fun toggleDesktopMode(enabled: Boolean) {
+        repository.isDesktopModeEnabled = enabled
+        _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
+    }
+
+    fun onHistoryCleared() {
+        _uiState.update {
+            it.copy(
+                canGoBack = false,
+                canGoForward = false
+            )
+        }
     }
 
     fun showToast(msg: String) {

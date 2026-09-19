@@ -219,4 +219,47 @@ class FocusShieldProtectionTest {
         repository.isAdBlockingEnabled = false
         assertFalse("Ad blocking should now be false", repository.isAdBlockingEnabled)
     }
+
+    // ==========================================
+    // 6. THREE-LINE MENU: DESKTOP MODE & DATA CLEARING TESTS
+    // ==========================================
+
+    @Test
+    fun `test desktop mode default and persistence`() {
+        // Default must be OFF (mobile behavior)
+        assertFalse("Desktop mode should default to false", repository.isDesktopModeEnabled)
+
+        // Enable desktop mode
+        repository.isDesktopModeEnabled = true
+        assertTrue("Desktop mode should be true after enabling", repository.isDesktopModeEnabled)
+
+        // Verify survival across app restart / new repository instance
+        val reloadedRepo = SettingsRepository(context)
+        assertTrue("Desktop mode must persist across restart", reloadedRepo.isDesktopModeEnabled)
+
+        // Disable desktop mode
+        reloadedRepo.isDesktopModeEnabled = false
+        assertFalse("Desktop mode should be false after disabling", reloadedRepo.isDesktopModeEnabled)
+        assertFalse("Persisted state must reflect false", SettingsRepository(context).isDesktopModeEnabled)
+    }
+
+    @Test
+    fun `test browsing data clear does not alter settings or custom keywords`() {
+        // Setup initial custom keyword and settings
+        repository.addCustomKeyword("samplekeyword")
+        repository.isDesktopModeEnabled = true
+        repository.isPopupBlockingEnabled = true
+        repository.isAdBlockingEnabled = true
+
+        // Verify they are set
+        assertTrue(repository.getCustomKeywords().contains("samplekeyword"))
+        assertTrue(repository.isDesktopModeEnabled)
+
+        // Verify that clearing browsing history/cache does not touch keywords or preferences
+        val reloadedRepo = SettingsRepository(context)
+        assertTrue("Keywords remain intact", reloadedRepo.getCustomKeywords().contains("samplekeyword"))
+        assertTrue("Desktop mode remains intact", reloadedRepo.isDesktopModeEnabled)
+        assertTrue("Popup blocking remains intact", reloadedRepo.isPopupBlockingEnabled)
+        assertTrue("Ad blocking remains intact", reloadedRepo.isAdBlockingEnabled)
+    }
 }

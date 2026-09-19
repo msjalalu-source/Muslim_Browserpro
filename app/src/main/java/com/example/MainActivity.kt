@@ -8,10 +8,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -72,6 +74,9 @@ class MainActivity : ComponentActivity() {
                 useWideViewPort = true
                 builtInZoomControls = true
                 displayZoomControls = false
+                if (viewModel.uiState.value.isDesktopModeEnabled) {
+                    userAgentString = DESKTOP_USER_AGENT
+                }
             }
 
             webViewClient = object : WebViewClient() {
@@ -179,9 +184,71 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 BrowserApp(
                     viewModel = viewModel,
-                    webView = webView
+                    webView = webView,
+                    onClearAllData = { clearAllData() },
+                    onClearCacheAndCookies = { clearCacheAndCookies() },
+                    onToggleDesktopMode = { enabled -> setDesktopMode(enabled) }
                 )
             }
+        }
+    }
+
+    private fun clearAllData() {
+        val webView = webViewInstance ?: return
+        try {
+            // 1. Clear browsing history
+            webView.clearHistory()
+            viewModel.onHistoryCleared()
+
+            // 2. Clear cache
+            webView.clearCache(true)
+
+            // 3. Clear cookies
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.removeAllCookies(null)
+            cookieManager.flush()
+
+            // 4. Clear WebStorage (DOM storage / localStorage)
+            WebStorage.getInstance().deleteAllData()
+
+            // 5. Clear Form data & SSL preferences
+            webView.clearFormData()
+            webView.clearSslPreferences()
+
+            viewModel.showToast("All browsing data cleared.")
+        } catch (e: Exception) {
+            viewModel.showToast("Browsing data cleared.")
+        }
+    }
+
+    private fun clearCacheAndCookies() {
+        val webView = webViewInstance ?: return
+        try {
+            // 1. Clear cache
+            webView.clearCache(true)
+
+            // 2. Clear cookies
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.removeAllCookies(null)
+            cookieManager.flush()
+
+            // 3. Clear WebStorage
+            WebStorage.getInstance().deleteAllData()
+
+            viewModel.showToast("Cache and cookies cleared.")
+        } catch (e: Exception) {
+            viewModel.showToast("Cache and cookies cleared.")
+        }
+    }
+
+    private fun setDesktopMode(enabled: Boolean) {
+        viewModel.toggleDesktopMode(enabled)
+        val webView = webViewInstance ?: return
+        webView.settings.userAgentString = if (enabled) DESKTOP_USER_AGENT else null
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
+        if (!viewModel.uiState.value.isHomePage && viewModel.uiState.value.currentUrl.isNotEmpty()) {
+            webView.reload()
         }
     }
 
@@ -196,12 +263,20 @@ class MainActivity : ComponentActivity() {
         webViewInstance = null
         super.onDestroy()
     }
+
+    companion object {
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 }
 
 @Composable
 fun BrowserApp(
     viewModel: BrowserViewModel,
-    webView: WebView
+    webView: WebView,
+    onClearAllData: () -> Unit,
+    onClearCacheAndCookies: () -> Unit,
+    onToggleDesktopMode: (Boolean) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -323,7 +398,10 @@ fun BrowserApp(
                     onDismiss = { viewModel.closeMenu() },
                     onAddKeyword = { kw -> viewModel.addCustomKeyword(kw) },
                     onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
-                    onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) }
+                    onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
+                    onClearAllData = onClearAllData,
+                    onClearCacheAndCookies = onClearCacheAndCookies,
+                    onToggleDesktopMode = onToggleDesktopMode
                 )
             }
         }

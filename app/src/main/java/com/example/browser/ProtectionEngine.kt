@@ -68,6 +68,28 @@ object ProtectionEngine {
         "masturbat"
     )
 
+    // Built-in keywords requiring whole-word/token boundary matching
+    private val BUILTIN_WHOLE_WORD_KEYWORDS = arrayOf(
+        "x",
+        "browser",
+        "browsers",
+        "browsering",
+        "browsered"
+    )
+
+    // Built-in blocked keywords (matched via case-insensitive contains)
+    private val BUILTIN_BLOCKED_KEYWORDS = arrayOf(
+        "aashiq banaya",
+        "hot",
+        "adult",
+        "porn",
+        "sex",
+        "xxx",
+        "18+",
+        "intimate",
+        "kiss"
+    )
+
     // Common ad network domains for lightweight request blocking
     private val KNOWN_AD_DOMAINS = hashSetOf(
         "doubleclick.net",
@@ -137,7 +159,7 @@ object ProtectionEngine {
     ): FilterResult {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
-        val normalized = trimmed.lowercase(Locale.ROOT)
+        val normalized = trimmed.lowercase(Locale.ROOT).replace("%20", " ")
 
         // 1. Adult Content Protection (Permanently Enabled)
         // Fast O(1) host & subdomain check if input contains a host
@@ -169,11 +191,31 @@ object ProtectionEngine {
             }
         }
 
-        // 2. Custom Keyword Protection
+        // 2. Built-in Whole-Word Keywords Protection ("x", "browser", and variants)
+        for (word in BUILTIN_WHOLE_WORD_KEYWORDS) {
+            if (containsWholeWord(normalized, word)) {
+                return FilterResult.Blocked(
+                    reason = "Protected Content Policy",
+                    detail = "Blocked due to protected keyword: \"$word\""
+                )
+            }
+        }
+
+        // 3. Built-in Blocked Keywords Protection
+        for (kw in BUILTIN_BLOCKED_KEYWORDS) {
+            if (normalized.contains(kw)) {
+                return FilterResult.Blocked(
+                    reason = "Protected Content Policy",
+                    detail = "Blocked due to protected keyword: \"$kw\""
+                )
+            }
+        }
+
+        // 4. Custom Keyword Protection
         if (customKeywords.isNotEmpty()) {
             for (customKw in customKeywords) {
                 val kwNormalized = customKw.trim().lowercase(Locale.ROOT)
-                if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
+                if (kwNormalized.isNotEmpty() && !isBuiltInKeyword(kwNormalized) && normalized.contains(kwNormalized)) {
                     return FilterResult.Blocked(
                         reason = "Custom Keyword Protection",
                         detail = "Blocked due to protected keyword: \"$customKw\""
@@ -183,6 +225,46 @@ object ProtectionEngine {
         }
 
         return FilterResult.Allowed
+    }
+
+    /**
+     * Checks if [word] appears in [text] as a standalone whole word (token boundary).
+     * Non-alphanumeric characters (including start/end of string, spaces, punctuation, slashes)
+     * serve as word boundaries.
+     */
+    fun containsWholeWord(text: String, word: String): Boolean {
+        val wordLen = word.length
+        if (wordLen == 0 || text.isEmpty()) return false
+        var startIndex = 0
+        while (true) {
+            val index = text.indexOf(word, startIndex)
+            if (index == -1) return false
+            val prevCharOk = (index == 0) || !Character.isLetterOrDigit(text[index - 1])
+            val nextIndex = index + wordLen
+            val nextCharOk = (nextIndex == text.length) || !Character.isLetterOrDigit(text[nextIndex])
+            if (prevCharOk && nextCharOk) {
+                return true
+            }
+            startIndex = index + 1
+        }
+    }
+
+    /**
+     * Checks whether a keyword is already part of the built-in protected keywords.
+     */
+    fun isBuiltInKeyword(keyword: String): Boolean {
+        val lower = keyword.trim().lowercase(Locale.ROOT)
+        if (lower.isEmpty()) return false
+        for (w in BUILTIN_WHOLE_WORD_KEYWORDS) {
+            if (w == lower) return true
+        }
+        for (w in BUILTIN_BLOCKED_KEYWORDS) {
+            if (w == lower) return true
+        }
+        for (w in ADULT_KEYWORDS) {
+            if (w == lower) return true
+        }
+        return false
     }
 
     /**

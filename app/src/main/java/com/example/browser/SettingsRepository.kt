@@ -66,10 +66,17 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_AD_BLOCKING, value).apply()
         }
 
+    var isDesktopModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DESKTOP_MODE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
+        }
+
     companion object {
         private const val PREFS_NAME = "focus_shield_prefs"
         private const val KEY_CUSTOM_KEYWORDS = "key_custom_keywords"
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
+        private const val KEY_DESKTOP_MODE = "key_desktop_mode"
     }
 }
