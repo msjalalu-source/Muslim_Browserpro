@@ -1,18 +1,24 @@
 package com.example.browser
 
+import android.net.Uri
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 /**
- * Ultra-lightweight, event-driven protection engine for Focus Shield Browser.
- * Handles adult content filtering, custom keyword matching, download type restrictions,
- * and lightweight ad request detection.
- *
- * Uses direct hash-sets and simple string checks without heavy dependencies or background services.
+ * Lightweight two-tier protection engine for Focus Shield Browser:
+ * 1. Primary Search Protection: Enforces Google SafeSearch (safe=active) for all search requests
+ *    and normalizes external search engine queries into Google SafeSearch.
+ * 2. Secondary Custom Keyword Protection: Fast, user-defined keyword filter evaluated before queries
+ *    reach search engines and on direct URL navigations.
+ * 3. Direct URL Protection: Lightweight domain-level matching for high-impact adult domains
+ *    and download type restrictions (Video, MP3/Audio, APK).
+ * 4. Lightweight Ad Request Protection: Direct host matching against known ad networks.
  */
 object ProtectionEngine {
 
-    // Common adult domains (sample high-impact list, normalized lowercase)
-    private val KNOWN_ADULT_DOMAINS = hashSetOf(
+    // Compact high-confidence adult domains for lightweight direct URL protection
+    val KNOWN_ADULT_DOMAINS = hashSetOf(
         "pornhub.com",
         "xvideos.com",
         "xnxx.com",
@@ -22,72 +28,12 @@ object ProtectionEngine {
         "chaturbate.com",
         "stripchat.com",
         "livejasmin.com",
-        "bongacams.com",
         "onlyfans.com",
-        "cam4.com",
-        "camsoda.com",
-        "adultfriendfinder.com",
         "brazzers.com",
-        "beeg.com",
         "spankbang.com",
-        "tubegalore.com",
-        "eporner.com",
         "daftsex.com",
-        "fuq.com",
-        "heavy-r.com",
-        "motherless.com",
-        "hqporner.com",
         "porn.com",
-        "xxx.com",
-        "hentaihaven.xxx",
-        "nhentai.net",
-        "gelbooru.com",
-        "rule34.xxx",
-        "e-hentai.org"
-    )
-
-    // Keywords that indicate adult content in URLs or search queries
-    private val ADULT_KEYWORDS = arrayOf(
-        "porn",
-        "xxx",
-        "nsfw",
-        "erotic",
-        "hentai",
-        "nude",
-        "nudity",
-        "sexcam",
-        "camgirl",
-        "blowjob",
-        "hardcore",
-        "gangbang",
-        "milf",
-        "fetish",
-        "shemale",
-        "anal",
-        "cumshot",
-        "masturbat"
-    )
-
-    // Built-in keywords requiring whole-word/token boundary matching
-    private val BUILTIN_WHOLE_WORD_KEYWORDS = arrayOf(
-        "x",
-        "browser",
-        "browsers",
-        "browsering",
-        "browsered"
-    )
-
-    // Built-in blocked keywords (matched via case-insensitive contains)
-    private val BUILTIN_BLOCKED_KEYWORDS = arrayOf(
-        "aashiq banaya",
-        "hot",
-        "adult",
-        "porn",
-        "sex",
-        "xxx",
-        "18+",
-        "intimate",
-        "kiss"
+        "xxx.com"
     )
 
     // Common ad network domains for lightweight request blocking
@@ -150,20 +96,142 @@ object ProtectionEngine {
     }
 
     /**
-     * Checks whether a navigation URL or search query violates Adult Protection
-     * or any user-defined Custom Keywords.
+     * Builds a standardized Google SafeSearch URL with safe=active guaranteed.
+     * Centralized helper to avoid duplicated URL-building logic.
      */
-    fun checkUrlOrQuery(
-        input: String,
+    fun buildGoogleSafeSearchUrl(query: String): String {
+        val trimmed = query.trim()
+        val encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.name())
+        return "https://www.google.com/search?q=$encoded&safe=active"
+    }
+
+    /**
+     * Checks if a URL is already a Google Search URL with safe=active enforced.
+     */
+    fun isGoogleSafeSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return false
+        }
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        if (!isGoogleHost(host)) return false
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+        if (!path.contains("/search") && !path.contains("/webhp")) return false
+        val safeParam = uri.getQueryParameter("safe")?.lowercase(Locale.ROOT)
+        return safeParam == "active"
+    }
+
+    /**
+     * Checks whether the host represents a Google search domain.
+     */
+    fun isGoogleHost(host: String): Boolean {
+        val clean = host.lowercase(Locale.ROOT)
+        return clean == "google.com" ||
+                clean.endsWith(".google.com") ||
+                clean.startsWith("google.") ||
+                clean.contains(".google.")
+    }
+
+    /**
+     * Detects if a URL is a search request from known search providers
+     * (Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Ecosia, Startpage, Ask)
+     * and extracts the clean search query string.
+     *
+     * Returns null if the URL is a regular web page or search engine homepage.
+     */
+    fun extractSearchEngineQuery(url: String): String? {
+        if (url.isBlank()) return null
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return null
+        }
+        val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
+        if (scheme != "http" && scheme != "https") return null
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+
+        return when {
+            // Google Search
+            isGoogleHost(host) && (path.contains("/search") || path.contains("/webhp") || uri.getQueryParameter("q") != null) -> {
+                uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
+            }
+            // Bing Search
+            host.contains("bing.com") && (path.contains("/search") || uri.getQueryParameter("q") != null) -> {
+                uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
+            }
+            // DuckDuckGo Search
+            host.contains("duckduckgo.com") && uri.getQueryParameter("q") != null -> {
+                uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
+            }
+            // Yahoo Search
+            (host.contains("search.yahoo.com") || (host.contains("yahoo.com") && path.contains("/search"))) && uri.getQueryParameter("p") != null -> {
+                uri.getQueryParameter("p")?.takeIf { it.isNotBlank() }
+            }
+            // Yandex Search
+            host.contains("yandex.") && (path.contains("/search") || uri.getQueryParameter("text") != null) -> {
+                (uri.getQueryParameter("text") ?: uri.getQueryParameter("query"))?.takeIf { it.isNotBlank() }
+            }
+            // Baidu Search
+            host.contains("baidu.com") && (uri.getQueryParameter("wd") != null || uri.getQueryParameter("word") != null) -> {
+                (uri.getQueryParameter("wd") ?: uri.getQueryParameter("word"))?.takeIf { it.isNotBlank() }
+            }
+            // Ecosia Search
+            host.contains("ecosia.org") && path.contains("/search") && uri.getQueryParameter("q") != null -> {
+                uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
+            }
+            // Startpage Search
+            host.contains("startpage.com") && (path.contains("/search") || uri.getQueryParameter("query") != null || uri.getQueryParameter("q") != null) -> {
+                (uri.getQueryParameter("query") ?: uri.getQueryParameter("q"))?.takeIf { it.isNotBlank() }
+            }
+            // Ask.com Search
+            host.contains("ask.com") && (path.contains("/web") || path.contains("/search")) && uri.getQueryParameter("q") != null -> {
+                uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * Checks if the text (search query or URL) contains any user-defined custom keyword.
+     * Returns the matched keyword name, or null if allowed.
+     */
+    fun isBlockedByCustomKeywords(text: String, customKeywords: Set<String>): String? {
+        if (customKeywords.isEmpty() || text.isBlank()) return null
+        val normalized = text.trim().lowercase(Locale.ROOT).replace("%20", " ")
+        for (kw in customKeywords) {
+            val kwNormalized = kw.trim().lowercase(Locale.ROOT)
+            if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
+                return kw
+            }
+        }
+        return null
+    }
+
+    /**
+     * Lightweight direct URL protection.
+     * Evaluates custom keywords and high-confidence adult domains without heavy scanning.
+     */
+    fun checkDirectUrl(
+        url: String,
         customKeywords: Set<String>
     ): FilterResult {
-        val trimmed = input.trim()
+        val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
-        val normalized = trimmed.lowercase(Locale.ROOT).replace("%20", " ")
 
-        // 1. Adult Content Protection (Permanently Enabled)
-        // Fast O(1) host & subdomain check if input contains a host
-        val host = extractHost(normalized)
+        // 1. Custom Keyword Protection
+        val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords)
+        if (blockedKw != null) {
+            return FilterResult.Blocked(
+                reason = "Custom Keyword Protection",
+                detail = "Blocked due to protected keyword: \"$blockedKw\""
+            )
+        }
+
+        // 2. Direct Adult Domain Matching (O(1) host lookup)
+        val host = extractHost(trimmed)
         if (host != null && host.isNotEmpty() && matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
             return FilterResult.Blocked(
                 reason = "Adult Content Protection",
@@ -171,7 +239,8 @@ object ProtectionEngine {
             )
         }
 
-        // Fallback domain check in search query or raw input
+        // Fallback for raw domain input
+        val normalized = trimmed.lowercase(Locale.ROOT)
         for (domain in KNOWN_ADULT_DOMAINS) {
             if (normalized.contains(domain)) {
                 return FilterResult.Blocked(
@@ -181,90 +250,17 @@ object ProtectionEngine {
             }
         }
 
-        // Check adult keywords in search query or URL
-        for (kw in ADULT_KEYWORDS) {
-            if (normalized.contains(kw)) {
-                return FilterResult.Blocked(
-                    reason = "Adult Content Protection",
-                    detail = "Content containing explicit or adult terms is blocked."
-                )
-            }
-        }
-
-        // 2. Built-in Whole-Word Keywords Protection ("x", "browser", and variants)
-        for (word in BUILTIN_WHOLE_WORD_KEYWORDS) {
-            if (containsWholeWord(normalized, word)) {
-                return FilterResult.Blocked(
-                    reason = "Protected Content Policy",
-                    detail = "Blocked due to protected keyword: \"$word\""
-                )
-            }
-        }
-
-        // 3. Built-in Blocked Keywords Protection
-        for (kw in BUILTIN_BLOCKED_KEYWORDS) {
-            if (normalized.contains(kw)) {
-                return FilterResult.Blocked(
-                    reason = "Protected Content Policy",
-                    detail = "Blocked due to protected keyword: \"$kw\""
-                )
-            }
-        }
-
-        // 4. Custom Keyword Protection
-        if (customKeywords.isNotEmpty()) {
-            for (customKw in customKeywords) {
-                val kwNormalized = customKw.trim().lowercase(Locale.ROOT)
-                if (kwNormalized.isNotEmpty() && !isBuiltInKeyword(kwNormalized) && normalized.contains(kwNormalized)) {
-                    return FilterResult.Blocked(
-                        reason = "Custom Keyword Protection",
-                        detail = "Blocked due to protected keyword: \"$customKw\""
-                    )
-                }
-            }
-        }
-
         return FilterResult.Allowed
     }
 
     /**
-     * Checks if [word] appears in [text] as a standalone whole word (token boundary).
-     * Non-alphanumeric characters (including start/end of string, spaces, punctuation, slashes)
-     * serve as word boundaries.
+     * Lightweight compatibility evaluator for input queries and direct URLs.
      */
-    fun containsWholeWord(text: String, word: String): Boolean {
-        val wordLen = word.length
-        if (wordLen == 0 || text.isEmpty()) return false
-        var startIndex = 0
-        while (true) {
-            val index = text.indexOf(word, startIndex)
-            if (index == -1) return false
-            val prevCharOk = (index == 0) || !Character.isLetterOrDigit(text[index - 1])
-            val nextIndex = index + wordLen
-            val nextCharOk = (nextIndex == text.length) || !Character.isLetterOrDigit(text[nextIndex])
-            if (prevCharOk && nextCharOk) {
-                return true
-            }
-            startIndex = index + 1
-        }
-    }
-
-    /**
-     * Checks whether a keyword is already part of the built-in protected keywords.
-     */
-    fun isBuiltInKeyword(keyword: String): Boolean {
-        val lower = keyword.trim().lowercase(Locale.ROOT)
-        if (lower.isEmpty()) return false
-        for (w in BUILTIN_WHOLE_WORD_KEYWORDS) {
-            if (w == lower) return true
-        }
-        for (w in BUILTIN_BLOCKED_KEYWORDS) {
-            if (w == lower) return true
-        }
-        for (w in ADULT_KEYWORDS) {
-            if (w == lower) return true
-        }
-        return false
+    fun checkUrlOrQuery(
+        input: String,
+        customKeywords: Set<String>
+    ): FilterResult {
+        return checkDirectUrl(input, customKeywords)
     }
 
     /**
@@ -302,7 +298,6 @@ object ProtectionEngine {
 
     /**
      * Checks if a host matches a domain or any of its parent subdomains against a HashSet.
-     * Takes O(1) set lookups proportional to subdomain depth rather than O(N) string searches.
      */
     fun matchesDomainOrSubdomain(host: String, domainSet: Set<String>): Boolean {
         if (domainSet.contains(host)) return true
@@ -317,7 +312,6 @@ object ProtectionEngine {
 
     /**
      * Checks if a network request is directed at a known advertisement network.
-     * Uses fast host matching first for maximum performance on frequent subresource requests.
      */
     fun isAdRequest(url: String): Boolean {
         val host = extractHost(url)
@@ -326,7 +320,6 @@ object ProtectionEngine {
                 return true
             }
         }
-        // Fallback for relative or malformed URLs
         val normalized = url.lowercase(Locale.ROOT)
         for (adDomain in KNOWN_AD_DOMAINS) {
             if (normalized.contains(adDomain)) {
@@ -382,7 +375,6 @@ object ProtectionEngine {
      * Extracts extension from URL or Content-Disposition.
      */
     fun extractExtension(url: String, contentDisposition: String?): String {
-        // Try from content-disposition filename first
         if (contentDisposition != null && contentDisposition.contains("filename=", ignoreCase = true)) {
             val filenamePart = contentDisposition.substringAfter("filename=", "")
                 .replace("\"", "").trim()
@@ -392,7 +384,6 @@ object ProtectionEngine {
             }
         }
 
-        // Extract from URL query-free path
         val cleanUrl = url.substringBefore('?').substringBefore('#')
         val lastSegment = cleanUrl.substringAfterLast('/', "")
         val ext = lastSegment.substringAfterLast('.', "")

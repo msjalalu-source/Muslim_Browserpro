@@ -6,6 +6,7 @@ import com.example.browser.ProtectionEngine
 import com.example.browser.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -99,10 +100,11 @@ class FocusShieldProtectionTest {
         val adultDomains = listOf(
             "https://www.pornhub.com",
             "https://xvideos.com/video123",
-            "https://redtube.com/watch"
+            "https://redtube.com/watch",
+            "https://www.xnxx.com"
         )
         for (url in adultDomains) {
-            val res = ProtectionEngine.checkUrlOrQuery(url, emptySet())
+            val res = ProtectionEngine.checkDirectUrl(url, emptySet())
             assertTrue("Domain $url must be permanently blocked", res is ProtectionEngine.FilterResult.Blocked)
             val blocked = res as ProtectionEngine.FilterResult.Blocked
             assertEquals("Adult Content Protection", blocked.reason)
@@ -110,16 +112,65 @@ class FocusShieldProtectionTest {
     }
 
     @Test
-    fun `test adult protection is always enabled for explicit queries`() {
-        val explicitQueries = listOf(
-            "hardcore porn videos",
-            "free adult xxx clips",
-            "hentai gallery nude"
-        )
-        for (query in explicitQueries) {
-            val res = ProtectionEngine.checkUrlOrQuery(query, emptySet())
-            assertTrue("Query '$query' must be permanently blocked", res is ProtectionEngine.FilterResult.Blocked)
-        }
+    fun `test google safe search url building helper`() {
+        val url = ProtectionEngine.buildGoogleSafeSearchUrl("kotlin android")
+        assertTrue("Must target google.com/search", url.startsWith("https://www.google.com/search?q="))
+        assertTrue("Must enforce safe=active", url.contains("safe=active"))
+        assertTrue("Must encode spaces", url.contains("kotlin+android") || url.contains("kotlin%20android"))
+    }
+
+    @Test
+    fun `test search engine query extraction and homepage preservation`() {
+        // Search queries from various engines
+        assertEquals("cats", ProtectionEngine.extractSearchEngineQuery("https://www.bing.com/search?q=cats"))
+        assertEquals("android", ProtectionEngine.extractSearchEngineQuery("https://duckduckgo.com/?q=android"))
+        assertEquals("kotlin", ProtectionEngine.extractSearchEngineQuery("https://search.yahoo.com/search?p=kotlin"))
+        assertEquals("weather", ProtectionEngine.extractSearchEngineQuery("https://www.google.com/search?q=weather"))
+
+        // Homepages should return null to preserve direct homepage navigation
+        assertNull(ProtectionEngine.extractSearchEngineQuery("https://www.bing.com/"))
+        assertNull(ProtectionEngine.extractSearchEngineQuery("https://www.google.com/"))
+        assertNull(ProtectionEngine.extractSearchEngineQuery("https://duckduckgo.com/"))
+        assertNull(ProtectionEngine.extractSearchEngineQuery("https://en.wikipedia.org/wiki/Main_Page"))
+    }
+
+    @Test
+    fun `test google safe search verification helper`() {
+        assertTrue(ProtectionEngine.isGoogleSafeSearchUrl("https://www.google.com/search?q=cars&safe=active"))
+        assertFalse("Missing safe=active must return false", ProtectionEngine.isGoogleSafeSearchUrl("https://www.google.com/search?q=cars"))
+        assertFalse("safe=off must return false", ProtectionEngine.isGoogleSafeSearchUrl("https://www.google.com/search?q=cars&safe=off"))
+        assertFalse("Bing search must return false", ProtectionEngine.isGoogleSafeSearchUrl("https://www.bing.com/search?q=cars&safe=active"))
+    }
+
+    @Test
+    fun `test query-first custom keyword blocking prevents search submission`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+        viewModel.addCustomKeyword("secretblockedword")
+
+        // 1. Raw search query with blocked keyword
+        val allowedRaw = viewModel.submitQueryOrUrl("how to find secretblockedword today")
+        assertFalse("Search query with custom keyword must be blocked before submission", allowedRaw)
+        assertTrue(viewModel.uiState.value.blockedInfo != null)
+        assertEquals("Custom Keyword Protection", viewModel.uiState.value.blockedInfo?.reason)
+
+        // 2. Search engine URL with blocked keyword
+        val allowedEngine = viewModel.submitQueryOrUrl("https://www.bing.com/search?q=secretblockedword")
+        assertFalse("Bing search URL with custom keyword must be blocked", allowedEngine)
+        assertTrue(viewModel.uiState.value.blockedInfo != null)
+    }
+
+    @Test
+    fun `test normal search query normalizes to google safe search in viewmodel`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+
+        // Submit regular query
+        val allowed = viewModel.submitQueryOrUrl("learn jetpack compose")
+        assertTrue("Valid query must be allowed", allowed)
+        val target = viewModel.uiState.value.currentUrl
+        assertTrue("Must be directed to Google", target.startsWith("https://www.google.com/search?q="))
+        assertTrue("Must include safe=active", target.contains("safe=active"))
     }
 
     @Test
@@ -296,9 +347,28 @@ class FocusShieldProtectionTest {
         val viewModel = com.example.browser.BrowserViewModel(app)
         viewModel.openNewTab()
 
-        // Submit adult query on the new tab
-        val allowed = viewModel.submitQueryOrUrl("pornhub")
+        // Submit adult url on the new tab
+        val allowed = viewModel.submitQueryOrUrl("https://www.pornhub.com")
         assertFalse("Adult content must be blocked on new tabs", allowed)
         assertTrue("Blocked info must be set", viewModel.uiState.value.blockedInfo != null)
+    }
+
+    @Test
+    fun `test fast bangla translation on active webpage and homepage`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+
+        // 1. On homepage without search
+        val homeTranslateUrl = viewModel.translateToBangla()
+        assertTrue("Should open Google translate", homeTranslateUrl.contains("translate.google.com"))
+        assertTrue("Should target Bengali tl=bn", homeTranslateUrl.contains("tl=bn"))
+        assertFalse("Menu should be closed after translation", viewModel.uiState.value.isMenuOpen)
+
+        // 2. On active web page
+        viewModel.submitQueryOrUrl("https://en.wikipedia.org/wiki/Bangladesh")
+        val pageTranslateUrl = viewModel.translateToBangla()
+        assertTrue("Should translate page url", pageTranslateUrl.startsWith("https://translate.google.com/translate?"))
+        assertTrue("Should contain encoded url", pageTranslateUrl.contains("wikipedia.org"))
+        assertTrue("Should enforce tl=bn", pageTranslateUrl.contains("tl=bn"))
     }
 }

@@ -205,69 +205,64 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     /**
      * Handles search input submission or link click.
-     * Evaluates against Adult Protection and Custom Keywords before navigation.
+     * Query-first filtering:
+     * 1. If search engine URL -> extract query -> custom keyword check -> Google SafeSearch URL
+     * 2. If raw query -> custom keyword check -> Google SafeSearch URL
+     * 3. If direct URL -> custom keyword + adult domain check -> allowed navigation
      */
     fun submitQueryOrUrl(input: String): Boolean {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return false
 
-        // Check query or URL with ProtectionEngine
-        val checkResult = ProtectionEngine.checkUrlOrQuery(trimmed, _uiState.value.customKeywords)
-        if (checkResult is ProtectionEngine.FilterResult.Blocked) {
-            val info = BlockedInfo(
-                reason = checkResult.reason,
-                detail = checkResult.detail,
-                targetUrl = trimmed
-            )
-            _uiState.update { state ->
-                val updatedTabs = state.tabs.map { tab ->
-                    if (tab.id == state.currentTabId) {
-                        tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
-                    } else tab
-                }
-                state.copy(
-                    tabs = updatedTabs,
-                    isHomePage = false,
-                    blockedInfo = info,
-                    isLoading = false
+        // Check if input is a search engine URL with a query parameter
+        val queryFromUrl = ProtectionEngine.extractSearchEngineQuery(trimmed)
+        if (queryFromUrl != null) {
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(queryFromUrl, _uiState.value.customKeywords)
+            if (blockedKw != null) {
+                setBlockedUrl(
+                    url = trimmed,
+                    reason = "Custom Keyword Protection",
+                    detail = "Search query blocked due to protected keyword: \"$blockedKw\""
                 )
+                return false
             }
+            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(queryFromUrl)
+            loadTargetUrl(safeUrl)
+            return true
+        }
+
+        // Check if input is a direct URL or search query
+        val isDirectUrl = isWebUrl(trimmed)
+        if (!isDirectUrl) {
+            // Raw search query -> SafeSearch with safe=active
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(trimmed, _uiState.value.customKeywords)
+            if (blockedKw != null) {
+                setBlockedUrl(
+                    url = trimmed,
+                    reason = "Custom Keyword Protection",
+                    detail = "Search query blocked due to protected keyword: \"$blockedKw\""
+                )
+                return false
+            }
+            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(trimmed)
+            loadTargetUrl(safeUrl)
+            return true
+        }
+
+        // Direct URL Navigation
+        val formattedUrl = formatDirectUrl(trimmed)
+        val check = ProtectionEngine.checkDirectUrl(formattedUrl, _uiState.value.customKeywords)
+        if (check is ProtectionEngine.FilterResult.Blocked) {
+            setBlockedUrl(
+                url = formattedUrl,
+                reason = check.reason,
+                detail = check.detail
+            )
             return false
         }
 
-        // Convert query to URL if not a standard URL format
-        val targetUrl = resolveUrl(trimmed)
-
-        // Check the resolved target URL as well (skip duplicate evaluation if targetUrl == trimmed)
-        val resolvedCheck = if (targetUrl == trimmed) {
-            checkResult
-        } else {
-            ProtectionEngine.checkUrlOrQuery(targetUrl, _uiState.value.customKeywords)
-        }
-        if (resolvedCheck is ProtectionEngine.FilterResult.Blocked) {
-            val info = BlockedInfo(
-                reason = resolvedCheck.reason,
-                detail = resolvedCheck.detail,
-                targetUrl = targetUrl
-            )
-            _uiState.update { state ->
-                val updatedTabs = state.tabs.map { tab ->
-                    if (tab.id == state.currentTabId) {
-                        tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
-                    } else tab
-                }
-                state.copy(
-                    tabs = updatedTabs,
-                    isHomePage = false,
-                    blockedInfo = info,
-                    isLoading = false
-                )
-            }
-            return false
-        }
-
-        // Also check if URL is a direct download of blocked file types
-        val downloadCheck = ProtectionEngine.checkDownloadType(targetUrl, null, null)
+        // Check if direct download of blocked file types
+        val downloadCheck = ProtectionEngine.checkDownloadType(formattedUrl, null, null)
         if (downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
             downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
             downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_APK
@@ -276,6 +271,51 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return false
         }
 
+        loadTargetUrl(formattedUrl)
+        return true
+    }
+
+    /**
+     * Fast Bangla Translation:
+     * If browsing a webpage, translates the entire page to Bangla via Google Translate.
+     * If on home or search input, translates text or opens Google Translate Bangla.
+     */
+    fun translateToBangla(): String {
+        val current = _uiState.value.currentUrl
+        val targetUrl = if (!_uiState.value.isHomePage && current.isNotBlank() && !current.startsWith("about:")) {
+            val encodedUrl = URLEncoder.encode(current, StandardCharsets.UTF_8.name())
+            "https://translate.google.com/translate?sl=auto&tl=bn&u=$encodedUrl"
+        } else {
+            val query = _uiState.value.searchInput.trim()
+            if (query.isNotEmpty() && !query.startsWith("http://") && !query.startsWith("https://")) {
+                val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
+                "https://translate.google.com/?sl=auto&tl=bn&text=$encodedQuery&op=translate"
+            } else {
+                "https://translate.google.com/?sl=auto&tl=bn&op=translate"
+            }
+        }
+        loadTargetUrl(targetUrl)
+        closeMenu()
+        showToast("বাংলায় অনুবাদ করা হচ্ছে...")
+        return targetUrl
+    }
+
+    private fun isWebUrl(input: String): Boolean {
+        if (input.startsWith("http://", ignoreCase = true) || input.startsWith("https://", ignoreCase = true)) {
+            return true
+        }
+        return input.contains(".") && !input.contains(" ") && input.length >= 4
+    }
+
+    private fun formatDirectUrl(input: String): String {
+        return if (input.startsWith("http://", ignoreCase = true) || input.startsWith("https://", ignoreCase = true)) {
+            input
+        } else {
+            "https://$input"
+        }
+    }
+
+    private fun loadTargetUrl(targetUrl: String) {
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
@@ -297,19 +337,22 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isLoading = true
             )
         }
-        return true
     }
 
-    private fun resolveUrl(input: String): String {
-        return if (input.startsWith("http://", ignoreCase = true) ||
-            input.startsWith("https://", ignoreCase = true)
-        ) {
-            input
-        } else if (input.contains(".") && !input.contains(" ") && input.length >= 4) {
-            "https://$input"
-        } else {
-            val encodedQuery = URLEncoder.encode(input, StandardCharsets.UTF_8.name())
-            "https://duckduckgo.com/?q=$encodedQuery"
+    fun setBlockedUrl(url: String, reason: String, detail: String) {
+        val info = BlockedInfo(reason = reason, detail = detail, targetUrl = url)
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
+                isHomePage = false,
+                blockedInfo = info,
+                isLoading = false
+            )
         }
     }
 
@@ -318,25 +361,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
      * Returns true if blocked, false if navigation is allowed.
      */
     fun checkAndFilterUrl(url: String): Boolean {
-        val check = ProtectionEngine.checkUrlOrQuery(url, _uiState.value.customKeywords)
+        val check = ProtectionEngine.checkDirectUrl(url, _uiState.value.customKeywords)
         if (check is ProtectionEngine.FilterResult.Blocked) {
-            val info = BlockedInfo(
-                reason = check.reason,
-                detail = check.detail,
-                targetUrl = url
-            )
-            _uiState.update { state ->
-                val updatedTabs = state.tabs.map { tab ->
-                    if (tab.id == state.currentTabId) {
-                        tab.copy(blockedInfo = info, isLoading = false)
-                    } else tab
-                }
-                state.copy(
-                    tabs = updatedTabs,
-                    blockedInfo = info,
-                    isLoading = false
-                )
-            }
+            setBlockedUrl(url, check.reason, check.detail)
             return true
         }
 

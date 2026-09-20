@@ -82,11 +82,7 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
-                    val isBlocked = viewModel.checkAndFilterUrl(url)
-                    if (isBlocked) {
-                        return true // Block navigation
-                    }
-                    return false
+                    return handleUrlNavigation(view, url)
                 }
 
                 override fun shouldInterceptRequest(
@@ -191,6 +187,44 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private fun handleUrlNavigation(view: WebView?, url: String): Boolean {
+        // 1. Detect if this is a search engine request
+        val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(url)
+        if (searchEngineQuery != null) {
+            // Check custom keyword on the extracted search query
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(
+                searchEngineQuery,
+                viewModel.uiState.value.customKeywords
+            )
+            if (blockedKw != null) {
+                viewModel.setBlockedUrl(
+                    url = url,
+                    reason = "Custom Keyword Protection",
+                    detail = "Search query blocked due to protected keyword: \"$blockedKw\""
+                )
+                return true // Block navigation
+            }
+
+            // If allowed, check if already Google SafeSearch
+            if (ProtectionEngine.isGoogleSafeSearchUrl(url)) {
+                return false // Let WebView proceed with Google SafeSearch
+            }
+
+            // Normalize to Google SafeSearch and load
+            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(searchEngineQuery)
+            view?.loadUrl(safeUrl)
+            return true // Intercepted and redirected
+        }
+
+        // 2. Direct URL navigation check
+        val isBlocked = viewModel.checkAndFilterUrl(url)
+        if (isBlocked) {
+            return true // Block navigation
+        }
+
+        return false
     }
 
     private fun clearAllData() {
@@ -388,7 +422,7 @@ fun BrowserApp(
                 }
             }
 
-            // Three-line Menu Sheet
+            // Three-line Menu Sheet (Compact Floating Window)
             if (uiState.isMenuOpen) {
                 BrowserMenuSheet(
                     uiState = uiState,
@@ -398,7 +432,11 @@ fun BrowserApp(
                     onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
-                    onToggleDesktopMode = onToggleDesktopMode
+                    onToggleDesktopMode = onToggleDesktopMode,
+                    onTranslateToBangla = {
+                        val target = viewModel.translateToBangla()
+                        webView.loadUrl(target)
+                    }
                 )
             }
         }
