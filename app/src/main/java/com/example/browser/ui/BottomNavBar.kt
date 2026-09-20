@@ -1,8 +1,9 @@
 package com.example.browser.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,10 +28,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BottomNavBar(
     canGoBack: Boolean,
@@ -39,6 +42,7 @@ fun BottomNavBar(
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
     onNewTab: () -> Unit,
+    onShowTabs: () -> Unit,
     onToggleDesktopMode: () -> Unit,
     onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier
@@ -91,11 +95,16 @@ fun BottomNavBar(
                 )
             }
 
-            // 3. Boxed Plus Button [ + ] (Functional New Browser Tab)
+            // 3. Boxed Plus Button [ + ] (Normal Tap: New Window/Tab, Long Press: Show Open Windows)
             Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .clickable(onClick = onNewTab)
+                    .clip(RoundedCornerShape(8.dp))
+                    .combinedClickable(
+                        onClick = onNewTab,
+                        onLongClick = onShowTabs,
+                        onLongClickLabel = "Show open windows"
+                    )
                     .testTag("nav_plus_button"),
                 contentAlignment = Alignment.Center
             ) {

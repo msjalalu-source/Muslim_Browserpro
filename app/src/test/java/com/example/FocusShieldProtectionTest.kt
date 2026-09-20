@@ -6,6 +6,7 @@ import com.example.browser.ProtectionEngine
 import com.example.browser.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -370,5 +371,71 @@ class FocusShieldProtectionTest {
         assertTrue("Should translate page url", pageTranslateUrl.startsWith("https://translate.google.com/translate?"))
         assertTrue("Should contain encoded url", pageTranslateUrl.contains("wikipedia.org"))
         assertTrue("Should enforce tl=bn", pageTranslateUrl.contains("tl=bn"))
+    }
+
+    @Test
+    fun `test plus button tap creates new window on home page while preserving old window`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+
+        // 1. Browse on first tab
+        val tab1Id = viewModel.uiState.value.currentTabId
+        viewModel.submitQueryOrUrl("https://www.google.com")
+        viewModel.onPageStarted("https://www.google.com")
+        viewModel.onPageFinished("https://www.google.com", "Google", false, false)
+
+        assertEquals("First tab has url", "https://www.google.com", viewModel.uiState.value.currentUrl)
+        assertFalse("First tab is not on home page", viewModel.uiState.value.isHomePage)
+
+        // Save a mock bundle state on tab 1
+        val mockBundle = android.os.Bundle().apply { putString("test_key", "tab1_state") }
+        viewModel.saveCurrentTabState(mockBundle)
+
+        // 2. Tap Plus button (openNewTab)
+        viewModel.openNewTab()
+
+        assertEquals("Should have 2 tabs now", 2, viewModel.uiState.value.tabs.size)
+        val tab2Id = viewModel.uiState.value.currentTabId
+        assertTrue("Current tab ID should be new tab", tab2Id != tab1Id)
+        assertTrue("New window must start on Home Page", viewModel.uiState.value.isHomePage)
+        assertEquals("New window url should be empty", "", viewModel.uiState.value.currentUrl)
+
+        // Verify Old Window is intact in the tabs list!
+        val oldTab = viewModel.uiState.value.tabs.find { it.id == tab1Id }
+        assertNotNull("Old window must exist in tabs list", oldTab)
+        assertEquals("Old window url must be intact", "https://www.google.com", oldTab?.url)
+        assertEquals("Old window title must be intact", "Google", oldTab?.pageTitle)
+        assertFalse("Old window is not home page", oldTab?.isHomePage == true)
+        assertEquals("Old window bundle state preserved", "tab1_state", oldTab?.bundle?.getString("test_key"))
+    }
+
+    @Test
+    fun `test long press plus button opens dialog without creating new window and allows restoration`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+
+        val tab1Id = viewModel.uiState.value.currentTabId
+        viewModel.submitQueryOrUrl("https://en.wikipedia.org")
+        viewModel.onPageStarted("https://en.wikipedia.org")
+        viewModel.onPageFinished("https://en.wikipedia.org", "Wikipedia", false, false)
+
+        viewModel.openNewTab()
+        val tab2Id = viewModel.uiState.value.currentTabId
+        assertEquals("Total 2 tabs", 2, viewModel.uiState.value.tabs.size)
+
+        // 1. Long-press action: Open Tabs Dialog
+        viewModel.openTabsDialog()
+        assertTrue("Tabs dialog must be open", viewModel.uiState.value.isTabsDialogOpen)
+        assertEquals("Long press MUST NOT create a new tab", 2, viewModel.uiState.value.tabs.size)
+        assertEquals("Active tab should remain tab2", tab2Id, viewModel.uiState.value.currentTabId)
+
+        // 2. Select Tab 1 from the list
+        viewModel.selectTab(tab1Id)
+        assertFalse("Selecting tab should close dialog", viewModel.uiState.value.isTabsDialogOpen)
+        assertEquals("Selected tab 1 should be restored as current", tab1Id, viewModel.uiState.value.currentTabId)
+        assertEquals("Restored tab should have its url", "https://en.wikipedia.org", viewModel.uiState.value.currentUrl)
+        assertEquals("Restored tab should have its title", "Wikipedia", viewModel.uiState.value.pageTitle)
+        assertFalse("Restored tab is not home page", viewModel.uiState.value.isHomePage)
+        assertEquals("Tabs count remains exactly 2", 2, viewModel.uiState.value.tabs.size)
     }
 }

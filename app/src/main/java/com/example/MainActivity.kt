@@ -5,6 +5,7 @@ import android.app.DownloadManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.ViewGroup
@@ -13,6 +14,7 @@ import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -47,6 +49,7 @@ import com.example.browser.ui.BottomNavBar
 import com.example.browser.ui.BrowserMenuSheet
 import com.example.browser.ui.BrowserWebView
 import com.example.browser.ui.HomePage
+import com.example.browser.ui.OpenWindowsDialog
 import com.example.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
 
@@ -66,14 +69,23 @@ class MainActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            // Fix White Screen: Match app dark theme canvas background to prevent white flash
+            setBackgroundColor(android.graphics.Color.parseColor("#0F172A"))
+
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                databaseEnabled = true
+                cacheMode = WebSettings.LOAD_DEFAULT
                 setSupportMultipleWindows(true)
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 builtInZoomControls = true
                 displayZoomControls = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    offscreenPreRaster = true
+                }
                 if (viewModel.uiState.value.isDesktopModeEnabled) {
                     userAgentString = DESKTOP_USER_AGENT
                 }
@@ -89,8 +101,8 @@ class MainActivity : ComponentActivity() {
                     view: WebView?,
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
-                    val url = request?.url?.toString() ?: return null
-                    if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(url)) {
+                    val uri = request?.url ?: return null
+                    if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(uri)) {
                         return WebResourceResponse(
                             "text/plain",
                             "UTF-8",
@@ -327,6 +339,7 @@ fun BrowserApp(
     // Handle Hardware/Gesture Back
     BackHandler(enabled = true) {
         when {
+            uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
             uiState.isMenuOpen -> viewModel.closeMenu()
             uiState.blockedInfo != null -> viewModel.goHome()
             !uiState.isHomePage -> {
@@ -356,8 +369,16 @@ fun BrowserApp(
                     if (webView.canGoForward()) webView.goForward()
                 },
                 onNewTab = {
+                    val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+                    if (currentTab != null && !currentTab.isHomePage) {
+                        val bundle = Bundle()
+                        webView.saveState(bundle)
+                        viewModel.saveCurrentTabState(bundle)
+                    }
                     viewModel.openNewTab()
-                    webView.loadUrl("about:blank")
+                },
+                onShowTabs = {
+                    viewModel.openTabsDialog()
                 },
                 onToggleDesktopMode = {
                     onToggleDesktopMode(!uiState.isDesktopModeEnabled)
@@ -375,51 +396,110 @@ fun BrowserApp(
                 .padding(innerPadding)
                 .background(Color(0xFF0F172A))
         ) {
-            when {
-                uiState.blockedInfo != null -> {
-                    BlockedScreen(
-                        blockedInfo = uiState.blockedInfo!!,
-                        onGoHome = { viewModel.goHome() },
-                        onGoBack = {
-                            if (webView.canGoBack()) {
-                                webView.goBack()
-                                viewModel.onPageStarted(webView.url ?: "")
-                            } else {
-                                viewModel.goHome()
-                            }
-                        },
-                        canGoBack = webView.canGoBack()
-                    )
-                }
+            // 1. BrowserWebView is persistently kept in the Box layout so the WebView instance
+            // remains warm and attached to the window, preventing teardown, re-attaching, and blank flashes.
+            BrowserWebView(
+                uiState = uiState,
+                webView = webView,
+                onUrlSubmit = { url ->
+                    val success = viewModel.submitQueryOrUrl(url)
+                    if (success) {
+                        webView.loadUrl(viewModel.uiState.value.currentUrl)
+                    }
+                },
+                onReload = { webView.reload() },
+                modifier = Modifier.fillMaxSize()
+            )
 
-                uiState.isHomePage -> {
-                    HomePage(
-                        uiState = uiState,
-                        favoriteSites = viewModel.favoriteSites,
-                        onQueryChange = { viewModel.onSearchInputChange(it) },
-                        onSubmitQuery = { query ->
-                            val success = viewModel.submitQueryOrUrl(query)
-                            if (success) {
-                                webView.loadUrl(viewModel.uiState.value.currentUrl)
-                            }
-                        },
-                        onSelectCategory = { viewModel.selectCategory(it) }
-                    )
-                }
+            // 2. HomePage overlay when on home page and not blocked
+            if (uiState.isHomePage && uiState.blockedInfo == null) {
+                HomePage(
+                    uiState = uiState,
+                    favoriteSites = viewModel.favoriteSites,
+                    onQueryChange = { viewModel.onSearchInputChange(it) },
+                    onSubmitQuery = { query ->
+                        val success = viewModel.submitQueryOrUrl(query)
+                        if (success) {
+                            webView.loadUrl(viewModel.uiState.value.currentUrl)
+                        }
+                    },
+                    onSelectCategory = { viewModel.selectCategory(it) },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
-                else -> {
-                    BrowserWebView(
-                        uiState = uiState,
-                        webView = webView,
-                        onUrlSubmit = { url ->
-                            val success = viewModel.submitQueryOrUrl(url)
-                            if (success) {
-                                webView.loadUrl(viewModel.uiState.value.currentUrl)
+            // 3. BlockedScreen overlay when content is blocked
+            if (uiState.blockedInfo != null) {
+                BlockedScreen(
+                    blockedInfo = uiState.blockedInfo!!,
+                    onGoHome = { viewModel.goHome() },
+                    onGoBack = {
+                        if (webView.canGoBack()) {
+                            webView.goBack()
+                            viewModel.onPageStarted(webView.url ?: "")
+                        } else {
+                            viewModel.goHome()
+                        }
+                    },
+                    canGoBack = webView.canGoBack(),
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // Open Windows Dialog (Triggered by Long-Press on + Button)
+            if (uiState.isTabsDialogOpen) {
+                OpenWindowsDialog(
+                    uiState = uiState,
+                    onSelectTab = { selectedTabId ->
+                        if (selectedTabId != viewModel.uiState.value.currentTabId) {
+                            val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+                            if (currentTab != null && !currentTab.isHomePage) {
+                                val bundle = Bundle()
+                                webView.saveState(bundle)
+                                viewModel.saveCurrentTabState(bundle)
                             }
-                        },
-                        onReload = { webView.reload() }
-                    )
-                }
+                            val targetTab = viewModel.uiState.value.tabs.find { it.id == selectedTabId }
+                            viewModel.selectTab(selectedTabId)
+                            if (targetTab != null) {
+                                if (targetTab.isHomePage) {
+                                    // Composable HomePage will be displayed
+                                } else {
+                                    if (targetTab.bundle != null) {
+                                        webView.restoreState(targetTab.bundle)
+                                    } else if (targetTab.url.isNotEmpty()) {
+                                        webView.loadUrl(targetTab.url)
+                                    }
+                                }
+                            }
+                        } else {
+                            viewModel.closeTabsDialog()
+                        }
+                    },
+                    onCloseTab = { tabId ->
+                        val wasActive = (tabId == viewModel.uiState.value.currentTabId)
+                        viewModel.closeTab(tabId)
+                        if (wasActive) {
+                            val newActive = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+                            if (newActive != null && !newActive.isHomePage) {
+                                if (newActive.bundle != null) {
+                                    webView.restoreState(newActive.bundle)
+                                } else if (newActive.url.isNotEmpty()) {
+                                    webView.loadUrl(newActive.url)
+                                }
+                            }
+                        }
+                    },
+                    onNewTab = {
+                        val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+                        if (currentTab != null && !currentTab.isHomePage) {
+                            val bundle = Bundle()
+                            webView.saveState(bundle)
+                            viewModel.saveCurrentTabState(bundle)
+                        }
+                        viewModel.openNewTab()
+                    },
+                    onDismiss = { viewModel.closeTabsDialog() }
+                )
             }
 
             // Three-line Menu Sheet (Compact Floating Window)

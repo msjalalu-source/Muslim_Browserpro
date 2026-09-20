@@ -35,7 +35,8 @@ data class BrowserTab(
     val canGoForward: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
     val isLoading: Boolean = false,
-    val loadingProgress: Int = 0
+    val loadingProgress: Int = 0,
+    val bundle: android.os.Bundle? = null
 )
 
 data class BrowserUiState(
@@ -50,6 +51,7 @@ data class BrowserUiState(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val isMenuOpen: Boolean = false,
+    val isTabsDialogOpen: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
     val toastMessage: String? = null,
     val selectedCategory: String = "All",
@@ -93,11 +95,30 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openMenu() {
-        _uiState.update { it.copy(isMenuOpen = true) }
+        _uiState.update { it.copy(isMenuOpen = true, isTabsDialogOpen = false) }
     }
 
     fun closeMenu() {
         _uiState.update { it.copy(isMenuOpen = false) }
+    }
+
+    fun openTabsDialog() {
+        _uiState.update { it.copy(isTabsDialogOpen = true, isMenuOpen = false) }
+    }
+
+    fun closeTabsDialog() {
+        _uiState.update { it.copy(isTabsDialogOpen = false) }
+    }
+
+    fun saveCurrentTabState(bundle: android.os.Bundle?) {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(bundle = bundle)
+                } else tab
+            }
+            state.copy(tabs = updatedTabs)
+        }
     }
 
     fun openNewTab(url: String = "") {
@@ -120,7 +141,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 loadingProgress = 0,
                 canGoBack = false,
                 canGoForward = false,
-                blockedInfo = null
+                blockedInfo = null,
+                isTabsDialogOpen = false,
+                isMenuOpen = false
             )
         }
     }
@@ -138,7 +161,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 loadingProgress = tab.loadingProgress,
                 canGoBack = tab.canGoBack,
                 canGoForward = tab.canGoForward,
-                blockedInfo = tab.blockedInfo
+                blockedInfo = tab.blockedInfo,
+                isTabsDialogOpen = false
             )
         }
     }
@@ -187,7 +211,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         searchInput = "",
                         pageTitle = "Home",
                         isLoading = false,
-                        blockedInfo = null
+                        blockedInfo = null,
+                        bundle = null
                     )
                 } else tab
             }
@@ -198,7 +223,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 searchInput = "",
                 pageTitle = "Home",
                 isLoading = false,
-                blockedInfo = null
+                blockedInfo = null,
+                isTabsDialogOpen = false
             )
         }
     }
@@ -381,6 +407,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onPageStarted(url: String) {
+        if (url.isBlank() || url == "about:blank") return
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
@@ -405,6 +432,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onPageFinished(url: String, title: String?, canBack: Boolean, canForward: Boolean) {
+        if (url.isBlank() || url == "about:blank") return
         val effectiveTitle = if (!title.isNullOrBlank()) title else url
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->

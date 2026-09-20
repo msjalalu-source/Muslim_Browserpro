@@ -154,8 +154,8 @@ object ProtectionEngine {
         val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
         return when {
-            // Google Search
-            isGoogleHost(host) && (path.contains("/search") || path.contains("/webhp") || uri.getQueryParameter("q") != null) -> {
+            // Google Search (search results or web search home with query, excluding outbound /url redirects)
+            isGoogleHost(host) && !path.startsWith("/url") && (path.contains("/search") || path.contains("/webhp") || ((path == "/" || path.isEmpty()) && uri.getQueryParameter("q") != null)) -> {
                 uri.getQueryParameter("q")?.takeIf { it.isNotBlank() }
             }
             // Bing Search
@@ -306,6 +306,27 @@ object ProtectionEngine {
             val parent = host.substring(dotIndex + 1)
             if (domainSet.contains(parent)) return true
             dotIndex = host.indexOf('.', dotIndex + 1)
+        }
+        return false
+    }
+
+    /**
+     * Checks if a network request is directed at a known advertisement network.
+     * Uses Uri directly to avoid redundant string allocations and URI reparsing.
+     */
+    fun isAdRequest(uri: Uri): Boolean {
+        val host = uri.host?.lowercase(Locale.ROOT)
+        if (host != null && host.isNotEmpty()) {
+            if (matchesDomainOrSubdomain(host, KNOWN_AD_DOMAINS)) {
+                return true
+            }
+        }
+        val url = uri.toString()
+        val normalized = url.lowercase(Locale.ROOT)
+        for (adDomain in KNOWN_AD_DOMAINS) {
+            if (normalized.contains(adDomain)) {
+                return true
+            }
         }
         return false
     }
