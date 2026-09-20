@@ -262,4 +262,43 @@ class FocusShieldProtectionTest {
         assertTrue("Popup blocking remains intact", reloadedRepo.isPopupBlockingEnabled)
         assertTrue("Ad blocking remains intact", reloadedRepo.isAdBlockingEnabled)
     }
+
+    // ==========================================
+    // 7. MULTI-TAB & NEW TAB NAVIGATION TESTS
+    // ==========================================
+
+    @Test
+    fun `test new tab creation and switching in BrowserViewModel`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+        assertEquals("Initial state should have 1 tab", 1, viewModel.uiState.value.tabs.size)
+        val firstTabId = viewModel.uiState.value.currentTabId
+
+        // Open new tab
+        viewModel.openNewTab()
+        assertEquals("Should now have 2 tabs", 2, viewModel.uiState.value.tabs.size)
+        val secondTabId = viewModel.uiState.value.currentTabId
+        assertTrue("New tab must have different ID", firstTabId != secondTabId)
+        assertTrue("New tab should start on home page", viewModel.uiState.value.isHomePage)
+
+        // Switch back to first tab
+        viewModel.selectTab(firstTabId)
+        assertEquals("Current tab ID should be first tab", firstTabId, viewModel.uiState.value.currentTabId)
+
+        // Close second tab
+        viewModel.closeTab(secondTabId)
+        assertEquals("Should have 1 tab remaining", 1, viewModel.uiState.value.tabs.size)
+    }
+
+    @Test
+    fun `test protection applies equally across multiple tabs`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+        viewModel.openNewTab()
+
+        // Submit adult query on the new tab
+        val allowed = viewModel.submitQueryOrUrl("pornhub")
+        assertFalse("Adult content must be blocked on new tabs", allowed)
+        assertTrue("Blocked info must be set", viewModel.uiState.value.blockedInfo != null)
+    }
 }

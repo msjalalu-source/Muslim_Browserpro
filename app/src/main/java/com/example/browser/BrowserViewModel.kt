@@ -25,7 +25,22 @@ data class FavoriteSite(
     val badgeColor: Long
 )
 
+data class BrowserTab(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val url: String = "",
+    val searchInput: String = "",
+    val pageTitle: String = "Home",
+    val isHomePage: Boolean = true,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+    val blockedInfo: BlockedInfo? = null,
+    val isLoading: Boolean = false,
+    val loadingProgress: Int = 0
+)
+
 data class BrowserUiState(
+    val tabs: List<BrowserTab> = listOf(BrowserTab(id = "default_tab")),
+    val currentTabId: String = "default_tab",
     val isHomePage: Boolean = true,
     val currentUrl: String = "",
     val searchInput: String = "",
@@ -85,9 +100,99 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(isMenuOpen = false) }
     }
 
+    fun openNewTab(url: String = "") {
+        val newTab = BrowserTab(
+            url = url,
+            searchInput = url,
+            pageTitle = if (url.isNotEmpty()) url else "Home",
+            isHomePage = url.isEmpty()
+        )
+        _uiState.update { state ->
+            val updatedTabs = state.tabs + newTab
+            state.copy(
+                tabs = updatedTabs,
+                currentTabId = newTab.id,
+                isHomePage = newTab.isHomePage,
+                currentUrl = newTab.url,
+                searchInput = newTab.searchInput,
+                pageTitle = newTab.pageTitle,
+                isLoading = false,
+                loadingProgress = 0,
+                canGoBack = false,
+                canGoForward = false,
+                blockedInfo = null
+            )
+        }
+    }
+
+    fun selectTab(tabId: String) {
+        val tab = _uiState.value.tabs.find { it.id == tabId } ?: return
+        _uiState.update { state ->
+            state.copy(
+                currentTabId = tab.id,
+                isHomePage = tab.isHomePage,
+                currentUrl = tab.url,
+                searchInput = tab.searchInput,
+                pageTitle = tab.pageTitle,
+                isLoading = tab.isLoading,
+                loadingProgress = tab.loadingProgress,
+                canGoBack = tab.canGoBack,
+                canGoForward = tab.canGoForward,
+                blockedInfo = tab.blockedInfo
+            )
+        }
+    }
+
+    fun closeTab(tabId: String) {
+        val currentTabs = _uiState.value.tabs
+        if (currentTabs.size <= 1) {
+            goHome()
+            return
+        }
+        val indexToRemove = currentTabs.indexOfFirst { it.id == tabId }
+        if (indexToRemove == -1) return
+
+        val newTabs = currentTabs.filter { it.id != tabId }
+        val newCurrentTab = if (_uiState.value.currentTabId == tabId) {
+            val nextIndex = (indexToRemove - 1).coerceAtLeast(0)
+            newTabs[nextIndex]
+        } else {
+            newTabs.find { it.id == _uiState.value.currentTabId } ?: newTabs.first()
+        }
+
+        _uiState.update { state ->
+            state.copy(
+                tabs = newTabs,
+                currentTabId = newCurrentTab.id,
+                isHomePage = newCurrentTab.isHomePage,
+                currentUrl = newCurrentTab.url,
+                searchInput = newCurrentTab.searchInput,
+                pageTitle = newCurrentTab.pageTitle,
+                isLoading = newCurrentTab.isLoading,
+                loadingProgress = newCurrentTab.loadingProgress,
+                canGoBack = newCurrentTab.canGoBack,
+                canGoForward = newCurrentTab.canGoForward,
+                blockedInfo = newCurrentTab.blockedInfo
+            )
+        }
+    }
+
     fun goHome() {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        isHomePage = true,
+                        url = "",
+                        searchInput = "",
+                        pageTitle = "Home",
+                        isLoading = false,
+                        blockedInfo = null
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
                 isHomePage = true,
                 currentUrl = "",
                 searchInput = "",
@@ -109,14 +214,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         // Check query or URL with ProtectionEngine
         val checkResult = ProtectionEngine.checkUrlOrQuery(trimmed, _uiState.value.customKeywords)
         if (checkResult is ProtectionEngine.FilterResult.Blocked) {
-            _uiState.update {
-                it.copy(
+            val info = BlockedInfo(
+                reason = checkResult.reason,
+                detail = checkResult.detail,
+                targetUrl = trimmed
+            )
+            _uiState.update { state ->
+                val updatedTabs = state.tabs.map { tab ->
+                    if (tab.id == state.currentTabId) {
+                        tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
+                    } else tab
+                }
+                state.copy(
+                    tabs = updatedTabs,
                     isHomePage = false,
-                    blockedInfo = BlockedInfo(
-                        reason = checkResult.reason,
-                        detail = checkResult.detail,
-                        targetUrl = trimmed
-                    ),
+                    blockedInfo = info,
                     isLoading = false
                 )
             }
@@ -133,14 +245,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             ProtectionEngine.checkUrlOrQuery(targetUrl, _uiState.value.customKeywords)
         }
         if (resolvedCheck is ProtectionEngine.FilterResult.Blocked) {
-            _uiState.update {
-                it.copy(
+            val info = BlockedInfo(
+                reason = resolvedCheck.reason,
+                detail = resolvedCheck.detail,
+                targetUrl = targetUrl
+            )
+            _uiState.update { state ->
+                val updatedTabs = state.tabs.map { tab ->
+                    if (tab.id == state.currentTabId) {
+                        tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
+                    } else tab
+                }
+                state.copy(
+                    tabs = updatedTabs,
                     isHomePage = false,
-                    blockedInfo = BlockedInfo(
-                        reason = resolvedCheck.reason,
-                        detail = resolvedCheck.detail,
-                        targetUrl = targetUrl
-                    ),
+                    blockedInfo = info,
                     isLoading = false
                 )
             }
@@ -157,8 +276,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return false
         }
 
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        isHomePage = false,
+                        url = targetUrl,
+                        searchInput = targetUrl,
+                        blockedInfo = null,
+                        isLoading = true
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
                 isHomePage = false,
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
@@ -189,13 +320,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun checkAndFilterUrl(url: String): Boolean {
         val check = ProtectionEngine.checkUrlOrQuery(url, _uiState.value.customKeywords)
         if (check is ProtectionEngine.FilterResult.Blocked) {
-            _uiState.update {
-                it.copy(
-                    blockedInfo = BlockedInfo(
-                        reason = check.reason,
-                        detail = check.detail,
-                        targetUrl = url
-                    ),
+            val info = BlockedInfo(
+                reason = check.reason,
+                detail = check.detail,
+                targetUrl = url
+            )
+            _uiState.update { state ->
+                val updatedTabs = state.tabs.map { tab ->
+                    if (tab.id == state.currentTabId) {
+                        tab.copy(blockedInfo = info, isLoading = false)
+                    } else tab
+                }
+                state.copy(
+                    tabs = updatedTabs,
+                    blockedInfo = info,
                     isLoading = false
                 )
             }
@@ -216,32 +354,70 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onPageStarted(url: String) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        isLoading = true,
+                        url = url,
+                        searchInput = url,
+                        blockedInfo = null,
+                        isHomePage = false
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
                 isLoading = true,
                 currentUrl = url,
                 searchInput = url,
-                blockedInfo = null
+                blockedInfo = null,
+                isHomePage = false
             )
         }
     }
 
     fun onPageFinished(url: String, title: String?, canBack: Boolean, canForward: Boolean) {
-        _uiState.update {
-            it.copy(
+        val effectiveTitle = if (!title.isNullOrBlank()) title else url
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        isLoading = false,
+                        url = url,
+                        searchInput = url,
+                        pageTitle = effectiveTitle,
+                        canGoBack = canBack,
+                        canGoForward = canForward,
+                        isHomePage = false
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
                 isLoading = false,
                 currentUrl = url,
                 searchInput = url,
-                pageTitle = if (!title.isNullOrBlank()) title else url,
+                pageTitle = effectiveTitle,
                 canGoBack = canBack,
-                canGoForward = canForward
+                canGoForward = canForward,
+                isHomePage = false
             )
         }
     }
 
     fun onProgressChanged(progress: Int) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        loadingProgress = progress,
+                        isLoading = progress < 100
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
                 loadingProgress = progress,
                 isLoading = progress < 100
             )

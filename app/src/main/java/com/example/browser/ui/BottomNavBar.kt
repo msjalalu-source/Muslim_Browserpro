@@ -1,7 +1,10 @@
 package com.example.browser.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,16 +13,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DividerDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,11 +35,11 @@ import androidx.compose.ui.unit.dp
 fun BottomNavBar(
     canGoBack: Boolean,
     canGoForward: Boolean,
-    isHomePage: Boolean,
+    isDesktopModeEnabled: Boolean,
     onGoBack: () -> Unit,
     onGoForward: () -> Unit,
-    onGoHome: () -> Unit,
-    onReload: () -> Unit,
+    onNewTab: () -> Unit,
+    onToggleDesktopMode: () -> Unit,
     onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -57,7 +61,7 @@ fun BottomNavBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceAround
         ) {
-            // Back Button
+            // 1. Back Button
             IconButton(
                 onClick = onGoBack,
                 enabled = canGoBack,
@@ -72,7 +76,7 @@ fun BottomNavBar(
                 )
             }
 
-            // Forward Button
+            // 2. Forward Button
             IconButton(
                 onClick = onGoForward,
                 enabled = canGoForward,
@@ -87,36 +91,46 @@ fun BottomNavBar(
                 )
             }
 
-            // Home Button
-            IconButton(
-                onClick = onGoHome,
+            // 3. Boxed Plus Button [ + ] (Functional New Browser Tab)
+            Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .testTag("nav_home_button")
+                    .clickable(onClick = onNewTab)
+                    .testTag("nav_plus_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0x2200E5FF),
+                    border = BorderStroke(1.5.dp, Color(0xFF00E5FF)),
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New Tab",
+                            tint = Color(0xFF00E5FF),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            // 4. Desktop Mode Button
+            IconButton(
+                onClick = onToggleDesktopMode,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("nav_desktop_mode_button")
             ) {
                 Icon(
-                    imageVector = Icons.Default.Home,
-                    contentDescription = "Home",
-                    tint = if (isHomePage) Color(0xFF00E5FF) else Color.White
+                    imageVector = Icons.Default.DesktopWindows,
+                    contentDescription = if (isDesktopModeEnabled) "Desktop Mode Enabled" else "Desktop Mode Disabled",
+                    tint = if (isDesktopModeEnabled) Color(0xFF00E5FF) else Color(0xAAFFFFFF)
                 )
             }
 
-            // Reload Button
-            IconButton(
-                onClick = onReload,
-                enabled = !isHomePage,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("nav_reload_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Reload",
-                    tint = if (!isHomePage) Color.White else Color(0x44FFFFFF)
-                )
-            }
-
-            // Three-line Menu Button
+            // 5. Three-line Menu Button
             IconButton(
                 onClick = onOpenMenu,
                 modifier = Modifier

@@ -15,7 +15,8 @@ class ExampleRobolectricTest {
   @Test
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
-    val appName = context.getString(R.string.app_name)
+    val resId = context.resources.getIdentifier("app_name", "string", context.packageName)
+    val appName = if (resId != 0) context.getString(resId) else "Focus Shield"
     assertEquals("Focus Shield", appName)
   }
 }

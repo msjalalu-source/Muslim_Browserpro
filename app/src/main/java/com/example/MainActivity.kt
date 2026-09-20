@@ -314,22 +314,19 @@ fun BrowserApp(
             BottomNavBar(
                 canGoBack = uiState.canGoBack && !uiState.isHomePage,
                 canGoForward = uiState.canGoForward && !uiState.isHomePage,
-                isHomePage = uiState.isHomePage,
+                isDesktopModeEnabled = uiState.isDesktopModeEnabled,
                 onGoBack = {
                     if (webView.canGoBack()) webView.goBack() else viewModel.goHome()
                 },
                 onGoForward = {
                     if (webView.canGoForward()) webView.goForward()
                 },
-                onGoHome = {
-                    viewModel.goHome()
+                onNewTab = {
+                    viewModel.openNewTab()
+                    webView.loadUrl("about:blank")
                 },
-                onReload = {
-                    if (uiState.blockedInfo != null) {
-                        viewModel.goHome()
-                    } else {
-                        webView.reload()
-                    }
+                onToggleDesktopMode = {
+                    onToggleDesktopMode(!uiState.isDesktopModeEnabled)
                 },
                 onOpenMenu = {
                     viewModel.openMenu()
