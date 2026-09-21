@@ -21,10 +21,58 @@ class SettingsRepository(context: Context) {
 
     // In-memory cache of keywords to avoid disk reads on every URL evaluation
     private val inMemoryKeywords = LinkedHashSet<String>()
+    // Pre-normalized lowercased keywords cache for O(1) string checks without repeated allocation
+    private val inMemoryNormalizedKeywords = ArrayList<String>()
+
+    // In-memory cache of favorite websites to avoid repeated JSON deserialization on UI renders
+    private val inMemoryFavorites = ArrayList<FavoriteSite>()
 
     init {
-        val saved = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
-        inMemoryKeywords.addAll(saved)
+        val savedKeywords = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
+        inMemoryKeywords.addAll(savedKeywords)
+        rebuildNormalizedKeywords()
+
+        // Load favorites once from disk into memory
+        loadFavoritesFromDisk()
+    }
+
+    private fun rebuildNormalizedKeywords() {
+        inMemoryNormalizedKeywords.clear()
+        for (kw in inMemoryKeywords) {
+            val normalized = kw.trim().lowercase(Locale.ROOT)
+            if (normalized.isNotEmpty() && !inMemoryNormalizedKeywords.contains(normalized)) {
+                inMemoryNormalizedKeywords.add(normalized)
+            }
+        }
+    }
+
+    private fun loadFavoritesFromDisk() {
+        inMemoryFavorites.clear()
+        val rawJson = prefs.getString(KEY_FAVORITES, null)
+        if (rawJson == null) {
+            inMemoryFavorites.addAll(DEFAULT_FAVORITES)
+            return
+        }
+        try {
+            val jsonArray = JSONArray(rawJson)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                inMemoryFavorites.add(
+                    FavoriteSite(
+                        id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                        name = obj.getString("name"),
+                        url = obj.getString("url"),
+                        iconLetter = obj.optString("iconLetter", obj.getString("name").take(2).uppercase()),
+                        badgeColor = obj.optLong("badgeColor", 0xFF4285F4)
+                    )
+                )
+            }
+            if (inMemoryFavorites.isEmpty()) {
+                inMemoryFavorites.addAll(DEFAULT_FAVORITES)
+            }
+        } catch (_: Exception) {
+            inMemoryFavorites.addAll(DEFAULT_FAVORITES)
+        }
     }
 
     /**
@@ -32,6 +80,13 @@ class SettingsRepository(context: Context) {
      */
     fun getCustomKeywords(): Set<String> {
         return inMemoryKeywords.toSet()
+    }
+
+    /**
+     * Gets cached pre-normalized (lowercase, trimmed) keywords to avoid per-request allocations.
+     */
+    fun getNormalizedKeywords(): List<String> {
+        return inMemoryNormalizedKeywords
     }
 
     /**
@@ -43,14 +98,14 @@ class SettingsRepository(context: Context) {
         val trimmed = keyword.trim()
         if (trimmed.isEmpty()) return false
 
-        // Check duplicates (case-insensitive)
-        for (existing in inMemoryKeywords) {
-            if (existing.equals(trimmed, ignoreCase = true)) {
-                return false
-            }
+        // Check duplicates (case-insensitive) using pre-normalized cache
+        val normalized = trimmed.lowercase(Locale.ROOT)
+        if (inMemoryNormalizedKeywords.contains(normalized)) {
+            return false
         }
 
         inMemoryKeywords.add(trimmed)
+        inMemoryNormalizedKeywords.add(normalized)
         prefs.edit()
             .putStringSet(KEY_CUSTOM_KEYWORDS, inMemoryKeywords.toSet())
             .apply()
@@ -58,36 +113,20 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Retrieves the persistent list of favorite websites.
-     * Falls back to default favorites on initial launch.
+     * Retrieves the list of favorite websites from fast in-memory cache.
+     * Avoids JSON parsing on UI recomposition or navigation.
      */
     fun getFavoriteSites(): List<FavoriteSite> {
-        val rawJson = prefs.getString(KEY_FAVORITES, null) ?: return DEFAULT_FAVORITES
-        return try {
-            val jsonArray = JSONArray(rawJson)
-            val list = mutableListOf<FavoriteSite>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                list.add(
-                    FavoriteSite(
-                        id = obj.optString("id", java.util.UUID.randomUUID().toString()),
-                        name = obj.getString("name"),
-                        url = obj.getString("url"),
-                        iconLetter = obj.optString("iconLetter", obj.getString("name").take(2).uppercase()),
-                        badgeColor = obj.optLong("badgeColor", 0xFF4285F4)
-                    )
-                )
-            }
-            if (list.isEmpty()) DEFAULT_FAVORITES else list
-        } catch (e: Exception) {
-            DEFAULT_FAVORITES
-        }
+        return inMemoryFavorites.toList()
     }
 
     /**
-     * Saves the updated list of favorite websites to SharedPreferences.
+     * Saves the updated list of favorite websites to SharedPreferences asynchronously.
      */
     fun saveFavoriteSites(sites: List<FavoriteSite>) {
+        inMemoryFavorites.clear()
+        inMemoryFavorites.addAll(sites)
+
         val jsonArray = JSONArray()
         for (site in sites) {
             val obj = JSONObject().apply {
@@ -107,7 +146,6 @@ class SettingsRepository(context: Context) {
      * Formats URL with https:// if scheme is missing, computes iconLetter and badge color.
      */
     fun addFavoriteSite(name: String, url: String): FavoriteSite {
-        val current = getFavoriteSites().toMutableList()
         val trimmedName = name.trim()
         val trimmedUrl = url.trim()
         val formattedUrl = if (!trimmedUrl.startsWith("http://", ignoreCase = true) && !trimmedUrl.startsWith("https://", ignoreCase = true)) {
@@ -126,6 +164,7 @@ class SettingsRepository(context: Context) {
             iconLetter = letter,
             badgeColor = color
         )
+        val current = inMemoryFavorites.toMutableList()
         current.add(newSite)
         saveFavoriteSites(current)
         return newSite
@@ -135,7 +174,7 @@ class SettingsRepository(context: Context) {
      * Updates an existing favorite website.
      */
     fun updateFavoriteSite(id: String, name: String, url: String): Boolean {
-        val current = getFavoriteSites().toMutableList()
+        val current = inMemoryFavorites.toMutableList()
         val index = current.indexOfFirst { it.id == id }
         if (index == -1) return false
         val existing = current[index]

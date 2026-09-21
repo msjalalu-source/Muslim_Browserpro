@@ -2,7 +2,9 @@ package com.example
 
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -10,7 +12,9 @@ import android.os.Bundle
 import android.os.Environment
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -23,6 +27,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -57,6 +62,18 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: BrowserViewModel by viewModels()
     private var webViewInstance: WebView? = null
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val callback = fileChooserCallback
+        fileChooserCallback = null
+        if (callback == null) return@registerForActivityResult
+
+        val uris = parseFileChooserResult(result.resultCode, result.data, contentResolver)
+        callback.onReceiveValue(uris)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,9 +99,12 @@ class MainActivity : ComponentActivity() {
                 builtInZoomControls = true
                 displayZoomControls = false
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                // Keep offscreenPreRaster false to reduce RAM and GPU rasterization load
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    offscreenPreRaster = true
+                    offscreenPreRaster = false
                 }
+                mediaPlaybackRequiresUserGesture = true
+                saveFormData = false
                 if (viewModel.uiState.value.isDesktopModeEnabled) {
                     userAgentString = DESKTOP_USER_AGENT
                 }
@@ -153,6 +173,39 @@ class MainActivity : ComponentActivity() {
                     }
                     return false
                 }
+
+                override fun onShowFileChooser(
+                    view: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    // Safely clear any previous pending callback to prevent leaks / frozen chooser
+                    fileChooserCallback?.onReceiveValue(null)
+                    fileChooserCallback = filePathCallback
+
+                    val isMultiple = fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+                    val acceptTypes = fileChooserParams?.acceptTypes
+                    val chooserIntent = createFileChooserIntent(acceptTypes, isMultiple)
+
+                    return try {
+                        fileChooserLauncher.launch(chooserIntent)
+                        true
+                    } catch (e: ActivityNotFoundException) {
+                        try {
+                            val fallbackIntent = createGetContentIntent(acceptTypes, isMultiple)
+                            fileChooserLauncher.launch(fallbackIntent)
+                            true
+                        } catch (e2: Exception) {
+                            fileChooserCallback?.onReceiveValue(null)
+                            fileChooserCallback = null
+                            false
+                        }
+                    } catch (e: Exception) {
+                        fileChooserCallback?.onReceiveValue(null)
+                        fileChooserCallback = null
+                        false
+                    }
+                }
             }
 
             setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
@@ -207,7 +260,8 @@ class MainActivity : ComponentActivity() {
             // Check custom keyword on the extracted search query
             val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(
                 searchEngineQuery,
-                viewModel.uiState.value.customKeywords
+                viewModel.uiState.value.customKeywords,
+                viewModel.getNormalizedKeywords()
             )
             if (blockedKw != null) {
                 viewModel.setBlockedUrl(
@@ -297,9 +351,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        webViewInstance?.apply {
+            onPause()
+            pauseTimers()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        webViewInstance?.apply {
+            onResume()
+            resumeTimers()
+        }
+    }
+
     override fun onDestroy() {
+        fileChooserCallback?.onReceiveValue(null)
+        fileChooserCallback = null
         webViewInstance?.apply {
             stopLoading()
+            pauseTimers()
+            onPause()
             loadUrl("about:blank")
             clearHistory()
             removeAllViews()
@@ -312,6 +386,122 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        // Normalizes and sanitizes MIME types requested by websites via accept attributes.
+        // Handles comma-separated values, extensions (.pdf, .png, etc.), and defaults to all types.
+        fun normalizeMimeTypes(acceptTypes: Array<String>?): Array<String> {
+            if (acceptTypes == null || acceptTypes.isEmpty()) {
+                return arrayOf("*/*")
+            }
+            val mimeList = mutableListOf<String>()
+            for (raw in acceptTypes) {
+                if (raw.isBlank()) continue
+                val parts = raw.split(",")
+                for (part in parts) {
+                    val trimmed = part.trim()
+                    if (trimmed.isEmpty()) continue
+                    if (trimmed.startsWith(".")) {
+                        val ext = trimmed.substring(1).lowercase(java.util.Locale.ROOT)
+                        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                        if (mime != null) {
+                            mimeList.add(mime)
+                        } else {
+                            mimeList.add("*/*")
+                        }
+                    } else if (trimmed.contains("/")) {
+                        mimeList.add(trimmed)
+                    }
+                }
+            }
+            return if (mimeList.isEmpty()) arrayOf("*/*") else mimeList.distinct().toTypedArray()
+        }
+
+        /**
+         * Creates standard Android System Document Picker Intent (ACTION_OPEN_DOCUMENT).
+         */
+        fun createFileChooserIntent(
+            acceptTypes: Array<String>?,
+            isMultiple: Boolean
+        ): Intent {
+            val mimeTypes = normalizeMimeTypes(acceptTypes)
+            return Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (isMultiple) {
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                if (mimeTypes.size == 1) {
+                    type = mimeTypes[0]
+                } else {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+                }
+            }
+        }
+
+        /**
+         * Fallback intent using ACTION_GET_CONTENT if ACTION_OPEN_DOCUMENT is unsupported.
+         */
+        fun createGetContentIntent(
+            acceptTypes: Array<String>?,
+            isMultiple: Boolean
+        ): Intent {
+            val mimeTypes = normalizeMimeTypes(acceptTypes)
+            return Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (isMultiple) {
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                }
+                if (mimeTypes.size == 1) {
+                    type = mimeTypes[0]
+                } else {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+                }
+            }
+        }
+
+        /**
+         * Parses Activity result from system file picker into Array<Uri>? for WebView callback.
+         * Handles single file, multiple files (ClipData), and cancellation/back press.
+         */
+        fun parseFileChooserResult(
+            resultCode: Int,
+            data: Intent?,
+            resolver: android.content.ContentResolver? = null
+        ): Array<Uri>? {
+            if (resultCode != android.app.Activity.RESULT_OK || data == null) {
+                return null
+            }
+            val clipData = data.clipData
+            val singleUri = data.data
+
+            return when {
+                clipData != null && clipData.itemCount > 0 -> {
+                    Array(clipData.itemCount) { index ->
+                        val uri = clipData.getItemAt(index).uri
+                        try {
+                            resolver?.takePersistableUriPermission(
+                                uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        } catch (_: Exception) {}
+                        uri
+                    }
+                }
+                singleUri != null -> {
+                    try {
+                        resolver?.takePersistableUriPermission(
+                            singleUri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Exception) {}
+                    arrayOf(singleUri)
+                }
+                else -> null
+            }
+        }
     }
 }
 
@@ -414,7 +604,7 @@ fun BrowserApp(
             if (uiState.isHomePage && uiState.blockedInfo == null) {
                 HomePage(
                     uiState = uiState,
-                    favoriteSites = viewModel.favoriteSites,
+                    favoriteSites = uiState.favoriteSites,
                     onQueryChange = { viewModel.onSearchInputChange(it) },
                     onSubmitQuery = { query ->
                         val success = viewModel.submitQueryOrUrl(query)

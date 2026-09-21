@@ -1,6 +1,10 @@
 package com.example
 
+import android.app.Activity
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.example.browser.ProtectionEngine
 import com.example.browser.SettingsRepository
@@ -498,5 +502,128 @@ class FocusShieldProtectionTest {
         assertNotNull(updatedItem)
         assertEquals("Sunnah Hadith", updatedItem?.name)
         assertEquals("https://sunnah.com/bukhari", updatedItem?.url)
+    }
+
+    // ==========================================
+    // 6. FILE CHOOSER & UPLOAD TESTS
+    // ==========================================
+
+    @Test
+    fun `test normalizeMimeTypes handles image types and extensions`() {
+        val imageMime = MainActivity.normalizeMimeTypes(arrayOf("image/*"))
+        assertEquals(1, imageMime.size)
+        assertEquals("image/*", imageMime[0])
+
+        val specificImages = MainActivity.normalizeMimeTypes(arrayOf("image/png, image/jpeg"))
+        assertTrue("Must contain image/png", specificImages.contains("image/png"))
+        assertTrue("Must contain image/jpeg", specificImages.contains("image/jpeg"))
+
+        val extensions = MainActivity.normalizeMimeTypes(arrayOf(".png", ".jpg"))
+        assertTrue("Extension .png maps to image/png", extensions.contains("image/png"))
+        assertTrue("Extension .jpg maps to image/jpeg", extensions.contains("image/jpeg"))
+    }
+
+    @Test
+    fun `test normalizeMimeTypes handles pdf and document formats`() {
+        val pdfMime = MainActivity.normalizeMimeTypes(arrayOf("application/pdf"))
+        assertEquals(1, pdfMime.size)
+        assertEquals("application/pdf", pdfMime[0])
+
+        val pdfExt = MainActivity.normalizeMimeTypes(arrayOf(".pdf"))
+        assertEquals(1, pdfExt.size)
+        assertEquals("application/pdf", pdfExt[0])
+
+        val docExt = MainActivity.normalizeMimeTypes(arrayOf(".doc"))
+        assertEquals(1, docExt.size)
+        assertEquals("application/msword", docExt[0])
+    }
+
+    @Test
+    fun `test normalizeMimeTypes fallback to wildcard for empty or unspecified types`() {
+        val emptyResult = MainActivity.normalizeMimeTypes(emptyArray())
+        assertEquals(1, emptyResult.size)
+        assertEquals("*/*", emptyResult[0])
+
+        val nullResult = MainActivity.normalizeMimeTypes(null)
+        assertEquals(1, nullResult.size)
+        assertEquals("*/*", nullResult[0])
+
+        val blankResult = MainActivity.normalizeMimeTypes(arrayOf("", "  "))
+        assertEquals(1, blankResult.size)
+        assertEquals("*/*", blankResult[0])
+    }
+
+    @Test
+    fun `test createFileChooserIntent configured correctly for single file mode`() {
+        val intent = MainActivity.createFileChooserIntent(arrayOf("image/*"), isMultiple = false)
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
+        assertTrue(intent.categories.contains(Intent.CATEGORY_OPENABLE))
+        assertEquals("image/*", intent.type)
+        assertFalse(intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
+        assertTrue((intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0)
+    }
+
+    @Test
+    fun `test createFileChooserIntent configured correctly for multiple file mode`() {
+        val intent = MainActivity.createFileChooserIntent(arrayOf("application/pdf"), isMultiple = true)
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
+        assertTrue(intent.categories.contains(Intent.CATEGORY_OPENABLE))
+        assertEquals("application/pdf", intent.type)
+        assertTrue(intent.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
+        assertTrue((intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0)
+    }
+
+    @Test
+    fun `test createFileChooserIntent sets EXTRA_MIME_TYPES for multiple accepted types`() {
+        val intent = MainActivity.createFileChooserIntent(arrayOf("image/*", "application/pdf"), isMultiple = false)
+        assertEquals(Intent.ACTION_OPEN_DOCUMENT, intent.action)
+        assertEquals("*/*", intent.type)
+        val extraMimes = intent.getStringArrayExtra(Intent.EXTRA_MIME_TYPES)
+        assertNotNull(extraMimes)
+        assertTrue(extraMimes!!.contains("image/*"))
+        assertTrue(extraMimes.contains("application/pdf"))
+    }
+
+    @Test
+    fun `test parseFileChooserResult returns single uri on success`() {
+        val testUri = Uri.parse("content://com.android.providers.media/image/123")
+        val intent = Intent().apply {
+            data = testUri
+        }
+        val result = MainActivity.parseFileChooserResult(Activity.RESULT_OK, intent)
+        assertNotNull(result)
+        assertEquals(1, result!!.size)
+        assertEquals(testUri, result[0])
+    }
+
+    @Test
+    fun `test parseFileChooserResult returns multiple uris from clipData`() {
+        val uri1 = Uri.parse("content://com.android.providers.media/image/101")
+        val uri2 = Uri.parse("content://com.android.providers.media/image/102")
+
+        val clipData = ClipData.newUri(context.contentResolver, "file1", uri1).apply {
+            addItem(ClipData.Item(uri2))
+        }
+        val intent = Intent().apply {
+            this.clipData = clipData
+        }
+
+        val result = MainActivity.parseFileChooserResult(Activity.RESULT_OK, intent)
+        assertNotNull(result)
+        assertEquals(2, result!!.size)
+        assertEquals(uri1, result[0])
+        assertEquals(uri2, result[1])
+    }
+
+    @Test
+    fun `test parseFileChooserResult returns null on cancel or back press`() {
+        val canceledResult = MainActivity.parseFileChooserResult(Activity.RESULT_CANCELED, Intent())
+        assertNull("User cancel or back press must return null", canceledResult)
+
+        val nullDataResult = MainActivity.parseFileChooserResult(Activity.RESULT_OK, null)
+        assertNull("Null intent data must return null", nullDataResult)
+
+        val emptyIntentResult = MainActivity.parseFileChooserResult(Activity.RESULT_OK, Intent())
+        assertNull("Empty intent without data or clipData must return null", emptyIntentResult)
     }
 }

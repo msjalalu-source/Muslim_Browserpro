@@ -79,6 +79,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     val favoriteSites: List<FavoriteSite>
         get() = _uiState.value.favoriteSites.ifEmpty { repository.getFavoriteSites() }
 
+    fun getNormalizedKeywords(): List<String> = repository.getNormalizedKeywords()
+
     fun addFavoriteSite(name: String, url: String) {
         val trimmedName = name.trim()
         val trimmedUrl = url.trim()
@@ -255,10 +257,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return false
 
+        val normalizedKws = repository.getNormalizedKeywords()
+        val customKws = _uiState.value.customKeywords
+
         // Check if input is a search engine URL with a query parameter
         val queryFromUrl = ProtectionEngine.extractSearchEngineQuery(trimmed)
         if (queryFromUrl != null) {
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(queryFromUrl, _uiState.value.customKeywords)
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(queryFromUrl, customKws, normalizedKws)
             if (blockedKw != null) {
                 setBlockedUrl(
                     url = trimmed,
@@ -276,7 +281,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val isDirectUrl = isWebUrl(trimmed)
         if (!isDirectUrl) {
             // Raw search query -> SafeSearch with safe=active
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(trimmed, _uiState.value.customKeywords)
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(trimmed, customKws, normalizedKws)
             if (blockedKw != null) {
                 setBlockedUrl(
                     url = trimmed,
@@ -292,7 +297,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         // Direct URL Navigation
         val formattedUrl = formatDirectUrl(trimmed)
-        val check = ProtectionEngine.checkDirectUrl(formattedUrl, _uiState.value.customKeywords)
+        val check = ProtectionEngine.checkDirectUrl(formattedUrl, customKws, normalizedKws)
         if (check is ProtectionEngine.FilterResult.Blocked) {
             setBlockedUrl(
                 url = formattedUrl,
@@ -402,7 +407,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
      * Returns true if blocked, false if navigation is allowed.
      */
     fun checkAndFilterUrl(url: String): Boolean {
-        val check = ProtectionEngine.checkDirectUrl(url, _uiState.value.customKeywords)
+        val check = ProtectionEngine.checkDirectUrl(
+            url = url,
+            customKeywords = _uiState.value.customKeywords,
+            normalizedKeywords = repository.getNormalizedKeywords()
+        )
         if (check is ProtectionEngine.FilterResult.Blocked) {
             setBlockedUrl(url, check.reason, check.detail)
             return true

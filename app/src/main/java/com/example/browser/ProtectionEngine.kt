@@ -196,15 +196,35 @@ object ProtectionEngine {
 
     /**
      * Checks if the text (search query or URL) contains any user-defined custom keyword.
+     * Utilizes pre-normalized cached keywords if provided to eliminate per-request allocations.
      * Returns the matched keyword name, or null if allowed.
      */
-    fun isBlockedByCustomKeywords(text: String, customKeywords: Set<String>): String? {
+    fun isBlockedByCustomKeywords(
+        text: String,
+        customKeywords: Set<String>,
+        normalizedKeywords: Collection<String>? = null
+    ): String? {
         if (customKeywords.isEmpty() || text.isBlank()) return null
-        val normalized = text.trim().lowercase(Locale.ROOT).replace("%20", " ")
-        for (kw in customKeywords) {
-            val kwNormalized = kw.trim().lowercase(Locale.ROOT)
-            if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
-                return kw
+        val lowerText = text.trim().lowercase(Locale.ROOT)
+        val normalized = if (lowerText.contains("%20")) {
+            lowerText.replace("%20", " ")
+        } else {
+            lowerText
+        }
+
+        if (normalizedKeywords != null && normalizedKeywords.isNotEmpty()) {
+            for (kwNorm in normalizedKeywords) {
+                if (kwNorm.isNotEmpty() && normalized.contains(kwNorm)) {
+                    // Match original casing for display/reporting
+                    return customKeywords.find { it.trim().equals(kwNorm, ignoreCase = true) } ?: kwNorm
+                }
+            }
+        } else {
+            for (kw in customKeywords) {
+                val kwNormalized = kw.trim().lowercase(Locale.ROOT)
+                if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
+                    return kw
+                }
             }
         }
         return null
@@ -212,17 +232,18 @@ object ProtectionEngine {
 
     /**
      * Lightweight direct URL protection.
-     * Evaluates custom keywords and high-confidence adult domains without heavy scanning.
+     * Evaluates custom keywords and high-confidence adult domains with fast host-first lookup.
      */
     fun checkDirectUrl(
         url: String,
-        customKeywords: Set<String>
+        customKeywords: Set<String>,
+        normalizedKeywords: Collection<String>? = null
     ): FilterResult {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
 
         // 1. Custom Keyword Protection
-        val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords)
+        val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords, normalizedKeywords)
         if (blockedKw != null) {
             return FilterResult.Blocked(
                 reason = "Custom Keyword Protection",
@@ -230,23 +251,25 @@ object ProtectionEngine {
             )
         }
 
-        // 2. Direct Adult Domain Matching (O(1) host lookup)
+        // 2. Direct Adult Domain Matching (O(1) host lookup first)
         val host = extractHost(trimmed)
-        if (host != null && host.isNotEmpty() && matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
-            return FilterResult.Blocked(
-                reason = "Adult Content Protection",
-                detail = "Access to adult entertainment domains is permanently restricted."
-            )
-        }
-
-        // Fallback for raw domain input
-        val normalized = trimmed.lowercase(Locale.ROOT)
-        for (domain in KNOWN_ADULT_DOMAINS) {
-            if (normalized.contains(domain)) {
+        if (host != null && host.isNotEmpty()) {
+            if (matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
                 return FilterResult.Blocked(
                     reason = "Adult Content Protection",
                     detail = "Access to adult entertainment domains is permanently restricted."
                 )
+            }
+        } else {
+            // Fallback only for raw domain inputs where host couldn't be parsed
+            val normalized = trimmed.lowercase(Locale.ROOT)
+            for (domain in KNOWN_ADULT_DOMAINS) {
+                if (normalized.contains(domain)) {
+                    return FilterResult.Blocked(
+                        reason = "Adult Content Protection",
+                        detail = "Access to adult entertainment domains is permanently restricted."
+                    )
+                }
             }
         }
 
@@ -258,9 +281,10 @@ object ProtectionEngine {
      */
     fun checkUrlOrQuery(
         input: String,
-        customKeywords: Set<String>
+        customKeywords: Set<String>,
+        normalizedKeywords: Collection<String>? = null
     ): FilterResult {
-        return checkDirectUrl(input, customKeywords)
+        return checkDirectUrl(input, customKeywords, normalizedKeywords)
     }
 
     /**
@@ -312,7 +336,8 @@ object ProtectionEngine {
 
     /**
      * Checks if a network request is directed at a known advertisement network.
-     * Uses Uri directly to avoid redundant string allocations and URI reparsing.
+     * Fast path: Checks host and subdomains against HashSet first.
+     * Slow path: Only checks query if host did not match and uri has query parameters.
      */
     fun isAdRequest(uri: Uri): Boolean {
         val host = uri.host?.lowercase(Locale.ROOT)
@@ -321,11 +346,14 @@ object ProtectionEngine {
                 return true
             }
         }
-        val url = uri.toString()
-        val normalized = url.lowercase(Locale.ROOT)
-        for (adDomain in KNOWN_AD_DOMAINS) {
-            if (normalized.contains(adDomain)) {
-                return true
+        // Only inspect the full URL if query parameters exist (potential ad redirect/tracking URLs)
+        if (uri.query != null) {
+            val url = uri.toString()
+            val normalized = url.lowercase(Locale.ROOT)
+            for (adDomain in KNOWN_AD_DOMAINS) {
+                if (normalized.contains(adDomain)) {
+                    return true
+                }
             }
         }
         return false
@@ -333,6 +361,7 @@ object ProtectionEngine {
 
     /**
      * Checks if a network request is directed at a known advertisement network.
+     * Fast path: Checks host and subdomains against HashSet first.
      */
     fun isAdRequest(url: String): Boolean {
         val host = extractHost(url)
@@ -341,10 +370,13 @@ object ProtectionEngine {
                 return true
             }
         }
-        val normalized = url.lowercase(Locale.ROOT)
-        for (adDomain in KNOWN_AD_DOMAINS) {
-            if (normalized.contains(adDomain)) {
-                return true
+        // Only inspect full URL string if host was not extracted or query exists
+        if (host == null || url.indexOf('?') != -1) {
+            val normalized = url.lowercase(Locale.ROOT)
+            for (adDomain in KNOWN_AD_DOMAINS) {
+                if (normalized.contains(adDomain)) {
+                    return true
+                }
             }
         }
         return false
