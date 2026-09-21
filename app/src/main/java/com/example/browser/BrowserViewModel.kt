@@ -18,11 +18,11 @@ data class BlockedInfo(
 )
 
 data class FavoriteSite(
+    val id: String = java.util.UUID.randomUUID().toString(),
     val name: String,
     val url: String,
-    val category: String,
-    val iconLetter: String,
-    val badgeColor: Long
+    val iconLetter: String = if (name.isNotBlank()) name.trim().take(2).uppercase() else "W",
+    val badgeColor: Long = 0xFF4285F4
 )
 
 data class BrowserTab(
@@ -54,7 +54,7 @@ data class BrowserUiState(
     val isTabsDialogOpen: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
     val toastMessage: String? = null,
-    val selectedCategory: String = "All",
+    val favoriteSites: List<FavoriteSite> = emptyList(),
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
@@ -67,6 +67,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val _uiState = MutableStateFlow(
         BrowserUiState(
+            favoriteSites = repository.getFavoriteSites(),
             customKeywords = repository.getCustomKeywords(),
             isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
             isAdBlockingEnabled = repository.isAdBlockingEnabled,
@@ -75,23 +76,37 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
 
-    val favoriteSites = listOf(
-        FavoriteSite("Google", "https://www.google.com", "Tools", "G", 0xFF4285F4),
-        FavoriteSite("Wikipedia", "https://www.wikipedia.org", "Study", "W", 0xFF333333),
-        FavoriteSite("DuckDuckGo", "https://duckduckgo.com", "Tools", "D", 0xFFDE5833),
-        FavoriteSite("GitHub", "https://www.github.com", "Tools", "GH", 0xFF24292E),
-        FavoriteSite("BBC News", "https://www.bbc.com/news", "News", "B", 0xFFBB1919),
-        FavoriteSite("Reddit", "https://www.reddit.com", "Social", "R", 0xFFFF4500),
-        FavoriteSite("YouTube", "https://www.youtube.com", "Social", "Y", 0xFFFF0000),
-        FavoriteSite("Stack Overflow", "https://stackoverflow.com", "Study", "SO", 0xFFF48024)
-    )
+    val favoriteSites: List<FavoriteSite>
+        get() = _uiState.value.favoriteSites.ifEmpty { repository.getFavoriteSites() }
+
+    fun addFavoriteSite(name: String, url: String) {
+        val trimmedName = name.trim()
+        val trimmedUrl = url.trim()
+        if (trimmedName.isEmpty() || trimmedUrl.isEmpty()) {
+            showToast("Website name and URL cannot be empty.")
+            return
+        }
+        repository.addFavoriteSite(trimmedName, trimmedUrl)
+        _uiState.update { it.copy(favoriteSites = repository.getFavoriteSites()) }
+        showToast("Favorite added.")
+    }
+
+    fun updateFavoriteSite(id: String, name: String, url: String) {
+        val trimmedName = name.trim()
+        val trimmedUrl = url.trim()
+        if (trimmedName.isEmpty() || trimmedUrl.isEmpty()) {
+            showToast("Website name and URL cannot be empty.")
+            return
+        }
+        val updated = repository.updateFavoriteSite(id, trimmedName, trimmedUrl)
+        if (updated) {
+            _uiState.update { it.copy(favoriteSites = repository.getFavoriteSites()) }
+            showToast("Favorite updated.")
+        }
+    }
 
     fun onSearchInputChange(query: String) {
         _uiState.update { it.copy(searchInput = query) }
-    }
-
-    fun selectCategory(category: String) {
-        _uiState.update { it.copy(selectedCategory = category) }
     }
 
     fun openMenu() {

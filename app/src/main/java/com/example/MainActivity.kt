@@ -75,7 +75,6 @@ class MainActivity : ComponentActivity() {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
                 cacheMode = WebSettings.LOAD_DEFAULT
                 setSupportMultipleWindows(true)
                 loadWithOverviewMode = true
@@ -423,7 +422,8 @@ fun BrowserApp(
                             webView.loadUrl(viewModel.uiState.value.currentUrl)
                         }
                     },
-                    onSelectCategory = { viewModel.selectCategory(it) },
+                    onAddFavorite = { name, url -> viewModel.addFavoriteSite(name, url) },
+                    onEditFavorite = { id, name, url -> viewModel.updateFavoriteSite(id, name, url) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

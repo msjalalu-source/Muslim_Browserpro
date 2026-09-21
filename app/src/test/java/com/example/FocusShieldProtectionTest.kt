@@ -438,4 +438,65 @@ class FocusShieldProtectionTest {
         assertFalse("Restored tab is not home page", viewModel.uiState.value.isHomePage)
         assertEquals("Tabs count remains exactly 2", 2, viewModel.uiState.value.tabs.size)
     }
+
+    // ==========================================
+    // 7. FAVORITE WEBSITES PERSISTENCE & EDIT TESTS
+    // ==========================================
+
+    @Test
+    fun `test default favorite websites loaded`() {
+        val sites = repository.getFavoriteSites()
+        assertTrue("Default favorite sites should not be empty", sites.isNotEmpty())
+        assertTrue("Should contain Google", sites.any { it.name == "Google" })
+    }
+
+    @Test
+    fun `test add and edit favorite website persistence`() {
+        // 1. Add new favorite website
+        val added = repository.addFavoriteSite("Quran.com", "quran.com")
+        assertEquals("Quran.com", added.name)
+        assertEquals("https://quran.com", added.url)
+
+        val sitesAfterAdd = repository.getFavoriteSites()
+        val found = sitesAfterAdd.find { it.id == added.id }
+        assertNotNull("Newly added site must exist in repository", found)
+        assertEquals("Quran.com", found?.name)
+        assertEquals("https://quran.com", found?.url)
+
+        // 2. Edit the website
+        val editSuccess = repository.updateFavoriteSite(added.id, "Noble Quran", "https://quran.com/bn")
+        assertTrue("Editing site should succeed", editSuccess)
+
+        // 3. Verify persistence survives re-creation
+        val newRepo = SettingsRepository(context)
+        val sitesReloaded = newRepo.getFavoriteSites()
+        val editedSite = sitesReloaded.find { it.id == added.id }
+        assertNotNull("Edited site must exist after reload", editedSite)
+        assertEquals("Noble Quran", editedSite?.name)
+        assertEquals("https://quran.com/bn", editedSite?.url)
+    }
+
+    @Test
+    fun `test viewModel add and edit favorite sites updates uiState`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.example.browser.BrowserViewModel(app)
+
+        val initialCount = viewModel.uiState.value.favoriteSites.size
+
+        // Add favorite
+        viewModel.addFavoriteSite("Sunnah", "sunnah.com")
+        val afterAddList = viewModel.uiState.value.favoriteSites
+        assertEquals("Count should increase by 1", initialCount + 1, afterAddList.size)
+        val addedItem = afterAddList.find { it.name == "Sunnah" }
+        assertNotNull("Added item should be in uiState", addedItem)
+        assertEquals("https://sunnah.com", addedItem?.url)
+
+        // Edit favorite
+        viewModel.updateFavoriteSite(addedItem!!.id, "Sunnah Hadith", "https://sunnah.com/bukhari")
+        val afterEditList = viewModel.uiState.value.favoriteSites
+        val updatedItem = afterEditList.find { it.id == addedItem.id }
+        assertNotNull(updatedItem)
+        assertEquals("Sunnah Hadith", updatedItem?.name)
+        assertEquals("https://sunnah.com/bukhari", updatedItem?.url)
+    }
 }

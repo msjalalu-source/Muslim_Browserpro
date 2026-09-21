@@ -88,11 +88,12 @@ fun BrowserWebView(
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 30% visual size reduction applied (from 16.dp to 11.dp)
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = "Secure Connection",
                         tint = Color(0xFF00E5FF),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(11.dp)
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -146,11 +147,12 @@ fun BrowserWebView(
                                     onClick = { editUrlText = "" },
                                     modifier = Modifier.size(28.dp)
                                 ) {
+                                    // 30% visual size reduction applied (from 16.dp to 11.dp)
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Clear",
                                         tint = Color(0xFF90A4AE),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(11.dp)
                                     )
                                 }
                             }
@@ -165,11 +167,12 @@ fun BrowserWebView(
                             .size(36.dp)
                             .testTag("browser_refresh_button")
                     ) {
+                        // 30% visual size reduction applied (from 20.dp to 14.dp)
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh page",
                             tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
