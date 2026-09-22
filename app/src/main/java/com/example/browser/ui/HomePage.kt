@@ -1,5 +1,6 @@
 package com.example.browser.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -96,6 +97,19 @@ fun HomePage(
         showFavoriteDialog = true
     }
 
+    val scrimBrush = remember {
+        Brush.verticalGradient(
+            colors = listOf(
+                Color(0x880A0F1D),
+                Color(0xAA080B14),
+                Color(0xCC05070D)
+            )
+        )
+    }
+    val searchBarBorder = remember { BorderStroke(1.dp, Color(0x5542A5F5)) }
+    val addBtnBorder = remember { BorderStroke(1.dp, Color(0x6600E5FF)) }
+    val quoteAreaBorder = remember { BorderStroke(1.dp, Color(0x3300E5FF)) }
+
     Box(modifier = modifier.fillMaxSize()) {
         // Background wallpaper image
         Image(
@@ -109,15 +123,7 @@ fun HomePage(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0x880A0F1D),
-                            Color(0xAA080B14),
-                            Color(0xCC05070D)
-                        )
-                    )
-                )
+                .background(scrimBrush)
         )
 
         // Content
@@ -177,7 +183,7 @@ fun HomePage(
                     .testTag("home_search_bar"),
                 shape = RoundedCornerShape(28.dp),
                 color = Color(0xCC1A233A),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x5542A5F5)),
+                border = searchBarBorder,
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -277,7 +283,7 @@ fun HomePage(
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = Color(0x2600E5FF),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x6600E5FF)),
+                    border = addBtnBorder,
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
                         .clickable { openAddDialog() }
@@ -331,7 +337,7 @@ fun HomePage(
                     .testTag("home_quote_area"),
                 shape = RoundedCornerShape(16.dp),
                 color = Color(0x4D0D1B2A),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x3300E5FF))
+                border = quoteAreaBorder
             ) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -431,6 +437,8 @@ fun FavoriteSiteItem(
     onClick: () -> Unit,
     onEdit: () -> Unit
 ) {
+    val badgeBgColor = remember(site.badgeColor) { Color(site.badgeColor) }
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -447,7 +455,7 @@ fun FavoriteSiteItem(
             Surface(
                 modifier = Modifier.size(52.dp),
                 shape = RoundedCornerShape(14.dp),
-                color = Color(site.badgeColor),
+                color = badgeBgColor,
                 shadowElevation = 4.dp
             ) {
                 Box(contentAlignment = Alignment.Center) {

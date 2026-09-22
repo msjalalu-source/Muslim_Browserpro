@@ -487,6 +487,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun onProgressChanged(progress: Int) {
         _uiState.update { state ->
+            if (state.loadingProgress == progress && state.isLoading == (progress < 100)) {
+                return@update state
+            }
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
                     tab.copy(
