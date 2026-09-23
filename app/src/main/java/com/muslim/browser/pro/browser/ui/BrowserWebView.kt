@@ -63,7 +63,7 @@ fun BrowserWebView(
             .background(Color(0xFF0F172A))
             .testTag("browser_web_view_container")
     ) {
-        // Compact Top Web Address Bar (reduced vertical thickness by ~40% for optimal browsing space)
+        // Top Web Address Bar (38.dp × 1.10 = 41.8.dp)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = Color(0xFF0F172A),
@@ -73,7 +73,7 @@ fun BrowserWebView(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(38.dp)
+                        .height(41.8.dp)
                         .padding(horizontal = 10.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

@@ -27,6 +27,9 @@ class SettingsRepository(context: Context) {
     // In-memory cache of favorite websites to avoid repeated JSON deserialization on UI renders
     private val inMemoryFavorites = ArrayList<FavoriteSite>()
 
+    // In-memory cache of browsing history entries
+    private val inMemoryHistory = ArrayList<HistoryEntry>()
+
     init {
         val savedKeywords = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
         inMemoryKeywords.addAll(savedKeywords)
@@ -34,6 +37,9 @@ class SettingsRepository(context: Context) {
 
         // Load favorites once from disk into memory
         loadFavoritesFromDisk()
+
+        // Load browsing history once from disk into memory
+        loadHistoryFromDisk()
     }
 
     private fun rebuildNormalizedKeywords() {
@@ -73,6 +79,25 @@ class SettingsRepository(context: Context) {
         } catch (_: Exception) {
             inMemoryFavorites.addAll(DEFAULT_FAVORITES)
         }
+    }
+
+    private fun loadHistoryFromDisk() {
+        inMemoryHistory.clear()
+        val rawJson = prefs.getString(KEY_HISTORY, null) ?: return
+        try {
+            val jsonArray = JSONArray(rawJson)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                inMemoryHistory.add(
+                    HistoryEntry(
+                        id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                        title = obj.optString("title", ""),
+                        url = obj.getString("url"),
+                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                    )
+                )
+            }
+        } catch (_: Exception) {}
     }
 
     /**
@@ -170,30 +195,6 @@ class SettingsRepository(context: Context) {
         return newSite
     }
 
-    /**
-     * Updates an existing favorite website.
-     */
-    fun updateFavoriteSite(id: String, name: String, url: String): Boolean {
-        val current = inMemoryFavorites.toMutableList()
-        val index = current.indexOfFirst { it.id == id }
-        if (index == -1) return false
-        val existing = current[index]
-        val trimmedName = name.trim()
-        val trimmedUrl = url.trim()
-        val formattedUrl = if (!trimmedUrl.startsWith("http://", ignoreCase = true) && !trimmedUrl.startsWith("https://", ignoreCase = true)) {
-            "https://$trimmedUrl"
-        } else trimmedUrl
-        val letter = if (trimmedName.isNotBlank()) trimmedName.take(2).uppercase() else existing.iconLetter
-        val updated = existing.copy(
-            name = trimmedName,
-            url = formattedUrl,
-            iconLetter = letter
-        )
-        current[index] = updated
-        saveFavoriteSites(current)
-        return true
-    }
-
     var isPopupBlockingEnabled: Boolean
         get() = prefs.getBoolean(KEY_POPUP_BLOCKING, true)
         set(value) {
@@ -212,6 +213,154 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
         }
 
+    // ==========================================
+    // BROWSING HISTORY PERSISTENCE
+    // ==========================================
+
+    /**
+     * Returns unmodifiable list of browsing history entries (most recent first).
+     */
+    fun getHistory(): List<HistoryEntry> {
+        return inMemoryHistory.toList()
+    }
+
+    /**
+     * Adds an entry to browsing history.
+     * Prevents empty/about: URLs and duplicate entries on consecutive page loads.
+     */
+    fun addHistoryEntry(title: String, url: String): HistoryEntry? {
+        val trimmedUrl = url.trim()
+        if (trimmedUrl.isBlank() || trimmedUrl == "about:blank" || trimmedUrl.startsWith("about:")) {
+            return null
+        }
+        val effectiveTitle = if (title.isNotBlank()) title.trim() else trimmedUrl
+
+        // Deduplication: if the newest entry has the exact same URL, update its title/timestamp
+        val first = inMemoryHistory.firstOrNull()
+        if (first != null && first.url == trimmedUrl) {
+            val updated = first.copy(
+                title = if (effectiveTitle != trimmedUrl) effectiveTitle else first.title,
+                timestamp = System.currentTimeMillis()
+            )
+            inMemoryHistory[0] = updated
+            saveHistoryToDisk()
+            return updated
+        }
+
+        val newEntry = HistoryEntry(
+            title = effectiveTitle,
+            url = trimmedUrl,
+            timestamp = System.currentTimeMillis()
+        )
+        inMemoryHistory.add(0, newEntry)
+        // Keep history lightweight: cap at 500 entries
+        if (inMemoryHistory.size > 500) {
+            inMemoryHistory.removeAt(inMemoryHistory.size - 1)
+        }
+        saveHistoryToDisk()
+        return newEntry
+    }
+
+    /**
+     * Deletes a specific browsing history item.
+     */
+    fun deleteHistoryEntry(id: String): Boolean {
+        val removed = inMemoryHistory.removeAll { it.id == id }
+        if (removed) {
+            saveHistoryToDisk()
+        }
+        return removed
+    }
+
+    /**
+     * Clears all browsing history.
+     */
+    fun clearHistory() {
+        inMemoryHistory.clear()
+        prefs.edit().remove(KEY_HISTORY).apply()
+    }
+
+    private fun saveHistoryToDisk() {
+        val jsonArray = JSONArray()
+        for (item in inMemoryHistory) {
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("title", item.title)
+                put("url", item.url)
+                put("timestamp", item.timestamp)
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit().putString(KEY_HISTORY, jsonArray.toString()).apply()
+    }
+
+    // ==========================================
+    // WINDOW / TAB STATE PERSISTENCE
+    // ==========================================
+
+    /**
+     * Persists all open browser windows/tabs and the currently active tab ID.
+     * Preserves tab order, URLs, titles, and active window state across app restarts
+     * and Recent Apps swipe-away.
+     */
+    fun saveTabs(tabs: List<BrowserTab>, activeTabId: String) {
+        val jsonArray = JSONArray()
+        for (tab in tabs) {
+            val obj = JSONObject().apply {
+                put("id", tab.id)
+                put("url", tab.url)
+                put("pageTitle", tab.pageTitle)
+                put("isHomePage", tab.isHomePage)
+                put("searchInput", tab.searchInput)
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit()
+            .putString(KEY_SAVED_TABS, jsonArray.toString())
+            .putString(KEY_ACTIVE_TAB_ID, activeTabId)
+            .apply()
+    }
+
+    /**
+     * Restores saved browser windows/tabs and the active tab ID.
+     * Returns null if no saved state exists.
+     */
+    fun getSavedTabs(): Pair<List<BrowserTab>, String>? {
+        val rawJson = prefs.getString(KEY_SAVED_TABS, null) ?: return null
+        val activeTabId = prefs.getString(KEY_ACTIVE_TAB_ID, null)
+        return try {
+            val jsonArray = JSONArray(rawJson)
+            if (jsonArray.length() == 0) return null
+            val list = mutableListOf<BrowserTab>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val id = obj.getString("id")
+                val url = obj.optString("url", "")
+                val pageTitle = obj.optString("pageTitle", if (url.isNotEmpty()) url else "Home")
+                val isHomePage = obj.optBoolean("isHomePage", url.isEmpty())
+                val searchInput = obj.optString("searchInput", url)
+                list.add(
+                    BrowserTab(
+                        id = id,
+                        url = url,
+                        pageTitle = pageTitle,
+                        isHomePage = isHomePage,
+                        searchInput = searchInput
+                    )
+                )
+            }
+            if (list.isEmpty()) return null
+            val effectiveActiveId = if (list.any { it.id == activeTabId }) {
+                activeTabId!!
+            } else {
+                list.first().id
+            }
+            Pair(list, effectiveActiveId)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "focus_shield_prefs"
         private const val KEY_CUSTOM_KEYWORDS = "key_custom_keywords"
@@ -219,6 +368,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
         private const val KEY_FAVORITES = "key_favorite_sites"
+        private const val KEY_SAVED_TABS = "key_saved_tabs"
+        private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
+        private const val KEY_HISTORY = "key_browsing_history"
 
         val DEFAULT_FAVORITES = listOf(
             FavoriteSite(id = "fav_google", name = "Google", url = "https://www.google.com", iconLetter = "G", badgeColor = 0xFF4285F4),
@@ -232,3 +384,10 @@ class SettingsRepository(context: Context) {
         )
     }
 }
+
+data class HistoryEntry(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val url: String,
+    val timestamp: Long = System.currentTimeMillis()
+)

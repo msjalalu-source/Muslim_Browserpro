@@ -54,6 +54,8 @@ data class BrowserUiState(
     val canGoForward: Boolean = false,
     val isMenuOpen: Boolean = false,
     val isTabsDialogOpen: Boolean = false,
+    val isHistoryOpen: Boolean = false,
+    val browsingHistory: List<HistoryEntry> = emptyList(),
     val blockedInfo: BlockedInfo? = null,
     val toastMessage: String? = null,
     val favoriteSites: List<FavoriteSite> = emptyList(),
@@ -67,16 +69,39 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository = SettingsRepository(application)
 
-    private val _uiState = MutableStateFlow(
-        BrowserUiState(
-            favoriteSites = repository.getFavoriteSites(),
-            customKeywords = repository.getCustomKeywords(),
-            isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
-            isAdBlockingEnabled = repository.isAdBlockingEnabled,
-            isDesktopModeEnabled = repository.isDesktopModeEnabled
+    private val _uiState: MutableStateFlow<BrowserUiState>
+
+    init {
+        // Restore open browser windows/tabs and active tab from persistent storage
+        val savedData = repository.getSavedTabs()
+        val initialTabs = savedData?.first ?: listOf(BrowserTab(id = "default_tab"))
+        val initialActiveTabId = savedData?.second ?: initialTabs.first().id
+        val initialActiveTab = initialTabs.find { it.id == initialActiveTabId } ?: initialTabs.first()
+
+        _uiState = MutableStateFlow(
+            BrowserUiState(
+                tabs = initialTabs,
+                currentTabId = initialActiveTab.id,
+                isHomePage = initialActiveTab.isHomePage,
+                currentUrl = initialActiveTab.url,
+                searchInput = initialActiveTab.searchInput,
+                pageTitle = initialActiveTab.pageTitle,
+                favoriteSites = repository.getFavoriteSites(),
+                customKeywords = repository.getCustomKeywords(),
+                isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
+                isAdBlockingEnabled = repository.isAdBlockingEnabled,
+                isDesktopModeEnabled = repository.isDesktopModeEnabled,
+                browsingHistory = repository.getHistory()
+            )
         )
-    )
+    }
+
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    private fun persistTabs() {
+        val state = _uiState.value
+        repository.saveTabs(state.tabs, state.currentTabId)
+    }
 
     val favoriteSites: List<FavoriteSite>
         get() = _uiState.value.favoriteSites.ifEmpty { repository.getFavoriteSites() }
@@ -93,20 +118,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         repository.addFavoriteSite(trimmedName, trimmedUrl)
         _uiState.update { it.copy(favoriteSites = repository.getFavoriteSites()) }
         showToast("Favorite added.")
-    }
-
-    fun updateFavoriteSite(id: String, name: String, url: String) {
-        val trimmedName = name.trim()
-        val trimmedUrl = url.trim()
-        if (trimmedName.isEmpty() || trimmedUrl.isEmpty()) {
-            showToast("Website name and URL cannot be empty.")
-            return
-        }
-        val updated = repository.updateFavoriteSite(id, trimmedName, trimmedUrl)
-        if (updated) {
-            _uiState.update { it.copy(favoriteSites = repository.getFavoriteSites()) }
-            showToast("Favorite updated.")
-        }
     }
 
     fun onSearchInputChange(query: String) {
@@ -165,6 +176,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isMenuOpen = false
             )
         }
+        persistTabs()
     }
 
     fun selectTab(tabId: String) {
@@ -185,6 +197,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        persistTabs()
     }
 
     fun closeTab(tabId: String) {
@@ -220,6 +233,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 blockedInfo = newCurrentTab.blockedInfo
             )
         }
+        persistTabs()
     }
 
     fun goHome() {
@@ -250,6 +264,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        persistTabs()
     }
 
     /**
@@ -328,22 +343,50 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Fast Bangla Translation:
-     * If browsing a webpage, translates the entire page to Bangla via Google Translate.
+     * Translation Mode (বাংলা অনুবাদ - Bengali):
+     * If browsing a webpage, translates the entire page to Bangla via Google Translate (hl=bn, tl=bn).
+     * Prevents nested translation loops if already translated to Bengali.
      * If on home or search input, translates text or opens Google Translate Bangla.
      */
-    fun translateToBangla(): String {
-        val current = _uiState.value.currentUrl
-        val targetUrl = if (!_uiState.value.isHomePage && current.isNotBlank() && !current.startsWith("about:")) {
-            val encodedUrl = URLEncoder.encode(current, StandardCharsets.UTF_8.name())
-            "https://translate.google.com/translate?sl=auto&tl=bn&u=$encodedUrl"
+    fun translateToBangla(liveUrl: String? = null): String {
+        val rawCurrent = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" }
+            ?: _uiState.value.currentUrl
+
+        val isAlreadyTranslated = rawCurrent.contains("translate.google.com/translate") && rawCurrent.contains("tl=bn") ||
+                (rawCurrent.contains(".translate.goog") && (rawCurrent.contains("tl=bn") || rawCurrent.contains("_x_tr_tl=bn")))
+
+        if (isAlreadyTranslated) {
+            closeMenu()
+            showToast("ইতিমধ্যে বাংলায় অনুবাদ করা হয়েছে")
+            return rawCurrent
+        }
+
+        val originalFromParam = if (rawCurrent.contains("translate.google.com")) {
+            try {
+                android.net.Uri.parse(rawCurrent).getQueryParameter("u")
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+
+        val cleanCurrent = originalFromParam?.takeIf { it.isNotBlank() } ?: rawCurrent
+
+        val targetUrl = if (!_uiState.value.isHomePage && cleanCurrent.isNotBlank() && !cleanCurrent.startsWith("about:")) {
+            val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(cleanCurrent)
+            if (searchEngineQuery != null) {
+                val encodedQuery = URLEncoder.encode(searchEngineQuery, StandardCharsets.UTF_8.name())
+                "https://www.google.com/search?q=$encodedQuery&hl=bn&safe=active"
+            } else {
+                val encodedUrl = URLEncoder.encode(cleanCurrent, StandardCharsets.UTF_8.name())
+                "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=$encodedUrl"
+            }
         } else {
             val query = _uiState.value.searchInput.trim()
             if (query.isNotEmpty() && !query.startsWith("http://") && !query.startsWith("https://")) {
                 val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
-                "https://translate.google.com/?sl=auto&tl=bn&text=$encodedQuery&op=translate"
+                "https://translate.google.com/?sl=auto&tl=bn&hl=bn&text=$encodedQuery&op=translate"
             } else {
-                "https://translate.google.com/?sl=auto&tl=bn&op=translate"
+                "https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"
             }
         }
         loadTargetUrl(targetUrl)
@@ -393,6 +436,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
         }
+        persistTabs()
     }
 
     fun setBlockedUrl(url: String, reason: String, detail: String) {
@@ -509,6 +553,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPageContentVisible = true
             )
         }
+        persistTabs()
+
+        // Record successful navigation into history (skip about:blank and blocked sites)
+        if (url.isNotBlank() && url != "about:blank" && !url.startsWith("about:") && _uiState.value.blockedInfo == null) {
+            repository.addHistoryEntry(effectiveTitle, url)
+            _uiState.update { it.copy(browsingHistory = repository.getHistory()) }
+        }
     }
 
     fun onProgressChanged(progress: Int) {
@@ -573,6 +624,36 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 canGoForward = false
             )
         }
+    }
+
+    // ==========================================
+    // HISTORY NAVIGATION & MANAGEMENT
+    // ==========================================
+
+    fun openHistory() {
+        _uiState.update {
+            it.copy(
+                isHistoryOpen = true,
+                isMenuOpen = false,
+                isTabsDialogOpen = false,
+                browsingHistory = repository.getHistory()
+            )
+        }
+    }
+
+    fun closeHistory() {
+        _uiState.update { it.copy(isHistoryOpen = false) }
+    }
+
+    fun deleteHistoryEntry(id: String) {
+        repository.deleteHistoryEntry(id)
+        _uiState.update { it.copy(browsingHistory = repository.getHistory()) }
+    }
+
+    fun clearAllHistory() {
+        repository.clearHistory()
+        _uiState.update { it.copy(browsingHistory = emptyList()) }
+        showToast("Browsing history cleared.")
     }
 
     fun showToast(msg: String) {

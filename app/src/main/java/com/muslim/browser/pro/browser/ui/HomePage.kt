@@ -1,12 +1,9 @@
 package com.muslim.browser.pro.browser.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -30,13 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -53,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -66,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.R
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.FavoriteSite
+import com.muslim.browser.pro.browser.rememberFavicon
 
 @Composable
 fun HomePage(
@@ -74,26 +72,16 @@ fun HomePage(
     onQueryChange: (String) -> Unit,
     onSubmitQuery: (String) -> Unit,
     onAddFavorite: (name: String, url: String) -> Unit,
-    onEditFavorite: (id: String, name: String, url: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // State for Add / Edit Favorite Dialog
+    // State for Add Favorite Dialog
     var showFavoriteDialog by remember { mutableStateOf(false) }
-    var editingSite by remember { mutableStateOf<FavoriteSite?>(null) }
     var dialogName by remember { mutableStateOf("") }
     var dialogUrl by remember { mutableStateOf("") }
 
     fun openAddDialog() {
-        editingSite = null
         dialogName = ""
         dialogUrl = ""
-        showFavoriteDialog = true
-    }
-
-    fun openEditDialog(site: FavoriteSite) {
-        editingSite = site
-        dialogName = site.name
-        dialogUrl = site.url
         showFavoriteDialog = true
     }
 
@@ -264,12 +252,12 @@ fun HomePage(
 
             Spacer(modifier = Modifier.height(28.dp))
 
-            // Favourite websites header with Add button
+            // Favourite websites header (clean, no Add button on top)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -279,38 +267,9 @@ fun HomePage(
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.2.sp
                 )
-
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = Color(0x2600E5FF),
-                    border = addBtnBorder,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable { openAddDialog() }
-                        .testTag("add_favorite_button")
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add Favorite",
-                            tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Add",
-                            color = Color(0xFF00E5FF),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
             }
 
-            // Favorite Websites Grid
+            // Favorite Websites Grid with "+ Add" at the very bottom of the tiles
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 modifier = Modifier
@@ -323,9 +282,48 @@ fun HomePage(
                 items(favoriteSites, key = { it.id }) { site ->
                     FavoriteSiteItem(
                         site = site,
-                        onClick = { onSubmitQuery(site.url) },
-                        onEdit = { openEditDialog(site) }
+                        onClick = { onSubmitQuery(site.url) }
                     )
+                }
+
+                // Centered "+ Add" below all tiles
+                item(span = { GridItemSpan(4) }) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0x2600E5FF),
+                            border = addBtnBorder,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { openAddDialog() }
+                                .testTag("add_favorite_button")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Website",
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Add",
+                                    color = Color(0xFF00E5FF),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -362,13 +360,13 @@ fun HomePage(
             }
         }
 
-        // Add / Edit Favorite Dialog
+        // Add Favorite Dialog
         if (showFavoriteDialog) {
             AlertDialog(
                 onDismissRequest = { showFavoriteDialog = false },
                 title = {
                     Text(
-                        text = if (editingSite == null) "Add Favorite Website" else "Edit Favorite Website",
+                        text = "Add Favorite Website",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
@@ -402,11 +400,7 @@ fun HomePage(
                     TextButton(
                         onClick = {
                             if (dialogName.isNotBlank() && dialogUrl.isNotBlank()) {
-                                if (editingSite == null) {
-                                    onAddFavorite(dialogName, dialogUrl)
-                                } else {
-                                    onEditFavorite(editingSite!!.id, dialogName, dialogUrl)
-                                }
+                                onAddFavorite(dialogName, dialogUrl)
                                 showFavoriteDialog = false
                             }
                         },
@@ -430,60 +424,46 @@ fun HomePage(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FavoriteSiteItem(
     site: FavoriteSite,
-    onClick: () -> Unit,
-    onEdit: () -> Unit
+    onClick: () -> Unit
 ) {
+    val faviconBitmap = rememberFavicon(site.url)
     val badgeBgColor = remember(site.badgeColor) { Color(site.badgeColor) }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onEdit,
-                onLongClickLabel = "Edit ${site.name}"
-            )
+            .clickable(onClick = onClick)
             .padding(vertical = 6.dp)
             .testTag("fav_site_${site.name}")
     ) {
-        Box(contentAlignment = Alignment.TopEnd) {
-            Surface(
-                modifier = Modifier.size(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = badgeBgColor,
-                shadowElevation = 4.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
+        Surface(
+            modifier = Modifier.size(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = if (faviconBitmap != null) Color(0xFF162032) else badgeBgColor,
+            border = BorderStroke(1.dp, if (faviconBitmap != null) Color(0x3342A5F5) else Color(0x22FFFFFF)),
+            shadowElevation = 4.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (faviconBitmap != null) {
+                    Image(
+                        bitmap = faviconBitmap.asImageBitmap(),
+                        contentDescription = site.name,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(RoundedCornerShape(6.dp)),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
+                    // Fallback to website letter badge
                     Text(
                         text = site.iconLetter,
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
-                    )
-                }
-            }
-
-            // Small Edit affordance icon on the corner
-            Surface(
-                shape = CircleShape,
-                color = Color(0xCC0F172A),
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .clickable { onEdit() }
-                    .testTag("edit_fav_${site.name}")
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Edit ${site.name}",
-                        tint = Color(0xFF81D4FA),
-                        modifier = Modifier.size(10.dp)
                     )
                 }
             }

@@ -367,6 +367,7 @@ class FocusShieldProtectionTest {
         val homeTranslateUrl = viewModel.translateToBangla()
         assertTrue("Should open Google translate", homeTranslateUrl.contains("translate.google.com"))
         assertTrue("Should target Bengali tl=bn", homeTranslateUrl.contains("tl=bn"))
+        assertTrue("Should include host language hl=bn", homeTranslateUrl.contains("hl=bn"))
         assertFalse("Menu should be closed after translation", viewModel.uiState.value.isMenuOpen)
 
         // 2. On active web page
@@ -375,6 +376,22 @@ class FocusShieldProtectionTest {
         assertTrue("Should translate page url", pageTranslateUrl.startsWith("https://translate.google.com/translate?"))
         assertTrue("Should contain encoded url", pageTranslateUrl.contains("wikipedia.org"))
         assertTrue("Should enforce tl=bn", pageTranslateUrl.contains("tl=bn"))
+        assertTrue("Should enforce hl=bn", pageTranslateUrl.contains("hl=bn"))
+
+        // 3. Repeated translation on already translated page must prevent duplicate reload loop
+        val repeatedTranslateUrl = viewModel.translateToBangla(pageTranslateUrl)
+        assertEquals("Repeated translation must not re-wrap or duplicate URL", pageTranslateUrl, repeatedTranslateUrl)
+
+        // 4. Translation on live WebView URL
+        val liveTranslateUrl = viewModel.translateToBangla("https://example.com/page")
+        assertTrue("Should translate provided live URL", liveTranslateUrl.contains("example.com"))
+        assertTrue("Should enforce tl=bn", liveTranslateUrl.contains("tl=bn"))
+
+        // 5. Translation on Google Search query page sets hl=bn
+        viewModel.submitQueryOrUrl("https://www.google.com/search?q=islam&safe=active")
+        val searchTranslateUrl = viewModel.translateToBangla("https://www.google.com/search?q=islam&safe=active")
+        assertTrue("Search page should be translated with hl=bn", searchTranslateUrl.contains("hl=bn"))
+        assertTrue("Search page should preserve safe search", searchTranslateUrl.contains("safe=active"))
     }
 
     @Test
@@ -455,7 +472,7 @@ class FocusShieldProtectionTest {
     }
 
     @Test
-    fun `test add and edit favorite website persistence`() {
+    fun `test add favorite website persistence`() {
         // 1. Add new favorite website
         val added = repository.addFavoriteSite("Quran.com", "quran.com")
         assertEquals("Quran.com", added.name)
@@ -467,21 +484,17 @@ class FocusShieldProtectionTest {
         assertEquals("Quran.com", found?.name)
         assertEquals("https://quran.com", found?.url)
 
-        // 2. Edit the website
-        val editSuccess = repository.updateFavoriteSite(added.id, "Noble Quran", "https://quran.com/bn")
-        assertTrue("Editing site should succeed", editSuccess)
-
-        // 3. Verify persistence survives re-creation
+        // 2. Verify persistence survives re-creation
         val newRepo = SettingsRepository(context)
         val sitesReloaded = newRepo.getFavoriteSites()
-        val editedSite = sitesReloaded.find { it.id == added.id }
-        assertNotNull("Edited site must exist after reload", editedSite)
-        assertEquals("Noble Quran", editedSite?.name)
-        assertEquals("https://quran.com/bn", editedSite?.url)
+        val reloadedSite = sitesReloaded.find { it.id == added.id }
+        assertNotNull("Added site must exist after reload", reloadedSite)
+        assertEquals("Quran.com", reloadedSite?.name)
+        assertEquals("https://quran.com", reloadedSite?.url)
     }
 
     @Test
-    fun `test viewModel add and edit favorite sites updates uiState`() {
+    fun `test viewModel add favorite sites updates uiState`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
@@ -494,14 +507,28 @@ class FocusShieldProtectionTest {
         val addedItem = afterAddList.find { it.name == "Sunnah" }
         assertNotNull("Added item should be in uiState", addedItem)
         assertEquals("https://sunnah.com", addedItem?.url)
+    }
 
-        // Edit favorite
-        viewModel.updateFavoriteSite(addedItem!!.id, "Sunnah Hadith", "https://sunnah.com/bukhari")
-        val afterEditList = viewModel.uiState.value.favoriteSites
-        val updatedItem = afterEditList.find { it.id == addedItem.id }
-        assertNotNull(updatedItem)
-        assertEquals("Sunnah Hadith", updatedItem?.name)
-        assertEquals("https://sunnah.com/bukhari", updatedItem?.url)
+    @Test
+    fun `test favicon manager domain extraction and graceful fallback`() {
+        val domainGoogle = com.muslim.browser.pro.browser.FaviconManager.extractDomain("https://www.google.com/search?q=test")
+        assertEquals("google.com", domainGoogle)
+
+        val domainWiki = com.muslim.browser.pro.browser.FaviconManager.extractDomain("https://en.wikipedia.org/wiki/Islam")
+        assertEquals("en.wikipedia.org", domainWiki)
+
+        val domainYoutube = com.muslim.browser.pro.browser.FaviconManager.extractDomain("www.youtube.com")
+        assertEquals("youtube.com", domainYoutube)
+
+        val domainBlank = com.muslim.browser.pro.browser.FaviconManager.extractDomain("about:blank")
+        assertEquals("", domainBlank)
+
+        // Verify that memory cache returns null when empty and does not crash
+        val memBmp = com.muslim.browser.pro.browser.FaviconManager.getFromMemory("nonexistent.com")
+        assertNull("Non-cached favicon must return null as fallback without crashing", memBmp)
+
+        // Verify clear cache works safely
+        com.muslim.browser.pro.browser.FaviconManager.clearCache(context)
     }
 
     // ==========================================
@@ -661,5 +688,157 @@ class FocusShieldProtectionTest {
         viewModel.goHome()
         assertTrue("Should be on home page", viewModel.uiState.value.isHomePage)
         assertFalse("Returning home resets page content visibility for next clean transition", viewModel.uiState.value.isPageContentVisible)
+    }
+
+    // ==========================================
+    // 8. WINDOW / TAB PERSISTENCE & HISTORY TESTS
+    // ==========================================
+
+    @Test
+    fun `Test A - multiple windows persistence across process restart`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm1 = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // 1. Initial tab: navigate to Website A
+        vm1.submitQueryOrUrl("https://news.ycombinator.com")
+        vm1.onPageFinished("https://news.ycombinator.com", "Hacker News", false, false)
+
+        // 2. Open Window 2: navigate to Website B
+        vm1.openNewTab()
+        vm1.submitQueryOrUrl("https://en.wikipedia.org")
+        vm1.onPageFinished("https://en.wikipedia.org", "Wikipedia", false, false)
+
+        // 3. Open Window 3: navigate to Website C
+        vm1.openNewTab()
+        vm1.submitQueryOrUrl("https://www.nature.com")
+        vm1.onPageFinished("https://www.nature.com", "Nature Journal", false, false)
+
+        // 4. Select Window 2 (Wikipedia) as active
+        val tabs = vm1.uiState.value.tabs
+        assertEquals("Must have 3 open tabs", 3, tabs.size)
+        val tab2 = tabs[1]
+        vm1.selectTab(tab2.id)
+        assertEquals("Tab 2 must be active", tab2.id, vm1.uiState.value.currentTabId)
+
+        // 5. Simulate Process Death / Recent Apps swipe-away by creating a new ViewModel instance
+        val vm2 = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // 6. Verify all 3 tabs are restored in exact order with URLs and titles
+        val restoredTabs = vm2.uiState.value.tabs
+        assertEquals("Restored session must have exactly 3 tabs", 3, restoredTabs.size)
+        assertEquals("Window 1 URL must match", "https://news.ycombinator.com", restoredTabs[0].url)
+        assertEquals("Window 1 Title must match", "Hacker News", restoredTabs[0].pageTitle)
+
+        assertEquals("Window 2 URL must match", "https://en.wikipedia.org", restoredTabs[1].url)
+        assertEquals("Window 2 Title must match", "Wikipedia", restoredTabs[1].pageTitle)
+
+        assertEquals("Window 3 URL must match", "https://www.nature.com", restoredTabs[2].url)
+        assertEquals("Window 3 Title must match", "Nature Journal", restoredTabs[2].pageTitle)
+
+        // 7. Verify active window is restored to Window 2
+        assertEquals("Active window must be restored to Window 2", tab2.id, vm2.uiState.value.currentTabId)
+        assertEquals("Current URL must match Window 2", "https://en.wikipedia.org", vm2.uiState.value.currentUrl)
+        assertFalse("Active window must not be home page", vm2.uiState.value.isHomePage)
+    }
+
+    @Test
+    fun `Test B - browsing history recording and individual delete`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // 1. Visit several pages
+        vm.submitQueryOrUrl("https://site-a.com")
+        vm.onPageFinished("https://site-a.com", "Site A Title", false, false)
+
+        vm.submitQueryOrUrl("https://site-b.com")
+        vm.onPageFinished("https://site-b.com", "Site B Title", false, false)
+
+        vm.submitQueryOrUrl("https://site-c.com")
+        vm.onPageFinished("https://site-c.com", "Site C Title", false, false)
+
+        // 2. Open History
+        vm.openHistory()
+        assertTrue("History sheet should be open", vm.uiState.value.isHistoryOpen)
+        val history = vm.uiState.value.browsingHistory
+        assertEquals("Should contain 3 history entries", 3, history.size)
+
+        // Newest entry first: Site C, then Site B, then Site A
+        assertEquals("Site C Title", history[0].title)
+        assertEquals("https://site-c.com", history[0].url)
+
+        assertEquals("Site B Title", history[1].title)
+        assertEquals("https://site-b.com", history[1].url)
+
+        assertEquals("Site A Title", history[2].title)
+        assertEquals("https://site-a.com", history[2].url)
+
+        // 3. Delete individual entry (Site B)
+        val siteBId = history[1].id
+        vm.deleteHistoryEntry(siteBId)
+
+        val updatedHistory = vm.uiState.value.browsingHistory
+        assertEquals("History size must be reduced by 1", 2, updatedHistory.size)
+        assertFalse("Site B must be deleted", updatedHistory.any { it.id == siteBId })
+        assertTrue("Site C must remain intact", updatedHistory.any { it.url == "https://site-c.com" })
+        assertTrue("Site A must remain intact", updatedHistory.any { it.url == "https://site-a.com" })
+
+        // 4. Close History
+        vm.closeHistory()
+        assertFalse("History sheet should be closed", vm.uiState.value.isHistoryOpen)
+    }
+
+    @Test
+    fun `Test C - recent apps swipe and process recreation preserves history and windows`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm1 = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // Add 2 tabs and visit sites
+        vm1.submitQueryOrUrl("https://first-tab.org")
+        vm1.onPageFinished("https://first-tab.org", "First Tab", false, false)
+
+        vm1.openNewTab()
+        vm1.submitQueryOrUrl("https://second-tab.org")
+        vm1.onPageFinished("https://second-tab.org", "Second Tab", false, false)
+
+        // Simulate app kill / restart
+        val vm2 = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // Verify tabs preserved
+        assertEquals(2, vm2.uiState.value.tabs.size)
+        assertEquals("https://first-tab.org", vm2.uiState.value.tabs[0].url)
+        assertEquals("https://second-tab.org", vm2.uiState.value.tabs[1].url)
+
+        // Verify history preserved
+        val history = vm2.uiState.value.browsingHistory
+        assertEquals(2, history.size)
+        assertTrue(history.any { it.url == "https://second-tab.org" })
+        assertTrue(history.any { it.url == "https://first-tab.org" })
+    }
+
+    @Test
+    fun `Test D - clear history and history deduplication`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // 1. Visit duplicate consecutive URLs
+        vm.submitQueryOrUrl("https://example.com")
+        vm.onPageFinished("https://example.com", "Example 1", false, false)
+        vm.onPageFinished("https://example.com", "Example 2", false, false)
+
+        // Should not spam duplicate history entries for consecutive reload/finish on same page
+        assertEquals(1, vm.uiState.value.browsingHistory.size)
+        assertEquals("Example 2", vm.uiState.value.browsingHistory[0].title)
+
+        // 2. about:blank should never be recorded in history
+        vm.onPageFinished("about:blank", "Blank", false, false)
+        assertEquals(1, vm.uiState.value.browsingHistory.size)
+
+        // 3. Clear all history
+        vm.clearAllHistory()
+        assertTrue("History must be empty after clearAllHistory", vm.uiState.value.browsingHistory.isEmpty())
+
+        // Survives app restart as empty
+        val vmAfterClear = com.muslim.browser.pro.browser.BrowserViewModel(app)
+        assertTrue(vmAfterClear.uiState.value.browsingHistory.isEmpty())
     }
 }

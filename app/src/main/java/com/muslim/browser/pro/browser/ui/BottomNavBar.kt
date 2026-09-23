@@ -61,7 +61,7 @@ fun BottomNavBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(41.8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceAround
         ) {
@@ -70,13 +70,14 @@ fun BottomNavBar(
                 onClick = onGoBack,
                 enabled = canGoBack,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .testTag("nav_back_button")
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = if (canGoBack) Color.White else Color(0x44FFFFFF)
+                    tint = if (canGoBack) Color.White else Color(0x44FFFFFF),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -85,21 +86,22 @@ fun BottomNavBar(
                 onClick = onGoForward,
                 enabled = canGoForward,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .testTag("nav_forward_button")
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Forward",
-                    tint = if (canGoForward) Color.White else Color(0x44FFFFFF)
+                    tint = if (canGoForward) Color.White else Color(0x44FFFFFF),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
             // 3. Boxed Plus Button [ + ] (Normal Tap: New Window/Tab, Long Press: Show Open Windows)
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .combinedClickable(
                         onClick = onNewTab,
                         onLongClick = onShowTabs,
@@ -109,17 +111,17 @@ fun BottomNavBar(
                 contentAlignment = Alignment.Center
             ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = Color(0x2200E5FF),
-                    border = BorderStroke(1.5.dp, Color(0xFF00E5FF)),
-                    modifier = Modifier.size(32.dp)
+                    border = BorderStroke(1.2.dp, Color(0xFF00E5FF)),
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "New Tab",
                             tint = Color(0xFF00E5FF),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -129,13 +131,14 @@ fun BottomNavBar(
             IconButton(
                 onClick = onToggleDesktopMode,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .testTag("nav_desktop_mode_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.DesktopWindows,
                     contentDescription = if (isDesktopModeEnabled) "Desktop Mode Enabled" else "Desktop Mode Disabled",
-                    tint = if (isDesktopModeEnabled) Color(0xFF00E5FF) else Color(0xAAFFFFFF)
+                    tint = if (isDesktopModeEnabled) Color(0xFF00E5FF) else Color(0xAAFFFFFF),
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -143,13 +146,14 @@ fun BottomNavBar(
             IconButton(
                 onClick = onOpenMenu,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(36.dp)
                     .testTag("nav_menu_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Menu and Settings",
-                    tint = Color(0xFF00E5FF)
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

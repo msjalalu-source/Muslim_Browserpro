@@ -49,15 +49,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.ui.BlockedScreen
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
 import com.muslim.browser.pro.browser.ui.HomePage
+import com.muslim.browser.pro.browser.ui.HistoryScreen
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -90,9 +93,14 @@ class MainActivity : ComponentActivity() {
             // Neutral web canvas background matching standard web content
             setBackgroundColor(android.graphics.Color.WHITE)
 
+            // Ensure cookies and third-party cookies are accepted for cross-origin assets (e.g. translation)
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
+                databaseEnabled = true
                 cacheMode = WebSettings.LOAD_DEFAULT
                 setSupportMultipleWindows(true)
                 loadWithOverviewMode = true
@@ -122,6 +130,11 @@ class MainActivity : ComponentActivity() {
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
                     val uri = request?.url ?: return null
+                    // Never intercept or block Google Translate scripts, styles, or proxy chunks
+                    val host = uri.host?.lowercase(Locale.ROOT)
+                    if (host != null && (host.endsWith("translate.goog") || host.endsWith("translate.google.com") || host == "gstatic.com" || host.endsWith(".gstatic.com") || host == "googleapis.com" || host.endsWith(".googleapis.com"))) {
+                        return null
+                    }
                     if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(uri)) {
                         return WebResourceResponse(
                             "text/plain",
@@ -257,6 +270,12 @@ class MainActivity : ComponentActivity() {
         }
         webViewInstance = webView
 
+        // Restore active tab webpage on cold start / process recreation if not on home page
+        val activeTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+        if (activeTab != null && !activeTab.isHomePage && activeTab.url.isNotEmpty()) {
+            webView.loadUrl(activeTab.url)
+        }
+
         setContent {
             MyApplicationTheme {
                 BrowserApp(
@@ -312,12 +331,14 @@ class MainActivity : ComponentActivity() {
     private fun clearAllData() {
         val webView = webViewInstance ?: return
         try {
-            // 1. Clear browsing history
+            // 1. Clear browsing history from WebView, ViewModel, and persistent storage
             webView.clearHistory()
+            viewModel.clearAllHistory()
             viewModel.onHistoryCleared()
 
             // 2. Clear cache
             webView.clearCache(true)
+            FaviconManager.clearCache(this)
 
             // 3. Clear cookies
             val cookieManager = CookieManager.getInstance()
@@ -391,8 +412,6 @@ class MainActivity : ComponentActivity() {
             stopLoading()
             pauseTimers()
             onPause()
-            loadUrl("about:blank")
-            clearHistory()
             removeAllViews()
             destroy()
         }
@@ -545,6 +564,7 @@ fun BrowserApp(
     // Handle Hardware/Gesture Back
     BackHandler(enabled = true) {
         when {
+            uiState.isHistoryOpen -> viewModel.closeHistory()
             uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
             uiState.isMenuOpen -> viewModel.closeMenu()
             uiState.blockedInfo != null -> viewModel.goHome()
@@ -630,7 +650,6 @@ fun BrowserApp(
                         }
                     },
                     onAddFavorite = { name, url -> viewModel.addFavoriteSite(name, url) },
-                    onEditFavorite = { id, name, url -> viewModel.updateFavoriteSite(id, name, url) },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -714,6 +733,7 @@ fun BrowserApp(
                 BrowserMenuSheet(
                     uiState = uiState,
                     onDismiss = { viewModel.closeMenu() },
+                    onOpenHistory = { viewModel.openHistory() },
                     onAddKeyword = { kw -> viewModel.addCustomKeyword(kw) },
                     onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
                     onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
@@ -721,9 +741,29 @@ fun BrowserApp(
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
                     onTranslateToBangla = {
-                        val target = viewModel.translateToBangla()
-                        webView.loadUrl(target)
+                        val target = viewModel.translateToBangla(webView.url)
+                        if (target.isNotBlank()) {
+                            webView.loadUrl(target)
+                        }
                     }
+                )
+            }
+
+            // Browsing History Screen Overlay
+            if (uiState.isHistoryOpen) {
+                HistoryScreen(
+                    history = uiState.browsingHistory,
+                    onSelectUrl = { url ->
+                        viewModel.closeHistory()
+                        val success = viewModel.submitQueryOrUrl(url)
+                        if (success) {
+                            webView.loadUrl(viewModel.uiState.value.currentUrl)
+                        }
+                    },
+                    onDeleteEntry = { id -> viewModel.deleteHistoryEntry(id) },
+                    onClearAll = { viewModel.clearAllHistory() },
+                    onDismiss = { viewModel.closeHistory() },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
         }

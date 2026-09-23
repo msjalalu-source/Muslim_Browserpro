@@ -26,11 +26,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
@@ -67,6 +69,7 @@ import com.muslim.browser.pro.browser.BrowserUiState
 fun BrowserMenuSheet(
     uiState: BrowserUiState,
     onDismiss: () -> Unit,
+    onOpenHistory: () -> Unit,
     onAddKeyword: (String) -> Boolean,
     onTogglePopupBlocking: (Boolean) -> Unit,
     onToggleAdBlocking: (Boolean) -> Unit,
@@ -260,7 +263,7 @@ fun BrowserMenuSheet(
                 HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Fast Bangla Translation (বাংলা অনুবাদ)
+                // Translation Mode (বাংলা অনুবাদ - Bengali)
                 Surface(
                     onClick = onTranslateToBangla,
                     modifier = Modifier
@@ -280,13 +283,13 @@ fun BrowserMenuSheet(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.Translate,
-                                contentDescription = null,
+                                contentDescription = "Translation Mode (Bengali)",
                                 tint = Color(0xFF00E5FF),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "বাংলা অনুবাদ (Fast Bangla)",
+                                text = "Translation Mode (বাংলা অনুবাদ)",
                                 color = Color.White,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -298,12 +301,73 @@ fun BrowserMenuSheet(
                             color = Color(0xFF00E5FF)
                         ) {
                             Text(
-                                text = "Translate",
+                                text = "Bengali",
                                 color = Color(0xFF0A0F1D),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Browsing History (ইতিহাস)
+                Surface(
+                    onClick = onOpenHistory,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_history"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF182238),
+                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "Browsing History",
+                                tint = Color(0xFF00E5FF),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "History",
+                                color = Color.White,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0x2200E5FF)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "View",
+                                    color = Color(0xFF00E5FF),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
                         }
                     }
                 }
