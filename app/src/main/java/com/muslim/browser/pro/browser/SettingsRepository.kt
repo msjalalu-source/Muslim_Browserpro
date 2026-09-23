@@ -213,6 +213,12 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
         }
 
+    var isTranslationModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_TRANSLATION_MODE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_TRANSLATION_MODE, value).apply()
+        }
+
     // ==========================================
     // BROWSING HISTORY PERSISTENCE
     // ==========================================
