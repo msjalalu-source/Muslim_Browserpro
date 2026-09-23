@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example"
+    namespace = "com.muslim.browser.pro"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example"
+        applicationId = "com.muslim.browser.pro"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

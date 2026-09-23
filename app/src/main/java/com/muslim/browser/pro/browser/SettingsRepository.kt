@@ -1,4 +1,4 @@
-package com.example.browser
+package com.muslim.browser.pro.browser
 
 import android.content.Context
 import android.content.SharedPreferences

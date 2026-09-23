@@ -1,4 +1,4 @@
-package com.example
+package com.muslim.browser.pro
 
 import android.app.Activity
 import android.content.ClipData
@@ -6,8 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
-import com.example.browser.ProtectionEngine
-import com.example.browser.SettingsRepository
+import com.muslim.browser.pro.browser.ProtectionEngine
+import com.muslim.browser.pro.browser.SettingsRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -150,7 +150,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test query-first custom keyword blocking prevents search submission`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
         viewModel.addCustomKeyword("secretblockedword")
 
         // 1. Raw search query with blocked keyword
@@ -168,7 +168,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test normal search query normalizes to google safe search in viewmodel`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
         // Submit regular query
         val allowed = viewModel.submitQueryOrUrl("learn jetpack compose")
@@ -326,7 +326,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test new tab creation and switching in BrowserViewModel`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
         assertEquals("Initial state should have 1 tab", 1, viewModel.uiState.value.tabs.size)
         val firstTabId = viewModel.uiState.value.currentTabId
 
@@ -349,7 +349,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test protection applies equally across multiple tabs`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
         viewModel.openNewTab()
 
         // Submit adult url on the new tab
@@ -361,7 +361,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test fast bangla translation on active webpage and homepage`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
         // 1. On homepage without search
         val homeTranslateUrl = viewModel.translateToBangla()
@@ -380,7 +380,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test plus button tap creates new window on home page while preserving old window`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
         // 1. Browse on first tab
         val tab1Id = viewModel.uiState.value.currentTabId
@@ -416,7 +416,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test long press plus button opens dialog without creating new window and allows restoration`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
         val tab1Id = viewModel.uiState.value.currentTabId
         viewModel.submitQueryOrUrl("https://en.wikipedia.org")
@@ -483,7 +483,7 @@ class FocusShieldProtectionTest {
     @Test
     fun `test viewModel add and edit favorite sites updates uiState`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.example.browser.BrowserViewModel(app)
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
         val initialCount = viewModel.uiState.value.favoriteSites.size
 
@@ -625,5 +625,41 @@ class FocusShieldProtectionTest {
 
         val emptyIntentResult = MainActivity.parseFileChooserResult(Activity.RESULT_OK, Intent())
         assertNull("Empty intent without data or clipData must return null", emptyIntentResult)
+    }
+
+    @Test
+    fun `test initial cold start search transition and page commit lifecycle`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // 1. On cold start, tab is on home page and page content is not visible
+        assertTrue("Cold start must start on home page", viewModel.uiState.value.isHomePage)
+        assertFalse("Page content should not be marked visible before first render", viewModel.uiState.value.isPageContentVisible)
+
+        // 2. Submit first search from home page
+        val searchAllowed = viewModel.submitQueryOrUrl("islamic history")
+        assertTrue("Clean query must be allowed", searchAllowed)
+        assertFalse("Should transition away from home page", viewModel.uiState.value.isHomePage)
+        assertTrue("Should be in loading state", viewModel.uiState.value.isLoading)
+        assertFalse("Page content should not be visible until WebView commits its first frame", viewModel.uiState.value.isPageContentVisible)
+
+        // 3. Simulate WebView committing first frame (onPageCommitVisible)
+        viewModel.onPageCommitVisible()
+        assertTrue("Page content must become visible as soon as onPageCommitVisible fires", viewModel.uiState.value.isPageContentVisible)
+
+        // 4. Page finishes loading
+        viewModel.onPageFinished(viewModel.uiState.value.currentUrl, "Islamic History - Search", false, false)
+        assertFalse("Loading state should complete", viewModel.uiState.value.isLoading)
+        assertTrue("Page content remains visible", viewModel.uiState.value.isPageContentVisible)
+
+        // 5. Subsequent search from top URL bar while already browsing
+        val nextSearch = viewModel.submitQueryOrUrl("quran tafseer")
+        assertTrue(nextSearch)
+        assertTrue("Subsequent search while already viewing a page preserves page content visibility for smooth transition", viewModel.uiState.value.isPageContentVisible)
+
+        // 6. User taps Home button
+        viewModel.goHome()
+        assertTrue("Should be on home page", viewModel.uiState.value.isHomePage)
+        assertFalse("Returning home resets page content visibility for next clean transition", viewModel.uiState.value.isPageContentVisible)
     }
 }

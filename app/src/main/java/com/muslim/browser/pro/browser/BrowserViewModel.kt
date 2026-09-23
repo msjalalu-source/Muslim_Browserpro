@@ -1,4 +1,4 @@
-package com.example.browser
+package com.muslim.browser.pro.browser
 
 import android.app.Application
 import android.net.Uri
@@ -36,6 +36,7 @@ data class BrowserTab(
     val blockedInfo: BlockedInfo? = null,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
+    val isPageContentVisible: Boolean = false,
     val bundle: android.os.Bundle? = null
 )
 
@@ -48,6 +49,7 @@ data class BrowserUiState(
     val pageTitle: String = "Home",
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
+    val isPageContentVisible: Boolean = false,
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val isMenuOpen: Boolean = false,
@@ -176,6 +178,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = tab.pageTitle,
                 isLoading = tab.isLoading,
                 loadingProgress = tab.loadingProgress,
+                isPageContentVisible = tab.isPageContentVisible,
                 canGoBack = tab.canGoBack,
                 canGoForward = tab.canGoForward,
                 blockedInfo = tab.blockedInfo,
@@ -211,6 +214,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = newCurrentTab.pageTitle,
                 isLoading = newCurrentTab.isLoading,
                 loadingProgress = newCurrentTab.loadingProgress,
+                isPageContentVisible = newCurrentTab.isPageContentVisible,
                 canGoBack = newCurrentTab.canGoBack,
                 canGoForward = newCurrentTab.canGoForward,
                 blockedInfo = newCurrentTab.blockedInfo
@@ -229,6 +233,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         pageTitle = "Home",
                         isLoading = false,
                         blockedInfo = null,
+                        isPageContentVisible = false,
                         bundle = null
                     )
                 } else tab
@@ -241,6 +246,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = "Home",
                 isLoading = false,
                 blockedInfo = null,
+                isPageContentVisible = false,
                 isTabsDialogOpen = false
             )
         }
@@ -362,6 +368,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun loadTargetUrl(targetUrl: String) {
+        val wasOnHomePage = _uiState.value.isHomePage
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
@@ -370,7 +377,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = targetUrl,
                         searchInput = targetUrl,
                         blockedInfo = null,
-                        isLoading = true
+                        isLoading = true,
+                        // Reset page content visibility if coming from home page or if never rendered yet
+                        isPageContentVisible = if (wasOnHomePage) false else tab.isPageContentVisible
                     )
                 } else tab
             }
@@ -380,7 +389,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
                 blockedInfo = null,
-                isLoading = true
+                isLoading = true,
+                isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
         }
     }
@@ -390,14 +400,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
-                    tab.copy(isHomePage = false, blockedInfo = info, isLoading = false)
+                    tab.copy(isHomePage = false, blockedInfo = info, isLoading = false, isPageContentVisible = true)
                 } else tab
             }
             state.copy(
                 tabs = updatedTabs,
                 isHomePage = false,
                 blockedInfo = info,
-                isLoading = false
+                isLoading = false,
+                isPageContentVisible = true
             )
         }
     }
@@ -455,6 +466,20 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun onPageCommitVisible() {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(isPageContentVisible = true)
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
+                isPageContentVisible = true
+            )
+        }
+    }
+
     fun onPageFinished(url: String, title: String?, canBack: Boolean, canForward: Boolean) {
         if (url.isBlank() || url == "about:blank") return
         val effectiveTitle = if (!title.isNullOrBlank()) title else url
@@ -468,7 +493,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         pageTitle = effectiveTitle,
                         canGoBack = canBack,
                         canGoForward = canForward,
-                        isHomePage = false
+                        isHomePage = false,
+                        isPageContentVisible = true
                     )
                 } else tab
             }
@@ -480,7 +506,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = effectiveTitle,
                 canGoBack = canBack,
                 canGoForward = canForward,
-                isHomePage = false
+                isPageContentVisible = true
             )
         }
     }

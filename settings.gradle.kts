@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Muslim_Browser"
+rootProject.name = "Muslim Browser Pro"
 include(":app")

@@ -1,4 +1,4 @@
-package com.example.browser.ui
+package com.muslim.browser.pro.browser.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -37,8 +37,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.browser.BrowserTab
-import com.example.browser.BrowserUiState
+import com.muslim.browser.pro.browser.BrowserTab
+import com.muslim.browser.pro.browser.BrowserUiState
 
 /**
  * Minimal Dropdown for Open Windows.

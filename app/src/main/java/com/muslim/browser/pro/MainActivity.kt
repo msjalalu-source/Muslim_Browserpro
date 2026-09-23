@@ -1,4 +1,4 @@
-package com.example
+package com.muslim.browser.pro
 
 import android.annotation.SuppressLint
 import android.app.DownloadManager
@@ -16,6 +16,7 @@ import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -47,15 +48,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.browser.BrowserViewModel
-import com.example.browser.ProtectionEngine
-import com.example.browser.ui.BlockedScreen
-import com.example.browser.ui.BottomNavBar
-import com.example.browser.ui.BrowserMenuSheet
-import com.example.browser.ui.BrowserWebView
-import com.example.browser.ui.HomePage
-import com.example.browser.ui.OpenWindowsDialog
-import com.example.ui.theme.MyApplicationTheme
+import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.ProtectionEngine
+import com.muslim.browser.pro.browser.ui.BlockedScreen
+import com.muslim.browser.pro.browser.ui.BottomNavBar
+import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
+import com.muslim.browser.pro.browser.ui.BrowserWebView
+import com.muslim.browser.pro.browser.ui.HomePage
+import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
+import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
 
 class MainActivity : ComponentActivity() {
@@ -86,8 +87,8 @@ class MainActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Fix White Screen: Match app dark theme canvas background to prevent white flash
-            setBackgroundColor(android.graphics.Color.parseColor("#0F172A"))
+            // Neutral web canvas background matching standard web content
+            setBackgroundColor(android.graphics.Color.WHITE)
 
             settings.apply {
                 javaScriptEnabled = true
@@ -136,6 +137,11 @@ class MainActivity : ComponentActivity() {
                     url?.let { viewModel.onPageStarted(it) }
                 }
 
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    super.onPageCommitVisible(view, url)
+                    viewModel.onPageCommitVisible()
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     url?.let {
@@ -145,6 +151,17 @@ class MainActivity : ComponentActivity() {
                             canBack = view?.canGoBack() ?: false,
                             canForward = view?.canGoForward() ?: false
                         )
+                    }
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request?.isForMainFrame == true) {
+                        viewModel.onPageCommitVisible()
                     }
                 }
             }
@@ -224,7 +241,7 @@ class MainActivity : ComponentActivity() {
                                 setMimeType(mimetype)
                                 val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
                                 setTitle(fileName)
-                                setDescription("Downloading with Focus Shield...")
+                                setDescription("Downloading with Muslim Browser Pro...")
                                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                             }

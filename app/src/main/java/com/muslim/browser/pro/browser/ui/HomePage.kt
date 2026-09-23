@@ -1,4 +1,4 @@
-package com.example.browser.ui
+package com.muslim.browser.pro.browser.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -63,9 +63,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.R
-import com.example.browser.BrowserUiState
-import com.example.browser.FavoriteSite
+import com.muslim.browser.pro.R
+import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.browser.FavoriteSite
 
 @Composable
 fun HomePage(
@@ -158,7 +158,7 @@ fun HomePage(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "FOCUS SHIELD",
+                        text = "MUSLIM BROWSER PRO",
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,

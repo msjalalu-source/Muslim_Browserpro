@@ -1,4 +1,4 @@
-package com.example.browser
+package com.muslim.browser.pro.browser
 
 import android.net.Uri
 import java.net.URLEncoder

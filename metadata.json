@@ -1,6 +1,6 @@
 {
-  "name": "Focus Shield",
-  "description": "Ultra-lightweight, fast and secure web browser with permanent adult protection, custom keyword blocking, ad and popup blocking, and download restrictions.",
+  "name": "Muslim Browser Pro",
+  "description": "Ultra-lightweight, fast and secure web browser with adult protection, custom keyword blocking, ad and popup blocking.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

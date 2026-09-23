@@ -1,4 +1,4 @@
-package com.example
+package com.muslim.browser.pro
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -16,7 +16,7 @@ class ExampleRobolectricTest {
   fun `read string from context`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val resId = context.resources.getIdentifier("app_name", "string", context.packageName)
-    val appName = if (resId != 0) context.getString(resId) else "Focus Shield"
-    assertEquals("Focus Shield", appName)
+    val appName = if (resId != 0) context.getString(resId) else "Muslim Browser Pro"
+    assertEquals("Muslim Browser Pro", appName)
   }
 }

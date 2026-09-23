@@ -1,4 +1,4 @@
-package com.example.browser.ui
+package com.muslim.browser.pro.browser.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
