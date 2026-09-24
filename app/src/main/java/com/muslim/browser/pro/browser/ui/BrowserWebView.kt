@@ -3,6 +3,7 @@ package com.muslim.browser.pro.browser.ui
 import android.annotation.SuppressLint
 import android.webkit.WebView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.muslim.browser.pro.MainActivity
 import com.muslim.browser.pro.browser.BrowserUiState
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -56,6 +59,12 @@ fun BrowserWebView(
 ) {
     var isEditingUrl by remember { mutableStateOf(false) }
     var editUrlText by remember(uiState.currentUrl) { mutableStateOf(uiState.currentUrl) }
+    val isDarkTheme = isSystemInDarkTheme()
+    val canvasBg = if (isDarkTheme) Color(0xFF0F172A) else Color.White
+
+    LaunchedEffect(isDarkTheme) {
+        MainActivity.applyWebViewTheme(webView, isDarkTheme)
+    }
 
     Column(
         modifier = modifier
@@ -194,10 +203,13 @@ fun BrowserWebView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .background(canvasBg)
         ) {
             AndroidView(
                 factory = { webView },
+                update = { view ->
+                    MainActivity.applyWebViewTheme(view, isDarkTheme)
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -207,7 +219,7 @@ fun BrowserWebView(
             if (!uiState.isPageContentVisible && uiState.isLoading) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color.White
+                    color = canvasBg
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,

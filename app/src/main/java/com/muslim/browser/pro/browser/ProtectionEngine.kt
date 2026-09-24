@@ -135,11 +135,54 @@ object ProtectionEngine {
     }
 
     /**
+     * Checks whether the host represents a Google Translate domain.
+     */
+    fun isTranslationHost(host: String?): Boolean {
+        if (host.isNullOrBlank()) return false
+        val clean = host.lowercase(Locale.ROOT)
+        return clean == "translate.google.com" ||
+                clean.endsWith(".translate.google.com") ||
+                clean == "translate.goog" ||
+                clean.endsWith(".translate.goog") ||
+                clean == "translate.googleapis.com" ||
+                clean.endsWith(".translate.googleapis.com")
+    }
+
+    /**
+     * Checks whether the URL is a Google Translate service URL.
+     */
+    fun isTranslationUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val host = extractHost(url) ?: return false
+        return isTranslationHost(host)
+    }
+
+    /**
+     * Extracts original target URL from Google Translate wrapper if present.
+     */
+    fun extractUnderlyingTargetUrl(url: String): String? {
+        val trimmed = url.trim()
+        if (trimmed.contains("translate.google.com")) {
+            try {
+                val uri = Uri.parse(trimmed)
+                val uParam = uri.getQueryParameter("u")
+                if (!uParam.isNullOrBlank()) return uParam
+            } catch (_: Exception) {}
+        }
+        val host = extractHost(trimmed)?.lowercase(Locale.ROOT)
+        if (host != null && host.endsWith(".translate.goog")) {
+            val originalHost = host.removeSuffix(".translate.goog").replace("-", ".")
+            return "https://$originalHost"
+        }
+        return null
+    }
+
+    /**
      * Detects if a URL is a search request from known search providers
      * (Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Ecosia, Startpage, Ask)
      * and extracts the clean search query string.
      *
-     * Returns null if the URL is a regular web page or search engine homepage.
+     * Returns null if the URL is a regular web page, search engine homepage, or translation URL.
      */
     fun extractSearchEngineQuery(url: String): String? {
         if (url.isBlank()) return null
@@ -151,6 +194,7 @@ object ProtectionEngine {
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
         if (scheme != "http" && scheme != "https") return null
         val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+        if (isTranslationHost(host)) return null
         val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
         return when {
@@ -253,6 +297,14 @@ object ProtectionEngine {
 
         // 2. Direct Adult Domain Matching (O(1) host lookup first)
         val host = extractHost(trimmed)
+        if (host != null && isTranslationHost(host)) {
+            val underlyingUrl = extractUnderlyingTargetUrl(trimmed)
+            if (underlyingUrl != null) {
+                return checkDirectUrl(underlyingUrl, customKeywords, normalizedKeywords)
+            }
+            return FilterResult.Allowed
+        }
+
         if (host != null && host.isNotEmpty()) {
             if (matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
                 return FilterResult.Blocked(

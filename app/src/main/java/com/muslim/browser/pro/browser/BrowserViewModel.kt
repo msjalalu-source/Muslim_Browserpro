@@ -393,8 +393,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         loadTargetUrl(targetUrl)
         closeMenu()
-        repository.isTranslationModeEnabled = true
-        _uiState.update { it.copy(isTranslationModeEnabled = true) }
         showToast("বাংলায় অনুবাদ করা হচ্ছে...")
         return targetUrl
     }
@@ -476,14 +474,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return true
         }
 
-        // Check if direct download URL
-        val downloadStatus = ProtectionEngine.checkDownloadType(url, null, null)
-        if (downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
-            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
-            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_APK
-        ) {
-            showToast("This file type is blocked.")
-            return true
+        // Check if direct download URL (skip for translation URLs)
+        if (!ProtectionEngine.isTranslationUrl(url)) {
+            val downloadStatus = ProtectionEngine.checkDownloadType(url, null, null)
+            if (downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
+                downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
+                downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_APK
+            ) {
+                showToast("This file type is blocked.")
+                return true
+            }
         }
 
         return false

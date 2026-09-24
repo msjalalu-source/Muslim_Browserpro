@@ -468,10 +468,11 @@ class FocusShieldProtectionTest {
     fun `test default favorite websites loaded`() {
         val sites = repository.getFavoriteSites()
         assertTrue("Default favorite sites should not be empty", sites.isNotEmpty())
-        assertTrue("Should contain Google", sites.any { it.name == "Google" })
+        assertEquals("Home Page must initially show exactly 7 website tiles", 7, sites.size)
+        assertFalse("Legacy Google tile must be removed", sites.any { it.name == "Google" })
+        assertFalse("Legacy Wikipedia tile must be removed", sites.any { it.name == "Wikipedia" })
 
-        // Verify top 7 websites requested by user
-        assertTrue(sites.size >= 7)
+        // Verify the exact 7 websites requested by user
         assertEquals("MoldovaLive", sites[0].name)
         assertEquals("https://moldovalive.md", sites[0].url)
 
@@ -915,5 +916,55 @@ class FocusShieldProtectionTest {
         val originalFromGoog = vm.getOriginalUrlFromTranslation("https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn")
         assertNotNull(originalFromGoog)
         assertTrue(originalFromGoog!!.contains("wikipedia.org"))
+    }
+
+    @Test
+    fun `test translation url detection and filtering logic preserves protection`() {
+        // 1. Translation host detection
+        assertTrue(ProtectionEngine.isTranslationHost("translate.google.com"))
+        assertTrue(ProtectionEngine.isTranslationHost("moldovalive-md.translate.goog"))
+        assertTrue(ProtectionEngine.isTranslationHost("translate.goog"))
+        assertFalse(ProtectionEngine.isTranslationHost("google.com"))
+        assertFalse(ProtectionEngine.isTranslationHost("moldovalive.md"))
+
+        // 2. Translation URL detection
+        val moldovaTranslateUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fmoldovalive.md"
+        val moldovaGoogUrl = "https://moldovalive-md.translate.goog/?_x_tr_sl=auto&_x_tr_tl=bn"
+        assertTrue(ProtectionEngine.isTranslationUrl(moldovaTranslateUrl))
+        assertTrue(ProtectionEngine.isTranslationUrl(moldovaGoogUrl))
+        assertFalse(ProtectionEngine.isTranslationUrl("https://moldovalive.md"))
+
+        // 3. Search query extractor must NOT treat Google Translate URLs as search queries
+        assertNull("Google Translate must not be extracted as search query",
+            ProtectionEngine.extractSearchEngineQuery(moldovaTranslateUrl))
+        assertNull("translate.google.com homepage must not be extracted as search query",
+            ProtectionEngine.extractSearchEngineQuery("https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"))
+
+        // 4. Safe site through Google Translate must be ALLOWED
+        val checkAllowed = ProtectionEngine.checkDirectUrl(moldovaTranslateUrl, emptySet())
+        assertTrue("Legitimate site translation must be allowed", checkAllowed is ProtectionEngine.FilterResult.Allowed)
+
+        val checkGoogAllowed = ProtectionEngine.checkDirectUrl(moldovaGoogUrl, emptySet())
+        assertTrue("translate.goog proxy for legitimate site must be allowed", checkGoogAllowed is ProtectionEngine.FilterResult.Allowed)
+
+        // 5. Adult site through Google Translate must STILL BE BLOCKED (Preserve protection)
+        val adultTranslateUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fpornhub.com"
+        val checkBlocked = ProtectionEngine.checkDirectUrl(adultTranslateUrl, emptySet())
+        assertTrue("Adult site accessed via translation must be blocked", checkBlocked is ProtectionEngine.FilterResult.Blocked)
+
+        val adultGoogUrl = "https://pornhub-com.translate.goog/"
+        val checkGoogBlocked = ProtectionEngine.checkDirectUrl(adultGoogUrl, emptySet())
+        assertTrue("Adult site accessed via translate.goog must be blocked", checkGoogBlocked is ProtectionEngine.FilterResult.Blocked)
+    }
+
+    @Test
+    fun `test applyWebViewTheme executes safely on WebView without throwing exceptions`() {
+        val webView = android.webkit.WebView(context)
+
+        // 1. Verify applying dark theme completes safely
+        MainActivity.applyWebViewTheme(webView, isDarkTheme = true)
+
+        // 2. Verify applying light theme completes safely
+        MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
     }
 }

@@ -5,6 +5,7 @@ import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -84,14 +85,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+
         // Create single WebView instance with optimized memory settings
         val webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            // Neutral web canvas background matching standard web content
-            setBackgroundColor(android.graphics.Color.WHITE)
+            applyWebViewTheme(this, isDarkTheme)
 
             // Ensure cookies and third-party cookies are accepted for cross-origin assets (e.g. translation)
             CookieManager.getInstance().setAcceptCookie(true)
@@ -132,7 +134,12 @@ class MainActivity : ComponentActivity() {
                     val uri = request?.url ?: return null
                     // Never intercept or block Google Translate scripts, styles, or proxy chunks
                     val host = uri.host?.lowercase(Locale.ROOT)
-                    if (host != null && (host.endsWith("translate.goog") || host.endsWith("translate.google.com") || host == "gstatic.com" || host.endsWith(".gstatic.com") || host == "googleapis.com" || host.endsWith(".googleapis.com"))) {
+                    if (host != null && (
+                        ProtectionEngine.isTranslationHost(host) ||
+                        host == "google.com" || host.endsWith(".google.com") ||
+                        host == "gstatic.com" || host.endsWith(".gstatic.com") ||
+                        host == "googleapis.com" || host.endsWith(".googleapis.com")
+                    )) {
                         return null
                     }
                     if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(uri)) {
@@ -290,6 +297,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleUrlNavigation(view: WebView?, url: String): Boolean {
+        // Translation URLs should not be intercepted as search engine requests
+        if (ProtectionEngine.isTranslationUrl(url)) {
+            val isBlocked = viewModel.checkAndFilterUrl(url)
+            if (isBlocked) {
+                return true // Block navigation if underlying content is blocked
+            }
+            return false // Allow WebView to proceed with translation
+        }
+
         // 1. Detect if this is a search engine request
         val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(url)
         if (searchEngineQuery != null) {
@@ -422,6 +438,28 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        /**
+         * Applies the native dark or light theme settings to the WebView.
+         * Leverages native Android WebView algorithmic darkening and force dark capabilities.
+         */
+        fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    webView.settings.isAlgorithmicDarkeningAllowed = isDarkTheme
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    @Suppress("DEPRECATION")
+                    webView.settings.forceDark = if (isDarkTheme) {
+                        WebSettings.FORCE_DARK_ON
+                    } else {
+                        WebSettings.FORCE_DARK_OFF
+                    }
+                }
+                val bgColor = if (isDarkTheme) android.graphics.Color.parseColor("#0F172A") else android.graphics.Color.WHITE
+                webView.setBackgroundColor(bgColor)
+            } catch (_: Exception) {}
+        }
 
         // Normalizes and sanitizes MIME types requested by websites via accept attributes.
         // Handles comma-separated values, extensions (.pdf, .png, etc.), and defaults to all types.
@@ -743,12 +781,6 @@ fun BrowserApp(
                     onTranslateToBangla = {
                         val target = viewModel.translateToBangla(webView.url)
                         if (target.isNotBlank()) {
-                            webView.loadUrl(target)
-                        }
-                    },
-                    onToggleTranslationMode = { enabled ->
-                        val target = viewModel.toggleTranslationMode(enabled, webView.url)
-                        if (!target.isNullOrBlank()) {
                             webView.loadUrl(target)
                         }
                     }

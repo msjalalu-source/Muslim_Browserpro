@@ -60,32 +60,39 @@ class SettingsRepository(context: Context) {
             return
         }
         try {
+            val legacyRemovedDomains = setOf(
+                "google.com", "wikipedia.org", "duckduckgo.com",
+                "bbc.com", "reddit.com", "youtube.com", "stackoverflow.com"
+            )
             val jsonArray = JSONArray(rawJson)
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
+                val url = obj.getString("url")
+                val domain = FaviconManager.extractDomain(url)
+                if (domain in legacyRemovedDomains) {
+                    continue
+                }
                 inMemoryFavorites.add(
                     FavoriteSite(
                         id = obj.optString("id", java.util.UUID.randomUUID().toString()),
                         name = obj.getString("name"),
-                        url = obj.getString("url"),
+                        url = url,
                         iconLetter = obj.optString("iconLetter", obj.getString("name").take(2).uppercase()),
                         badgeColor = obj.optLong("badgeColor", 0xFF4285F4)
                     )
                 )
             }
+            // Ensure the 7 required default sites are present in the list
+            for (featured in DEFAULT_FAVORITES.reversed()) {
+                val existingIndex = inMemoryFavorites.indexOfFirst {
+                    it.url.equals(featured.url, ignoreCase = true) || it.name.equals(featured.name, ignoreCase = true)
+                }
+                if (existingIndex == -1) {
+                    inMemoryFavorites.add(0, featured)
+                }
+            }
             if (inMemoryFavorites.isEmpty()) {
                 inMemoryFavorites.addAll(DEFAULT_FAVORITES)
-            } else {
-                // Ensure the 7 required websites are present at the beginning of the list
-                val featuredSites = DEFAULT_FAVORITES.take(7)
-                for (featured in featuredSites.reversed()) {
-                    val existingIndex = inMemoryFavorites.indexOfFirst {
-                        it.url.equals(featured.url, ignoreCase = true) || it.name.equals(featured.name, ignoreCase = true)
-                    }
-                    if (existingIndex == -1) {
-                        inMemoryFavorites.add(0, featured)
-                    }
-                }
             }
         } catch (_: Exception) {
             inMemoryFavorites.addAll(DEFAULT_FAVORITES)
@@ -397,14 +404,7 @@ class SettingsRepository(context: Context) {
             FavoriteSite(id = "fav_github", name = "GitHub", url = "https://github.com/", iconLetter = "GH", badgeColor = 0xFF24292E),
             FavoriteSite(id = "fav_prothomalo", name = "Prothom Alo ePaper", url = "https://epaper.prothomalo.com/Home", iconLetter = "PA", badgeColor = 0xFFD32F2F),
             FavoriteSite(id = "fav_dailystar", name = "The Daily Star Bangla", url = "https://bangla.thedailystar.net", iconLetter = "DS", badgeColor = 0xFF283593),
-            FavoriteSite(id = "fav_ittefaq", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFE65100),
-            FavoriteSite(id = "fav_google", name = "Google", url = "https://www.google.com", iconLetter = "G", badgeColor = 0xFF4285F4),
-            FavoriteSite(id = "fav_wikipedia", name = "Wikipedia", url = "https://www.wikipedia.org", iconLetter = "W", badgeColor = 0xFF333333),
-            FavoriteSite(id = "fav_duckduckgo", name = "DuckDuckGo", url = "https://duckduckgo.com", iconLetter = "D", badgeColor = 0xFFDE5833),
-            FavoriteSite(id = "fav_bbc", name = "BBC News", url = "https://www.bbc.com/news", iconLetter = "B", badgeColor = 0xFFBB1919),
-            FavoriteSite(id = "fav_reddit", name = "Reddit", url = "https://www.reddit.com", iconLetter = "R", badgeColor = 0xFFFF4500),
-            FavoriteSite(id = "fav_youtube", name = "YouTube", url = "https://www.youtube.com", iconLetter = "Y", badgeColor = 0xFFFF0000),
-            FavoriteSite(id = "fav_stackoverflow", name = "Stack Overflow", url = "https://stackoverflow.com", iconLetter = "SO", badgeColor = 0xFFF48024)
+            FavoriteSite(id = "fav_ittefaq", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFE65100)
         )
     }
 }
