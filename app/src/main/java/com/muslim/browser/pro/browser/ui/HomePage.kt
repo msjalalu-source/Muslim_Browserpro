@@ -95,7 +95,6 @@ fun HomePage(
         )
     }
     val searchBarBorder = remember { BorderStroke(1.dp, Color(0x5542A5F5)) }
-    val addBtnBorder = remember { BorderStroke(1.dp, Color(0x6600E5FF)) }
     val quoteAreaBorder = remember { BorderStroke(1.dp, Color(0x3300E5FF)) }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -269,7 +268,7 @@ fun HomePage(
                 )
             }
 
-            // Favorite Websites Grid with "+ Add" at the very bottom of the tiles
+            // Favorite Websites Grid with "+ Add" tile matching identical dimensions
             LazyVerticalGrid(
                 columns = GridCells.Fixed(4),
                 modifier = Modifier
@@ -286,44 +285,11 @@ fun HomePage(
                     )
                 }
 
-                // Centered "+ Add" below all tiles
-                item(span = { GridItemSpan(4) }) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0x2600E5FF),
-                            border = addBtnBorder,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { openAddDialog() }
-                                .testTag("add_favorite_button")
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add Website",
-                                    tint = Color(0xFF00E5FF),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Add",
-                                    color = Color(0xFF00E5FF),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
+                // Add Tile positioned right after the last tile in the same grid
+                item(key = "add_favorite_tile") {
+                    AddFavoriteSiteTile(
+                        onClick = { openAddDialog() }
+                    )
                 }
             }
 
@@ -472,6 +438,46 @@ fun FavoriteSiteItem(
         Text(
             text = site.name,
             color = Color(0xFFECEFF1),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun AddFavoriteSiteTile(
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp)
+            .testTag("add_favorite_button")
+    ) {
+        Surface(
+            modifier = Modifier.size(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0x2600E5FF),
+            border = BorderStroke(1.dp, Color(0x6600E5FF)),
+            shadowElevation = 4.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Add Website",
+                    tint = Color(0xFF00E5FF),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Add",
+            color = Color(0xFF00E5FF),
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,

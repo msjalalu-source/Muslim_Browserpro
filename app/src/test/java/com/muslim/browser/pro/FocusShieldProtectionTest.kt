@@ -469,6 +469,29 @@ class FocusShieldProtectionTest {
         val sites = repository.getFavoriteSites()
         assertTrue("Default favorite sites should not be empty", sites.isNotEmpty())
         assertTrue("Should contain Google", sites.any { it.name == "Google" })
+
+        // Verify top 7 websites requested by user
+        assertTrue(sites.size >= 7)
+        assertEquals("MoldovaLive", sites[0].name)
+        assertEquals("https://moldovalive.md", sites[0].url)
+
+        assertEquals("Moldova1", sites[1].name)
+        assertEquals("https://moldova1.md/i/en", sites[1].url)
+
+        assertEquals("Google AI Studio", sites[2].name)
+        assertEquals("https://aistudio.google.com", sites[2].url)
+
+        assertEquals("GitHub", sites[3].name)
+        assertEquals("https://github.com/", sites[3].url)
+
+        assertEquals("Prothom Alo ePaper", sites[4].name)
+        assertEquals("https://epaper.prothomalo.com/Home", sites[4].url)
+
+        assertEquals("The Daily Star Bangla", sites[5].name)
+        assertEquals("https://bangla.thedailystar.net", sites[5].url)
+
+        assertEquals("Ittefaq", sites[6].name)
+        assertEquals("https://www.ittefaq.com.bd", sites[6].url)
     }
 
     @Test
@@ -840,5 +863,57 @@ class FocusShieldProtectionTest {
         // Survives app restart as empty
         val vmAfterClear = com.muslim.browser.pro.browser.BrowserViewModel(app)
         assertTrue(vmAfterClear.uiState.value.browsingHistory.isEmpty())
+    }
+
+    // ==========================================
+    // TRANSLATION MODE SWITCH & PERSISTENCE TESTS
+    // ==========================================
+
+    @Test
+    fun `test translation mode switch toggle and persistence across app restart`() {
+        // 1. Initial default state should be false
+        assertFalse("Translation mode default should be false", repository.isTranslationModeEnabled)
+
+        // 2. Turn ON
+        repository.isTranslationModeEnabled = true
+        assertTrue("Translation mode should now be true", repository.isTranslationModeEnabled)
+
+        // 3. Verify persistence across re-creation (restart)
+        val reloadedRepo1 = SettingsRepository(context)
+        assertTrue("Translation mode ON must persist after reload", reloadedRepo1.isTranslationModeEnabled)
+
+        // 4. Turn OFF
+        repository.isTranslationModeEnabled = false
+        assertFalse("Translation mode should now be false", repository.isTranslationModeEnabled)
+
+        // 5. Verify persistence across re-creation (restart)
+        val reloadedRepo2 = SettingsRepository(context)
+        assertFalse("Translation mode OFF must persist after reload", reloadedRepo2.isTranslationModeEnabled)
+    }
+
+    @Test
+    fun `test viewModel translation toggle updates uiState and handles translation urls`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        // Initial state
+        assertFalse("uiState should start with isTranslationModeEnabled = false", vm.uiState.value.isTranslationModeEnabled)
+
+        // Toggle ON on webpage
+        vm.submitQueryOrUrl("https://en.wikipedia.org/wiki/Islam")
+        val targetTranslateUrl = vm.toggleTranslationMode(true, "https://en.wikipedia.org/wiki/Islam")
+        assertTrue("uiState should have isTranslationModeEnabled = true", vm.uiState.value.isTranslationModeEnabled)
+        assertNotNull("Target translation url should not be null", targetTranslateUrl)
+        assertTrue("Translated URL should target Bangla", targetTranslateUrl!!.contains("translate.google.com") && targetTranslateUrl.contains("tl=bn"))
+
+        // Toggle OFF on translated page reverts to original URL
+        val revertedUrl = vm.toggleTranslationMode(false, targetTranslateUrl)
+        assertFalse("uiState should have isTranslationModeEnabled = false", vm.uiState.value.isTranslationModeEnabled)
+        assertEquals("https://en.wikipedia.org/wiki/Islam", revertedUrl)
+
+        // Test extracting original URL from .translate.goog format
+        val originalFromGoog = vm.getOriginalUrlFromTranslation("https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn")
+        assertNotNull(originalFromGoog)
+        assertTrue(originalFromGoog!!.contains("wikipedia.org"))
     }
 }

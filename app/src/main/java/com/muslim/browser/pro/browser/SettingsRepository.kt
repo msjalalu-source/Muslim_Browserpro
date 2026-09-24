@@ -75,6 +75,17 @@ class SettingsRepository(context: Context) {
             }
             if (inMemoryFavorites.isEmpty()) {
                 inMemoryFavorites.addAll(DEFAULT_FAVORITES)
+            } else {
+                // Ensure the 7 required websites are present at the beginning of the list
+                val featuredSites = DEFAULT_FAVORITES.take(7)
+                for (featured in featuredSites.reversed()) {
+                    val existingIndex = inMemoryFavorites.indexOfFirst {
+                        it.url.equals(featured.url, ignoreCase = true) || it.name.equals(featured.name, ignoreCase = true)
+                    }
+                    if (existingIndex == -1) {
+                        inMemoryFavorites.add(0, featured)
+                    }
+                }
             }
         } catch (_: Exception) {
             inMemoryFavorites.addAll(DEFAULT_FAVORITES)
@@ -373,16 +384,23 @@ class SettingsRepository(context: Context) {
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
+        private const val KEY_TRANSLATION_MODE = "key_translation_mode"
         private const val KEY_FAVORITES = "key_favorite_sites"
         private const val KEY_SAVED_TABS = "key_saved_tabs"
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
         private const val KEY_HISTORY = "key_browsing_history"
 
         val DEFAULT_FAVORITES = listOf(
+            FavoriteSite(id = "fav_moldovalive", name = "MoldovaLive", url = "https://moldovalive.md", iconLetter = "ML", badgeColor = 0xFF00796B),
+            FavoriteSite(id = "fav_moldova1", name = "Moldova1", url = "https://moldova1.md/i/en", iconLetter = "M1", badgeColor = 0xFF1565C0),
+            FavoriteSite(id = "fav_aistudio", name = "Google AI Studio", url = "https://aistudio.google.com", iconLetter = "AI", badgeColor = 0xFF1A73E8),
+            FavoriteSite(id = "fav_github", name = "GitHub", url = "https://github.com/", iconLetter = "GH", badgeColor = 0xFF24292E),
+            FavoriteSite(id = "fav_prothomalo", name = "Prothom Alo ePaper", url = "https://epaper.prothomalo.com/Home", iconLetter = "PA", badgeColor = 0xFFD32F2F),
+            FavoriteSite(id = "fav_dailystar", name = "The Daily Star Bangla", url = "https://bangla.thedailystar.net", iconLetter = "DS", badgeColor = 0xFF283593),
+            FavoriteSite(id = "fav_ittefaq", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFE65100),
             FavoriteSite(id = "fav_google", name = "Google", url = "https://www.google.com", iconLetter = "G", badgeColor = 0xFF4285F4),
             FavoriteSite(id = "fav_wikipedia", name = "Wikipedia", url = "https://www.wikipedia.org", iconLetter = "W", badgeColor = 0xFF333333),
             FavoriteSite(id = "fav_duckduckgo", name = "DuckDuckGo", url = "https://duckduckgo.com", iconLetter = "D", badgeColor = 0xFFDE5833),
-            FavoriteSite(id = "fav_github", name = "GitHub", url = "https://www.github.com", iconLetter = "GH", badgeColor = 0xFF24292E),
             FavoriteSite(id = "fav_bbc", name = "BBC News", url = "https://www.bbc.com/news", iconLetter = "B", badgeColor = 0xFFBB1919),
             FavoriteSite(id = "fav_reddit", name = "Reddit", url = "https://www.reddit.com", iconLetter = "R", badgeColor = 0xFFFF4500),
             FavoriteSite(id = "fav_youtube", name = "YouTube", url = "https://www.youtube.com", iconLetter = "Y", badgeColor = 0xFFFF0000),

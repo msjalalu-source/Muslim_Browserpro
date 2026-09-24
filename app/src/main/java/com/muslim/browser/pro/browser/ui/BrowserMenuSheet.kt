@@ -77,6 +77,7 @@ fun BrowserMenuSheet(
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onTranslateToBangla: () -> Unit,
+    onToggleTranslationMode: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var newKeywordInput by remember { mutableStateOf("") }
@@ -263,51 +264,53 @@ fun BrowserMenuSheet(
                 HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Translation Mode (বাংলা অনুবাদ - Bengali)
+                // Translation Mode (বাংলা অনুবাদ - Bengali) with Toggle Switch
                 Surface(
-                    onClick = onTranslateToBangla,
+                    onClick = { onToggleTranslationMode(!uiState.isTranslationModeEnabled) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("action_bangla_translate"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0x1F00E5FF),
-                    border = BorderStroke(1.dp, Color(0x5500E5FF))
+                    color = Color(0xFF182238),
+                    border = BorderStroke(1.dp, if (uiState.isTranslationModeEnabled) Color(0x5500E5FF) else Color(0x1F42A5F5))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Translate,
                                 contentDescription = "Translation Mode (Bengali)",
-                                tint = Color(0xFF00E5FF),
+                                tint = if (uiState.isTranslationModeEnabled) Color(0xFF00E5FF) else Color(0xFF81D4FA),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Translation Mode (বাংলা অনুবাদ)",
+                                text = "বাংলা ট্রান্সলেশন",
                                 color = Color.White,
                                 fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontWeight = FontWeight.Medium
                             )
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFF00E5FF)
-                        ) {
-                            Text(
-                                text = "Bengali",
-                                color = Color(0xFF0A0F1D),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Switch(
+                            checked = uiState.isTranslationModeEnabled,
+                            onCheckedChange = onToggleTranslationMode,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF0A0F1D),
+                                checkedTrackColor = Color(0xFF00E5FF),
+                                uncheckedThumbColor = Color(0xFF78909C),
+                                uncheckedTrackColor = Color(0xFF263238)
+                            ),
+                            modifier = Modifier.testTag("translation_mode_switch")
+                        )
                     }
                 }
 

@@ -745,6 +745,12 @@ fun BrowserApp(
                         if (target.isNotBlank()) {
                             webView.loadUrl(target)
                         }
+                    },
+                    onToggleTranslationMode = { enabled ->
+                        val target = viewModel.toggleTranslationMode(enabled, webView.url)
+                        if (!target.isNullOrBlank()) {
+                            webView.loadUrl(target)
+                        }
                     }
                 )
             }

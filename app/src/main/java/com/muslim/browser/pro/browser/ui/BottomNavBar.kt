@@ -153,7 +153,7 @@ fun BottomNavBar(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Menu and Settings",
                     tint = Color(0xFF00E5FF),
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(23.dp)
                 )
             }
         }

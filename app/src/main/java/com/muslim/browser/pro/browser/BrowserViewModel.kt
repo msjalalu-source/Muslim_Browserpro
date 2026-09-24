@@ -62,7 +62,8 @@ data class BrowserUiState(
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
-    val isDesktopModeEnabled: Boolean = false
+    val isDesktopModeEnabled: Boolean = false,
+    val isTranslationModeEnabled: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -91,6 +92,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
+                isTranslationModeEnabled = repository.isTranslationModeEnabled,
                 browsingHistory = repository.getHistory()
             )
         )
@@ -391,6 +393,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
         loadTargetUrl(targetUrl)
         closeMenu()
+        repository.isTranslationModeEnabled = true
+        _uiState.update { it.copy(isTranslationModeEnabled = true) }
         showToast("বাংলায় অনুবাদ করা হচ্ছে...")
         return targetUrl
     }
@@ -615,6 +619,57 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleDesktopMode(enabled: Boolean) {
         repository.isDesktopModeEnabled = enabled
         _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
+    }
+
+    /**
+     * Translation Mode toggle in Settings:
+     * - Persists enabled/disabled state to SettingsRepository.
+     * - If enabled and currently browsing a webpage, translates to Bangla.
+     * - If disabled and currently on a translated URL, unwraps/reverts to the original webpage.
+     */
+    fun toggleTranslationMode(enabled: Boolean, liveUrl: String? = null): String? {
+        repository.isTranslationModeEnabled = enabled
+        _uiState.update { it.copy(isTranslationModeEnabled = enabled) }
+
+        if (enabled) {
+            val current = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" } ?: _uiState.value.currentUrl
+            if (!_uiState.value.isHomePage && current.isNotBlank() && !current.startsWith("about:")) {
+                return translateToBangla(liveUrl)
+            } else {
+                showToast("Translation Mode ON (বাংলা)")
+            }
+        } else {
+            showToast("Translation Mode OFF")
+            val current = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" } ?: _uiState.value.currentUrl
+            val originalUrl = getOriginalUrlFromTranslation(current)
+            if (originalUrl != null) {
+                loadTargetUrl(originalUrl)
+                return originalUrl
+            }
+        }
+        return null
+    }
+
+    fun getOriginalUrlFromTranslation(url: String): String? {
+        if (url.isBlank() || url.startsWith("about:")) return null
+        if (url.contains("translate.google.com")) {
+            try {
+                val uri = android.net.Uri.parse(url)
+                val paramU = uri.getQueryParameter("u")
+                if (!paramU.isNullOrBlank()) return paramU
+            } catch (_: Exception) {}
+        }
+        if (url.contains(".translate.goog")) {
+            try {
+                val uri = android.net.Uri.parse(url)
+                val host = uri.host ?: ""
+                val originalHost = host.replace(".translate.goog", "").replace("-", ".")
+                val path = uri.encodedPath ?: ""
+                val query = uri.encodedQuery?.let { "?$it" } ?: ""
+                return "https://$originalHost$path$query"
+            } catch (_: Exception) {}
+        }
+        return null
     }
 
     fun onHistoryCleared() {
