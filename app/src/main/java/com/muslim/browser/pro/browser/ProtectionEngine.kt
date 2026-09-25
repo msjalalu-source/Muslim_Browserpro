@@ -171,10 +171,47 @@ object ProtectionEngine {
         }
         val host = extractHost(trimmed)?.lowercase(Locale.ROOT)
         if (host != null && host.endsWith(".translate.goog")) {
-            val originalHost = host.removeSuffix(".translate.goog").replace("-", ".")
+            val originalHost = host.removeSuffix(".translate.goog")
+                .replace("--", "-TEMP-")
+                .replace("-", ".")
+                .replace("-TEMP-", "-")
             return "https://$originalHost"
         }
         return null
+    }
+
+    /**
+     * Converts a Google Translate frame wrapper URL (translate.google.com/translate?u=...)
+     * into a direct un-framed .translate.goog URL to prevent Chromium iframe blocking
+     * ("This content is blocked" caused by X-Frame-Options / CSP frame restrictions).
+     */
+    fun toDirectTranslateUrl(url: String): String {
+        if (url.isBlank()) return url
+        val trimmed = url.trim()
+        if (trimmed.contains("translate.google.com/translate") && trimmed.contains("u=")) {
+            try {
+                val uri = Uri.parse(trimmed)
+                val uParam = uri.getQueryParameter("u")
+                if (!uParam.isNullOrBlank()) {
+                    val targetUri = Uri.parse(uParam)
+                    val targetHost = targetUri.host
+                    if (!targetHost.isNullOrBlank()) {
+                        val googHost = targetHost.lowercase(Locale.ROOT)
+                            .replace("-", "--")
+                            .replace(".", "-") + ".translate.goog"
+                        val targetPath = targetUri.encodedPath ?: ""
+                        val targetQuery = targetUri.encodedQuery
+                        val sl = uri.getQueryParameter("sl") ?: "auto"
+                        val tl = uri.getQueryParameter("tl") ?: "bn"
+                        val hl = uri.getQueryParameter("hl") ?: "bn"
+                        val trParams = "_x_tr_sl=$sl&_x_tr_tl=$tl&_x_tr_hl=$hl"
+                        val finalQuery = if (targetQuery.isNullOrEmpty()) trParams else "$targetQuery&$trParams"
+                        return "https://$googHost$targetPath?$finalQuery"
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return url
     }
 
     /**

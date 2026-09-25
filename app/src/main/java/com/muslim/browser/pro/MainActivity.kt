@@ -124,6 +124,11 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
+                    val direct = ProtectionEngine.toDirectTranslateUrl(url)
+                    if (direct != url) {
+                        view?.loadUrl(direct)
+                        return true
+                    }
                     return handleUrlNavigation(view, url)
                 }
 
@@ -159,11 +164,13 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
+                    applyWebPageDarkTheme(view, isDarkThemeActive)
                     viewModel.onPageCommitVisible()
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    applyWebPageDarkTheme(view, isDarkThemeActive)
                     url?.let {
                         viewModel.onPageFinished(
                             url = it,
@@ -439,12 +446,17 @@ class MainActivity : ComponentActivity() {
         const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+        @Volatile
+        var isDarkThemeActive: Boolean = true
+
         /**
          * Applies the native dark or light theme settings to the WebView.
-         * Leverages native Android WebView algorithmic darkening and force dark capabilities.
+         * Leverages native Android WebView algorithmic darkening and force dark capabilities,
+         * and applies clean, lightweight dark theme rendering to web page content.
          */
         fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
             try {
+                isDarkThemeActive = isDarkTheme
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     webView.settings.isAlgorithmicDarkeningAllowed = isDarkTheme
                 }
@@ -458,7 +470,55 @@ class MainActivity : ComponentActivity() {
                 }
                 val bgColor = if (isDarkTheme) android.graphics.Color.parseColor("#0F172A") else android.graphics.Color.WHITE
                 webView.setBackgroundColor(bgColor)
+                applyWebPageDarkTheme(webView, isDarkTheme)
             } catch (_: Exception) {}
+        }
+
+        /**
+         * Applies or removes lightweight dark rendering on web content.
+         * Preserves true image, video, and media colors while darkening light backgrounds and text.
+         */
+        fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
+            if (webView == null) return
+            try {
+                if (isDarkTheme) {
+                    val script = """
+                        (function() {
+                            try {
+                                var id = '__mb_dark_theme__';
+                                if (document.getElementById(id)) return;
+                                var target = document.body || document.documentElement;
+                                if (!target) return;
+                                var bg = window.getComputedStyle(target).backgroundColor;
+                                var m = bg ? bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/) : null;
+                                if (m) {
+                                    var alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
+                                    if (alpha > 0.1) {
+                                        var r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
+                                        var lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                                        if (lum < 65) return;
+                                    }
+                                }
+                                var style = document.createElement('style');
+                                style.id = id;
+                                style.textContent = 'html { filter: invert(100%) hue-rotate(180deg) !important; background-color: #0F172A !important; } img, video, canvas, svg, picture, iframe, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
+                                (document.head || document.documentElement).appendChild(style);
+                            } catch(e) {}
+                        })();
+                    """.trimIndent()
+                    webView.evaluateJavascript(script, null)
+                } else {
+                    val script = """
+                        (function() {
+                            try {
+                                var el = document.getElementById('__mb_dark_theme__');
+                                if (el) el.remove();
+                            } catch(e) {}
+                        })();
+                    """.trimIndent()
+                    webView.evaluateJavascript(script, null)
+                }
+            } catch (_: Throwable) {}
         }
 
         // Normalizes and sanitizes MIME types requested by websites via accept attributes.
@@ -781,7 +841,8 @@ fun BrowserApp(
                     onTranslateToBangla = {
                         val target = viewModel.translateToBangla(webView.url)
                         if (target.isNotBlank()) {
-                            webView.loadUrl(target)
+                            val direct = ProtectionEngine.toDirectTranslateUrl(target)
+                            webView.loadUrl(direct)
                         }
                     }
                 )

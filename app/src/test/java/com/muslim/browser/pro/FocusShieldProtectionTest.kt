@@ -955,6 +955,28 @@ class FocusShieldProtectionTest {
         val adultGoogUrl = "https://pornhub-com.translate.goog/"
         val checkGoogBlocked = ProtectionEngine.checkDirectUrl(adultGoogUrl, emptySet())
         assertTrue("Adult site accessed via translate.goog must be blocked", checkGoogBlocked is ProtectionEngine.FilterResult.Blocked)
+
+        // 6. Direct translation un-framing (preventing 'This content is blocked' iframe error)
+        val framedUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBangladesh"
+        val directUrl = ProtectionEngine.toDirectTranslateUrl(framedUrl)
+        assertEquals(
+            "https://en-wikipedia-org.translate.goog/wiki/Bangladesh?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
+            directUrl
+        )
+
+        // Hyphenated domains should be escaped with double hyphens
+        val framedHyphenUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fmy-site.org%2Fpage%3Fid%3D1"
+        val directHyphenUrl = ProtectionEngine.toDirectTranslateUrl(framedHyphenUrl)
+        assertEquals(
+            "https://my--site-org.translate.goog/page?id=1&_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
+            directHyphenUrl
+        )
+
+        // Non-framed URLs should remain unchanged
+        val homeTranslate = "https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"
+        assertEquals(homeTranslate, ProtectionEngine.toDirectTranslateUrl(homeTranslate))
+        val searchTranslate = "https://www.google.com/search?q=islam&hl=bn&safe=active"
+        assertEquals(searchTranslate, ProtectionEngine.toDirectTranslateUrl(searchTranslate))
     }
 
     @Test
@@ -963,8 +985,10 @@ class FocusShieldProtectionTest {
 
         // 1. Verify applying dark theme completes safely
         MainActivity.applyWebViewTheme(webView, isDarkTheme = true)
+        org.junit.Assert.assertTrue(MainActivity.isDarkThemeActive)
 
         // 2. Verify applying light theme completes safely
         MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
+        org.junit.Assert.assertFalse(MainActivity.isDarkThemeActive)
     }
 }

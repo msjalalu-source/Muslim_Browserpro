@@ -363,15 +363,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return rawCurrent
         }
 
-        val originalFromParam = if (rawCurrent.contains("translate.google.com")) {
-            try {
-                android.net.Uri.parse(rawCurrent).getQueryParameter("u")
-            } catch (_: Exception) {
-                null
-            }
-        } else null
-
-        val cleanCurrent = originalFromParam?.takeIf { it.isNotBlank() } ?: rawCurrent
+        val cleanCurrent = getOriginalUrlFromTranslation(rawCurrent) ?: rawCurrent
 
         val targetUrl = if (!_uiState.value.isHomePage && cleanCurrent.isNotBlank() && !cleanCurrent.startsWith("about:")) {
             val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(cleanCurrent)
@@ -663,9 +655,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val uri = android.net.Uri.parse(url)
                 val host = uri.host ?: ""
-                val originalHost = host.replace(".translate.goog", "").replace("-", ".")
+                val originalHost = host.removeSuffix(".translate.goog")
+                    .replace("--", "-TEMP-")
+                    .replace("-", ".")
+                    .replace("-TEMP-", "-")
                 val path = uri.encodedPath ?: ""
-                val query = uri.encodedQuery?.let { "?$it" } ?: ""
+                val query = uri.query?.split("&")
+                    ?.filterNot { it.startsWith("_x_tr_") }
+                    ?.joinToString("&")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "?$it" } ?: ""
                 return "https://$originalHost$path$query"
             } catch (_: Exception) {}
         }
