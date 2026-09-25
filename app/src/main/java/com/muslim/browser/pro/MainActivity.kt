@@ -124,11 +124,6 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
-                    val direct = ProtectionEngine.toDirectTranslateUrl(url)
-                    if (direct != url) {
-                        view?.loadUrl(direct)
-                        return true
-                    }
                     return handleUrlNavigation(view, url)
                 }
 
@@ -841,8 +836,7 @@ fun BrowserApp(
                     onTranslateToBangla = {
                         val target = viewModel.translateToBangla(webView.url)
                         if (target.isNotBlank()) {
-                            val direct = ProtectionEngine.toDirectTranslateUrl(target)
-                            webView.loadUrl(direct)
+                            webView.loadUrl(target)
                         }
                     }
                 )

@@ -371,14 +371,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val encodedQuery = URLEncoder.encode(searchEngineQuery, StandardCharsets.UTF_8.name())
                 "https://www.google.com/search?q=$encodedQuery&hl=bn&safe=active"
             } else {
-                val encodedUrl = URLEncoder.encode(cleanCurrent, StandardCharsets.UTF_8.name())
-                "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=$encodedUrl"
+                ProtectionEngine.buildDirectTranslateUrl(cleanCurrent) ?: cleanCurrent
             }
         } else {
             val query = _uiState.value.searchInput.trim()
-            if (query.isNotEmpty() && !query.startsWith("http://") && !query.startsWith("https://")) {
+            if (query.isNotEmpty() && !query.startsWith("http://") && !query.startsWith("https://") && !isWebUrl(query)) {
                 val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
                 "https://translate.google.com/?sl=auto&tl=bn&hl=bn&text=$encodedQuery&op=translate"
+            } else if (isWebUrl(query)) {
+                val formatted = formatDirectUrl(query)
+                ProtectionEngine.buildDirectTranslateUrl(formatted) ?: formatted
             } else {
                 "https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"
             }
@@ -643,32 +645,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun getOriginalUrlFromTranslation(url: String): String? {
-        if (url.isBlank() || url.startsWith("about:")) return null
-        if (url.contains("translate.google.com")) {
-            try {
-                val uri = android.net.Uri.parse(url)
-                val paramU = uri.getQueryParameter("u")
-                if (!paramU.isNullOrBlank()) return paramU
-            } catch (_: Exception) {}
-        }
-        if (url.contains(".translate.goog")) {
-            try {
-                val uri = android.net.Uri.parse(url)
-                val host = uri.host ?: ""
-                val originalHost = host.removeSuffix(".translate.goog")
-                    .replace("--", "-TEMP-")
-                    .replace("-", ".")
-                    .replace("-TEMP-", "-")
-                val path = uri.encodedPath ?: ""
-                val query = uri.query?.split("&")
-                    ?.filterNot { it.startsWith("_x_tr_") }
-                    ?.joinToString("&")
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { "?$it" } ?: ""
-                return "https://$originalHost$path$query"
-            } catch (_: Exception) {}
-        }
-        return null
+        return ProtectionEngine.getOriginalUrlFromTranslation(url)
     }
 
     fun onHistoryCleared() {

@@ -370,13 +370,13 @@ class FocusShieldProtectionTest {
         assertTrue("Should include host language hl=bn", homeTranslateUrl.contains("hl=bn"))
         assertFalse("Menu should be closed after translation", viewModel.uiState.value.isMenuOpen)
 
-        // 2. On active web page
+        // 2. On active web page - directly generates .translate.goog URL without iframe wrapper
         viewModel.submitQueryOrUrl("https://en.wikipedia.org/wiki/Bangladesh")
         val pageTranslateUrl = viewModel.translateToBangla()
-        assertTrue("Should translate page url", pageTranslateUrl.startsWith("https://translate.google.com/translate?"))
-        assertTrue("Should contain encoded url", pageTranslateUrl.contains("wikipedia.org"))
-        assertTrue("Should enforce tl=bn", pageTranslateUrl.contains("tl=bn"))
-        assertTrue("Should enforce hl=bn", pageTranslateUrl.contains("hl=bn"))
+        assertEquals(
+            "https://en-wikipedia-org.translate.goog/wiki/Bangladesh?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
+            pageTranslateUrl
+        )
 
         // 3. Repeated translation on already translated page must prevent duplicate reload loop
         val repeatedTranslateUrl = viewModel.translateToBangla(pageTranslateUrl)
@@ -384,8 +384,10 @@ class FocusShieldProtectionTest {
 
         // 4. Translation on live WebView URL
         val liveTranslateUrl = viewModel.translateToBangla("https://example.com/page")
-        assertTrue("Should translate provided live URL", liveTranslateUrl.contains("example.com"))
-        assertTrue("Should enforce tl=bn", liveTranslateUrl.contains("tl=bn"))
+        assertEquals(
+            "https://example-com.translate.goog/page?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
+            liveTranslateUrl
+        )
 
         // 5. Translation on Google Search query page sets hl=bn
         viewModel.submitQueryOrUrl("https://www.google.com/search?q=islam&safe=active")
@@ -905,7 +907,10 @@ class FocusShieldProtectionTest {
         val targetTranslateUrl = vm.toggleTranslationMode(true, "https://en.wikipedia.org/wiki/Islam")
         assertTrue("uiState should have isTranslationModeEnabled = true", vm.uiState.value.isTranslationModeEnabled)
         assertNotNull("Target translation url should not be null", targetTranslateUrl)
-        assertTrue("Translated URL should target Bangla", targetTranslateUrl!!.contains("translate.google.com") && targetTranslateUrl.contains("tl=bn"))
+        assertEquals(
+            "https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
+            targetTranslateUrl
+        )
 
         // Toggle OFF on translated page reverts to original URL
         val revertedUrl = vm.toggleTranslationMode(false, targetTranslateUrl)
@@ -915,7 +920,7 @@ class FocusShieldProtectionTest {
         // Test extracting original URL from .translate.goog format
         val originalFromGoog = vm.getOriginalUrlFromTranslation("https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn")
         assertNotNull(originalFromGoog)
-        assertTrue(originalFromGoog!!.contains("wikipedia.org"))
+        assertEquals("https://en.wikipedia.org/wiki/Islam", originalFromGoog)
     }
 
     @Test
@@ -956,27 +961,26 @@ class FocusShieldProtectionTest {
         val checkGoogBlocked = ProtectionEngine.checkDirectUrl(adultGoogUrl, emptySet())
         assertTrue("Adult site accessed via translate.goog must be blocked", checkGoogBlocked is ProtectionEngine.FilterResult.Blocked)
 
-        // 6. Direct translation un-framing (preventing 'This content is blocked' iframe error)
-        val framedUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FBangladesh"
-        val directUrl = ProtectionEngine.toDirectTranslateUrl(framedUrl)
+        // 6. Direct translation URL builder & host conversion (.translate.goog)
+        val directUrl = ProtectionEngine.buildDirectTranslateUrl("https://en.wikipedia.org/wiki/Bangladesh")
         assertEquals(
             "https://en-wikipedia-org.translate.goog/wiki/Bangladesh?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
             directUrl
         )
 
         // Hyphenated domains should be escaped with double hyphens
-        val framedHyphenUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fmy-site.org%2Fpage%3Fid%3D1"
-        val directHyphenUrl = ProtectionEngine.toDirectTranslateUrl(framedHyphenUrl)
+        val directHyphenUrl = ProtectionEngine.buildDirectTranslateUrl("https://my-site.org/page?id=1")
         assertEquals(
             "https://my--site-org.translate.goog/page?id=1&_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
             directHyphenUrl
         )
 
-        // Non-framed URLs should remain unchanged
-        val homeTranslate = "https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"
-        assertEquals(homeTranslate, ProtectionEngine.toDirectTranslateUrl(homeTranslate))
-        val searchTranslate = "https://www.google.com/search?q=islam&hl=bn&safe=active"
-        assertEquals(searchTranslate, ProtectionEngine.toDirectTranslateUrl(searchTranslate))
+        // Host encoding and decoding symmetry
+        assertEquals("example-com.translate.goog", ProtectionEngine.encodeTranslateHost("example.com"))
+        assertEquals("my--site-org.translate.goog", ProtectionEngine.encodeTranslateHost("my-site.org"))
+        assertEquals("example.com", ProtectionEngine.decodeTranslateHost("example-com.translate.goog"))
+        assertEquals("my-site.org", ProtectionEngine.decodeTranslateHost("my--site-org.translate.goog"))
+        assertEquals("sub.my-site.org", ProtectionEngine.decodeTranslateHost("sub-my--site-org.translate.goog"))
     }
 
     @Test

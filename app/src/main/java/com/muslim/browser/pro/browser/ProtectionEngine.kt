@@ -158,60 +158,99 @@ object ProtectionEngine {
     }
 
     /**
-     * Extracts original target URL from Google Translate wrapper if present.
+     * Converts an original web hostname into Google Translate proxy hostname (.translate.goog).
+     * Hyphens are escaped as double-hyphens '--', and dots '.' are replaced with '-'.
      */
-    fun extractUnderlyingTargetUrl(url: String): String? {
+    fun encodeTranslateHost(originalHost: String): String {
+        val clean = originalHost.trim().lowercase(Locale.ROOT)
+        return clean
+            .replace("-", "--")
+            .replace(".", "-") + ".translate.goog"
+    }
+
+    /**
+     * Decodes a Google Translate proxy hostname back to the original domain name.
+     * Removes the .translate.goog suffix, restores dots, and unescapes double-hyphens.
+     */
+    fun decodeTranslateHost(translateHost: String): String {
+        val clean = translateHost.trim().lowercase(Locale.ROOT)
+        val withoutSuffix = if (clean.endsWith(".translate.goog")) {
+            clean.removeSuffix(".translate.goog")
+        } else {
+            clean
+        }
+        return withoutSuffix
+            .replace("--", "\u0000")
+            .replace("-", ".")
+            .replace("\u0000", "-")
+    }
+
+    /**
+     * Builds a direct un-framed Google Translate URL (.translate.goog) for a given original webpage URL.
+     * Query parameters and fragments are preserved.
+     */
+    fun buildDirectTranslateUrl(originalUrl: String): String? {
+        if (originalUrl.isBlank() || originalUrl.startsWith("about:")) return null
+        val trimmed = originalUrl.trim()
+        val uri = try {
+            Uri.parse(trimmed)
+        } catch (_: Exception) {
+            return null
+        }
+        val host = uri.host ?: return null
+        if (host.isBlank()) return null
+
+        // If already translated, return trimmed
+        if (host.lowercase(Locale.ROOT).endsWith(".translate.goog")) {
+            return trimmed
+        }
+
+        val googHost = encodeTranslateHost(host)
+        val path = if (uri.encodedPath.isNullOrEmpty()) "/" else uri.encodedPath
+        val trParams = "_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
+        val query = uri.encodedQuery
+        val finalQuery = if (query.isNullOrEmpty()) trParams else "$query&$trParams"
+        val fragment = if (uri.encodedFragment.isNullOrEmpty()) "" else "#${uri.encodedFragment}"
+        return "https://$googHost$path?$finalQuery$fragment"
+    }
+
+    /**
+     * Extracts the original URL from a translated URL (.translate.goog or legacy translate.google.com).
+     */
+    fun getOriginalUrlFromTranslation(url: String): String? {
+        if (url.isBlank() || url.startsWith("about:")) return null
         val trimmed = url.trim()
-        if (trimmed.contains("translate.google.com")) {
-            try {
-                val uri = Uri.parse(trimmed)
-                val uParam = uri.getQueryParameter("u")
-                if (!uParam.isNullOrBlank()) return uParam
-            } catch (_: Exception) {}
-        }
-        val host = extractHost(trimmed)?.lowercase(Locale.ROOT)
-        if (host != null && host.endsWith(".translate.goog")) {
-            val originalHost = host.removeSuffix(".translate.goog")
-                .replace("--", "-TEMP-")
-                .replace("-", ".")
-                .replace("-TEMP-", "-")
-            return "https://$originalHost"
-        }
+        try {
+            val uri = Uri.parse(trimmed)
+            val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+
+            // Direct .translate.goog format
+            if (host.endsWith(".translate.goog")) {
+                val originalHost = decodeTranslateHost(host)
+                val path = uri.encodedPath ?: ""
+                val query = uri.query?.split("&")
+                    ?.filterNot { it.startsWith("_x_tr_") }
+                    ?.joinToString("&")
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "?$it" } ?: ""
+                val fragment = if (uri.encodedFragment.isNullOrBlank()) "" else "#${uri.encodedFragment}"
+                return "https://$originalHost$path$query$fragment"
+            }
+
+            // Fallback for translate.google.com/translate?u=...
+            if (host == "translate.google.com" || host.endsWith(".translate.google.com")) {
+                val paramU = uri.getQueryParameter("u")
+                if (!paramU.isNullOrBlank()) return paramU
+            }
+        } catch (_: Exception) {}
         return null
     }
 
     /**
-     * Converts a Google Translate frame wrapper URL (translate.google.com/translate?u=...)
-     * into a direct un-framed .translate.goog URL to prevent Chromium iframe blocking
-     * ("This content is blocked" caused by X-Frame-Options / CSP frame restrictions).
+     * Extracts original target URL from Google Translate proxy URL if present.
      */
-    fun toDirectTranslateUrl(url: String): String {
-        if (url.isBlank()) return url
-        val trimmed = url.trim()
-        if (trimmed.contains("translate.google.com/translate") && trimmed.contains("u=")) {
-            try {
-                val uri = Uri.parse(trimmed)
-                val uParam = uri.getQueryParameter("u")
-                if (!uParam.isNullOrBlank()) {
-                    val targetUri = Uri.parse(uParam)
-                    val targetHost = targetUri.host
-                    if (!targetHost.isNullOrBlank()) {
-                        val googHost = targetHost.lowercase(Locale.ROOT)
-                            .replace("-", "--")
-                            .replace(".", "-") + ".translate.goog"
-                        val targetPath = targetUri.encodedPath ?: ""
-                        val targetQuery = targetUri.encodedQuery
-                        val sl = uri.getQueryParameter("sl") ?: "auto"
-                        val tl = uri.getQueryParameter("tl") ?: "bn"
-                        val hl = uri.getQueryParameter("hl") ?: "bn"
-                        val trParams = "_x_tr_sl=$sl&_x_tr_tl=$tl&_x_tr_hl=$hl"
-                        val finalQuery = if (targetQuery.isNullOrEmpty()) trParams else "$targetQuery&$trParams"
-                        return "https://$googHost$targetPath?$finalQuery"
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-        return url
+    fun extractUnderlyingTargetUrl(url: String): String? {
+        return getOriginalUrlFromTranslation(url)
     }
 
     /**
