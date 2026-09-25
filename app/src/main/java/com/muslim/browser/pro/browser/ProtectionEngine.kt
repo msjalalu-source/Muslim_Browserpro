@@ -362,9 +362,16 @@ object ProtectionEngine {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
 
+        android.util.Log.d("DIAGNOSTIC", "DIRECT_URL_CHECK=checkDirectUrl")
+        android.util.Log.d("DIAGNOSTIC", "URL=$trimmed")
+
         // 1. Custom Keyword Protection
         val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords, normalizedKeywords)
         if (blockedKw != null) {
+            android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=ProtectionEngine.isBlockedByCustomKeywords")
+            android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=Custom Keyword: \"$blockedKw\"")
+            android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$trimmed")
+            android.util.Log.e("DIAGNOSTIC", "PROTECTION_RESULT=Blocked")
             return FilterResult.Blocked(
                 reason = "Custom Keyword Protection",
                 detail = "Blocked due to protected keyword: \"$blockedKw\""
@@ -375,14 +382,24 @@ object ProtectionEngine {
         val host = extractHost(trimmed)
         if (host != null && isTranslationHost(host)) {
             val underlyingUrl = extractUnderlyingTargetUrl(trimmed)
+            android.util.Log.d("DIAGNOSTIC", "TRANSLATION_URL=$trimmed")
+            android.util.Log.d("DIAGNOSTIC", "TRANSLATION_HOST=$host")
+            android.util.Log.d("DIAGNOSTIC", "ORIGINAL_URL=$underlyingUrl")
+            android.util.Log.d("DIAGNOSTIC", "DECODED_URL=$underlyingUrl")
             if (underlyingUrl != null) {
                 return checkDirectUrl(underlyingUrl, customKeywords, normalizedKeywords)
             }
+            android.util.Log.d("DIAGNOSTIC", "PROTECTION_RESULT=Allowed")
+            android.util.Log.d("DIAGNOSTIC", "RESULT=Allowed")
             return FilterResult.Allowed
         }
 
         if (host != null && host.isNotEmpty()) {
             if (matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
+                android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=ProtectionEngine.checkDirectUrl (Adult Domain)")
+                android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=Adult Content Protection")
+                android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$trimmed")
+                android.util.Log.e("DIAGNOSTIC", "PROTECTION_RESULT=Blocked")
                 return FilterResult.Blocked(
                     reason = "Adult Content Protection",
                     detail = "Access to adult entertainment domains is permanently restricted."
@@ -393,6 +410,10 @@ object ProtectionEngine {
             val normalized = trimmed.lowercase(Locale.ROOT)
             for (domain in KNOWN_ADULT_DOMAINS) {
                 if (normalized.contains(domain)) {
+                    android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=ProtectionEngine.checkDirectUrl (Adult Domain Fallback)")
+                    android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=Adult Content Protection")
+                    android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$trimmed")
+                    android.util.Log.e("DIAGNOSTIC", "PROTECTION_RESULT=Blocked")
                     return FilterResult.Blocked(
                         reason = "Adult Content Protection",
                         detail = "Access to adult entertainment domains is permanently restricted."
@@ -401,6 +422,8 @@ object ProtectionEngine {
             }
         }
 
+        android.util.Log.d("DIAGNOSTIC", "PROTECTION_RESULT=Allowed")
+        android.util.Log.d("DIAGNOSTIC", "RESULT=Allowed")
         return FilterResult.Allowed
     }
 

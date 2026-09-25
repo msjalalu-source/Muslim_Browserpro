@@ -32,26 +32,55 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
+import com.muslim.browser.pro.browser.TranslationFailure
 import com.muslim.browser.pro.browser.ui.BlockedScreen
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
@@ -124,6 +153,7 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
+                    android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading: URL=$url")
                     return handleUrlNavigation(view, url)
                 }
 
@@ -132,8 +162,9 @@ class MainActivity : ComponentActivity() {
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
                     val uri = request?.url ?: return null
-                    // Never intercept or block Google Translate scripts, styles, or proxy chunks
+                    val reqUrl = uri.toString()
                     val host = uri.host?.lowercase(Locale.ROOT)
+                    // Never intercept or block Google Translate scripts, styles, or proxy chunks
                     if (host != null && (
                         ProtectionEngine.isTranslationHost(host) ||
                         host == "google.com" || host.endsWith(".google.com") ||
@@ -143,6 +174,11 @@ class MainActivity : ComponentActivity() {
                         return null
                     }
                     if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(uri)) {
+                        val resType = request.requestHeaders?.get("Accept") ?: "subresource"
+                        android.util.Log.e("DIAGNOSTIC", "INTERCEPT_BLOCK=shouldInterceptRequest")
+                        android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$reqUrl")
+                        android.util.Log.e("DIAGNOSTIC", "RESOURCE_TYPE=$resType")
+                        android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=Ad Request Blocked")
                         return WebResourceResponse(
                             "text/plain",
                             "UTF-8",
@@ -154,6 +190,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
+                    android.util.Log.d("DIAGNOSTIC", "onPageStarted: URL=$url")
                     url?.let { viewModel.onPageStarted(it) }
                 }
 
@@ -165,6 +202,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     url?.let {
                         viewModel.onPageFinished(
@@ -173,6 +211,11 @@ class MainActivity : ComponentActivity() {
                             canBack = view?.canGoBack() ?: false,
                             canForward = view?.canGoForward() ?: false
                         )
+                        if (ProtectionEngine.isTranslationUrl(it) &&
+                            (view?.title?.contains("blocked", ignoreCase = true) == true ||
+                             view?.title?.contains("error", ignoreCase = true) == true)) {
+                            viewModel.onTranslationFailed(it)
+                        }
                     }
                 }
 
@@ -182,8 +225,28 @@ class MainActivity : ComponentActivity() {
                     error: WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
+                    android.util.Log.e("DIAGNOSTIC", "onReceivedError: URL=${request?.url}, errorCode=${error?.errorCode}, description=${error?.description}, isMainFrame=${request?.isForMainFrame}")
                     if (request?.isForMainFrame == true) {
                         viewModel.onPageCommitVisible()
+                        val reqUrl = request.url?.toString() ?: ""
+                        if (ProtectionEngine.isTranslationUrl(reqUrl)) {
+                            viewModel.onTranslationFailed(reqUrl)
+                        }
+                    }
+                }
+
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    super.onReceivedHttpError(view, request, errorResponse)
+                    android.util.Log.e("DIAGNOSTIC", "onReceivedHttpError: URL=${request?.url}, statusCode=${errorResponse?.statusCode}, reason=${errorResponse?.reasonPhrase}")
+                    if (request?.isForMainFrame == true) {
+                        val reqUrl = request.url?.toString() ?: ""
+                        if (ProtectionEngine.isTranslationUrl(reqUrl) && (errorResponse?.statusCode ?: 0) >= 400) {
+                            viewModel.onTranslationFailed(reqUrl)
+                        }
                     }
                 }
             }
@@ -299,10 +362,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleUrlNavigation(view: WebView?, url: String): Boolean {
+        android.util.Log.d("DIAGNOSTIC", "handleUrlNavigation: URL=$url")
         // Translation URLs should not be intercepted as search engine requests
         if (ProtectionEngine.isTranslationUrl(url)) {
             val isBlocked = viewModel.checkAndFilterUrl(url)
+            android.util.Log.d("DIAGNOSTIC", "handleUrlNavigation translation check: url=$url, isBlocked=$isBlocked")
             if (isBlocked) {
+                android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=handleUrlNavigation")
+                android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=Translation content blocked by checkAndFilterUrl")
+                android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$url")
+                android.util.Log.e("DIAGNOSTIC", "PROTECTION_RESULT=Blocked")
                 return true // Block navigation if underlying content is blocked
             }
             return false // Allow WebView to proceed with translation
@@ -765,6 +834,23 @@ fun BrowserApp(
                 )
             }
 
+            // 4. Translation Failure Banner (Graceful Single-Attempt Fallback without Retry Loop)
+            if (uiState.translationFailure != null) {
+                TranslationFailureBanner(
+                    failure = uiState.translationFailure!!,
+                    onRevertToOriginal = {
+                        val originalUrl = viewModel.revertTranslationToOriginal()
+                        if (!originalUrl.isNullOrBlank()) {
+                            webView.loadUrl(originalUrl)
+                        }
+                    },
+                    onDismiss = { viewModel.dismissTranslationFailure() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                )
+            }
+
             // Open Windows Dialog (Triggered by Long-Press on + Button)
             if (uiState.isTabsDialogOpen) {
                 OpenWindowsDialog(
@@ -858,6 +944,99 @@ fun BrowserApp(
                     onDismiss = { viewModel.closeHistory() },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun TranslationFailureBanner(
+    failure: TranslationFailure,
+    onRevertToOriginal: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(12.dp, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+        border = BorderStroke(1.dp, Color(0xFF334155))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color(0xFFEAB308).copy(alpha = 0.15f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Translation Failure",
+                        tint = Color(0xFFFACC15),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = failure.message,
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "এই ওয়েবসাইটটির ফ্রেম/নিরাপত্তা বিধির কারণে অনুবাদ করা যায়নি",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = Color(0xFF94A3B8),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF94A3B8))
+                ) {
+                    Text("এখানে থাকুন", fontSize = 13.sp)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onRevertToOriginal,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "মূল পেজে ফিরে যান",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }

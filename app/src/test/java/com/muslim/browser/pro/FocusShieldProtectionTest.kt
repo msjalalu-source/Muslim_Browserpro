@@ -995,4 +995,80 @@ class FocusShieldProtectionTest {
         MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
         org.junit.Assert.assertFalse(MainActivity.isDarkThemeActive)
     }
+
+    @Test
+    fun `test exact moldovalive translation url trace and diagnostics`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
+        val exactUrl = "https://moldovalive-md.translate.goog/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
+        val host = ProtectionEngine.extractHost(exactUrl)
+        val isTranslationHost = ProtectionEngine.isTranslationHost(host)
+        val isTranslationUrl = ProtectionEngine.isTranslationUrl(exactUrl)
+        val decodedUrl = ProtectionEngine.getOriginalUrlFromTranslation(exactUrl)
+        val result = ProtectionEngine.checkDirectUrl(exactUrl, emptySet())
+        val isVmBlocked = viewModel.checkAndFilterUrl(exactUrl)
+
+        println("=== DIAGNOSTIC REPORT START ===")
+        println("TRANSLATION_URL=$exactUrl")
+        println("TRANSLATION_HOST=$host")
+        println("ORIGINAL_URL=$decodedUrl")
+        println("IS_TRANSLATION_HOST=$isTranslationHost")
+        println("IS_TRANSLATION_URL=$isTranslationUrl")
+        println("PROTECTION_RESULT=" + if (result is ProtectionEngine.FilterResult.Allowed) "Allowed" else "Blocked")
+        println("VM_BLOCKED=$isVmBlocked")
+        println("=== DIAGNOSTIC REPORT END ===")
+
+        assertTrue("Host must be recognized as translation host", isTranslationHost)
+        assertTrue("URL must be recognized as translation URL", isTranslationUrl)
+        assertEquals(
+            "https://moldovalive.md/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/",
+            decodedUrl
+        )
+        assertTrue("Legitimate translation must be Allowed", result is ProtectionEngine.FilterResult.Allowed)
+        assertFalse("ViewModel must not block legitimate translation", isVmBlocked)
+        assertNull("BlockedInfo must remain null", viewModel.uiState.value.blockedInfo)
+    }
+
+    @Test
+    fun `test graceful translation failure handling without retry loops`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
+        val originalUrl = "https://moldovalive.md/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/"
+        val translatedUrl = "https://moldovalive-md.translate.goog/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
+
+        // 1. Initial navigation to original page
+        viewModel.submitQueryOrUrl(originalUrl)
+        assertEquals(originalUrl, viewModel.uiState.value.currentUrl)
+        assertNull(viewModel.uiState.value.translationFailure)
+
+        // 2. User taps Translate to Bangla -> single attempt
+        val targetTranslate = viewModel.translateToBangla(originalUrl)
+        assertEquals(translatedUrl, targetTranslate)
+        assertEquals(translatedUrl, viewModel.uiState.value.currentUrl)
+        assertNull(viewModel.uiState.value.translationFailure)
+
+        // 3. Translated page encounters frame/CSP error in WebView -> graceful failure
+        viewModel.onTranslationFailed(translatedUrl)
+        assertNotNull("Translation failure must be set", viewModel.uiState.value.translationFailure)
+        assertEquals("বাংলায় অনুবাদ করা যায়নি", viewModel.uiState.value.translationFailure!!.message)
+        assertEquals(originalUrl, viewModel.uiState.value.translationFailure!!.originalUrl)
+        assertEquals(translatedUrl, viewModel.uiState.value.translationFailure!!.translatedUrl)
+
+        // 4. Repeated error callbacks must NOT trigger retry loop or overwrite state
+        viewModel.onTranslationFailed(translatedUrl)
+        assertNotNull(viewModel.uiState.value.translationFailure)
+
+        // 5. Revert to original page preserves browsing state and clears failure banner
+        val reverted = viewModel.revertTranslationToOriginal()
+        assertEquals(originalUrl, reverted)
+        assertEquals(originalUrl, viewModel.uiState.value.currentUrl)
+        assertNull("Failure state must be cleared after returning to original", viewModel.uiState.value.translationFailure)
+        assertNull("BlockedInfo must remain null", viewModel.uiState.value.blockedInfo)
+
+        // 6. Navigation to other URL clears failure state
+        viewModel.onTranslationFailed(translatedUrl)
+        assertNotNull(viewModel.uiState.value.translationFailure)
+        viewModel.onPageStarted("https://example.com/other")
+        assertNull("Navigating to new URL must reset failure state", viewModel.uiState.value.translationFailure)
+    }
 }

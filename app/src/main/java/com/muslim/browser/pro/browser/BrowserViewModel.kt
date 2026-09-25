@@ -25,6 +25,12 @@ data class FavoriteSite(
     val badgeColor: Long = 0xFF4285F4
 )
 
+data class TranslationFailure(
+    val originalUrl: String,
+    val translatedUrl: String,
+    val message: String = "বাংলায় অনুবাদ করা যায়নি"
+)
+
 data class BrowserTab(
     val id: String = java.util.UUID.randomUUID().toString(),
     val url: String = "",
@@ -34,6 +40,7 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
+    val translationFailure: TranslationFailure? = null,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val isPageContentVisible: Boolean = false,
@@ -57,6 +64,7 @@ data class BrowserUiState(
     val isHistoryOpen: Boolean = false,
     val browsingHistory: List<HistoryEntry> = emptyList(),
     val blockedInfo: BlockedInfo? = null,
+    val translationFailure: TranslationFailure? = null,
     val toastMessage: String? = null,
     val favoriteSites: List<FavoriteSite> = emptyList(),
     val customKeywords: Set<String> = emptySet(),
@@ -416,6 +424,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = targetUrl,
                         searchInput = targetUrl,
                         blockedInfo = null,
+                        translationFailure = null,
                         isLoading = true,
                         // Reset page content visibility if coming from home page or if never rendered yet
                         isPageContentVisible = if (wasOnHomePage) false else tab.isPageContentVisible
@@ -428,6 +437,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
                 blockedInfo = null,
+                translationFailure = null,
                 isLoading = true,
                 isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
@@ -436,6 +446,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setBlockedUrl(url: String, reason: String, detail: String) {
+        android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=BrowserViewModel.setBlockedUrl")
+        android.util.Log.e("DIAGNOSTIC", "BLOCK_REASON=$reason: $detail")
+        android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$url")
+        android.util.Log.e("DIAGNOSTIC", "PROTECTION_RESULT=Blocked")
         val info = BlockedInfo(reason = reason, detail = detail, targetUrl = url)
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
@@ -458,6 +472,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
      * Returns true if blocked, false if navigation is allowed.
      */
     fun checkAndFilterUrl(url: String): Boolean {
+        android.util.Log.d("DIAGNOSTIC", "checkAndFilterUrl: URL=$url")
         val check = ProtectionEngine.checkDirectUrl(
             url = url,
             customKeywords = _uiState.value.customKeywords,
@@ -493,6 +508,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = url,
                         searchInput = url,
                         blockedInfo = null,
+                        translationFailure = if (tab.translationFailure?.translatedUrl == url) tab.translationFailure else null,
                         isHomePage = false
                     )
                 } else tab
@@ -503,8 +519,77 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = url,
                 searchInput = url,
                 blockedInfo = null,
+                translationFailure = if (state.translationFailure?.translatedUrl == url) state.translationFailure else null,
                 isHomePage = false
             )
+        }
+    }
+
+    /**
+     * Graceful Translation Failure Handling:
+     * When a translated page fails in WebView (e.g. ERR_BLOCKED_BY_RESPONSE / CSP frame-ancestors),
+     * records the failure, notifies the user without any infinite retry loop, and provides an option
+     * to return to the original untranslated page while preserving current browsing state.
+     */
+    fun onTranslationFailed(failedUrl: String) {
+        val host = ProtectionEngine.extractHost(failedUrl)
+        if (!ProtectionEngine.isTranslationHost(host)) return
+        val originalUrl = getOriginalUrlFromTranslation(failedUrl) ?: return
+
+        // Prevent repeated toast or loops if already reported for this URL
+        if (_uiState.value.translationFailure?.translatedUrl == failedUrl) return
+
+        val failure = TranslationFailure(
+            originalUrl = originalUrl,
+            translatedUrl = failedUrl,
+            message = "বাংলায় অনুবাদ করা যায়নি"
+        )
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(
+                        isLoading = false,
+                        isPageContentVisible = true,
+                        translationFailure = failure
+                    )
+                } else tab
+            }
+            state.copy(
+                tabs = updatedTabs,
+                isLoading = false,
+                isPageContentVisible = true,
+                translationFailure = failure
+            )
+        }
+        showToast("বাংলায় অনুবাদ করা যায়নি")
+    }
+
+    fun revertTranslationToOriginal(): String? {
+        val originalUrl = _uiState.value.translationFailure?.originalUrl
+            ?: getOriginalUrlFromTranslation(_uiState.value.currentUrl)
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(translationFailure = null)
+                } else tab
+            }
+            state.copy(tabs = updatedTabs, translationFailure = null)
+        }
+        if (!originalUrl.isNullOrBlank()) {
+            loadTargetUrl(originalUrl)
+            return originalUrl
+        }
+        return null
+    }
+
+    fun dismissTranslationFailure() {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == state.currentTabId) {
+                    tab.copy(translationFailure = null)
+                } else tab
+            }
+            state.copy(tabs = updatedTabs, translationFailure = null)
         }
     }
 
