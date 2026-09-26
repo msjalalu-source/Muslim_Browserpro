@@ -941,15 +941,70 @@ class FocusShieldProtectionTest {
 
     @Test
     fun `test live online translation of Hello world returns Bengali`() = runBlocking {
-        BengaliTranslator.clearCache()
         val result = BengaliTranslator.translate("Hello world")
-        if (result.isSuccess) {
-            val text = result.getOrThrow()
-            assertTrue("Translated text must not be empty", text.isNotBlank())
-            println("LIVE TRANSLATION RESULT for 'Hello world': $text")
-        } else {
-            val err = result.exceptionOrNull()
-            println("Live translation network status: ${err?.message}")
+        assertTrue(result.isSuccess)
+        val text = result.getOrThrow()
+        assertEquals("হ্যালো দুনিয়া", text)
+        println("LIVE TRANSLATION RESULT for 'Hello world': $text")
+    }
+
+    @Test
+    fun `test shouldSkipText filters numbers, punctuation, URLs, emails`() {
+        assertTrue(BengaliTranslator.shouldSkipText(""))
+        assertTrue(BengaliTranslator.shouldSkipText("   "))
+        assertTrue(BengaliTranslator.shouldSkipText("a"))
+        assertTrue(BengaliTranslator.shouldSkipText("12345"))
+        assertTrue(BengaliTranslator.shouldSkipText("2026-09-26"))
+        assertTrue(BengaliTranslator.shouldSkipText("$99.99"))
+        assertTrue(BengaliTranslator.shouldSkipText("..."))
+        assertTrue(BengaliTranslator.shouldSkipText("---"))
+        assertTrue(BengaliTranslator.shouldSkipText("https://example.com/news"))
+        assertTrue(BengaliTranslator.shouldSkipText("support@browser.org"))
+
+        assertFalse(BengaliTranslator.shouldSkipText("Welcome to the website"))
+        assertFalse(BengaliTranslator.shouldSkipText("Breaking news today"))
+    }
+
+    @Test
+    fun `test duplicate text is translated only once in batch`() = runBlocking {
+        var apiCalls = 0
+        BengaliTranslator.testTranslatorOverride = { text ->
+            apiCalls++
+            "বাংলা-$text"
         }
+
+        try {
+            // Page with repeated items: Home, Home, Home, About, About
+            val pageTexts = listOf("Home", "Home", "Home", "About", "About", "123", "https://test.com")
+            val result = BengaliTranslator.translateBatch(pageTexts)
+            assertTrue(result.isSuccess)
+            val list = result.getOrThrow()
+
+            assertEquals("বাংলা-Home", list[0])
+            assertEquals("বাংলা-Home", list[1])
+            assertEquals("বাংলা-Home", list[2])
+            assertEquals("বাংলা-About", list[3])
+            assertEquals("বাংলা-About", list[4])
+            // skipped items keep original value
+            assertEquals("123", list[5])
+            assertEquals("https://test.com", list[6])
+
+            // Only 2 unique texts to translate ("Home" and "About")
+            assertEquals("Only unique translatable items should trigger translation", 2, apiCalls)
+        } finally {
+            BengaliTranslator.testTranslatorOverride = null
+            BengaliTranslator.clearCache()
+        }
+    }
+
+    @Test
+    fun `test chunkIntoBatches splits by character and item limits`() {
+        val longString = "A".repeat(1000)
+        val items = listOf(longString, longString, longString, longString)
+        val batches = BengaliTranslator.chunkIntoBatches(items)
+        // With MAX_BATCH_CHARS = 2500, 4 items of 1000 chars should be 2 batches of 2 items
+        assertEquals(2, batches.size)
+        assertEquals(2, batches[0].size)
+        assertEquals(2, batches[1].size)
     }
 }

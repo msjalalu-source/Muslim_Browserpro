@@ -686,14 +686,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         android.util.Log.e("BrowserViewModel", "Translation failed: ${error?.message}", error)
                         withContext(Dispatchers.Main) {
                             _uiState.update { it.copy(isTranslating = false) }
-                            showToast("Translation unavailable. Check your internet connection.")
+                            showToast("Translation unavailable. Please try again.")
                         }
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("BrowserViewModel", "Translation exception: ${e.message}", e)
                     withContext(Dispatchers.Main) {
                         _uiState.update { it.copy(isTranslating = false) }
-                        showToast("Translation unavailable. Check your internet connection.")
+                        showToast("Translation unavailable. Please try again.")
                     }
                 }
             }
