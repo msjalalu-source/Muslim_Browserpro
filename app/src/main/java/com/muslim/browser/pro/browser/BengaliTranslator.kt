@@ -36,18 +36,8 @@ object BengaliTranslator {
     // Testing override for offline unit testing without network dependency
     internal var testTranslatorOverride: ((String) -> String)? = null
 
-    init {
-        // Pre-warm sample greeting for immediate verification
-        memoryCache["Hello world"] = "হ্যালো দুনিয়া"
-        memoryCache["Hello World"] = "হ্যালো দুনিয়া"
-        memoryCache["hello world"] = "হ্যালো দুনিয়া"
-    }
-
     fun clearCache() {
         memoryCache.clear()
-        memoryCache["Hello world"] = "হ্যালো দুনিয়া"
-        memoryCache["Hello World"] = "হ্যালো দুনিয়া"
-        memoryCache["hello world"] = "হ্যালো দুনিয়া"
     }
 
     /**
