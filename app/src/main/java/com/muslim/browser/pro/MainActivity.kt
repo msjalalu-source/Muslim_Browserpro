@@ -867,7 +867,13 @@ fun BrowserApp(
                     onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
-                    onToggleDesktopMode = onToggleDesktopMode
+                    onToggleDesktopMode = onToggleDesktopMode,
+                    onTranslateToBengali = {
+                        viewModel.translateCurrentPage(
+                            evaluateJs = { script, cb -> webView.evaluateJavascript(script, cb) },
+                            reloadPage = { webView.reload() }
+                        )
+                    }
                 )
             }
 

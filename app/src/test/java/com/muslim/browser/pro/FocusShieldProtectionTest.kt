@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.muslim.browser.pro.browser.BengaliTranslator
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.SettingsRepository
 import kotlinx.coroutines.runBlocking
@@ -842,5 +843,99 @@ class FocusShieldProtectionTest {
         // 2. Verify applying light theme completes safely
         MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
         org.junit.Assert.assertFalse(MainActivity.isDarkThemeActive)
+    }
+
+    // ==========================================
+    // BENGALI TRANSLATION TESTS
+    // ==========================================
+
+    @Test
+    fun `test BengaliTranslator extract and replace scripts generated correctly`() {
+        val extractScript = BengaliTranslator.buildExtractScript()
+        assertTrue(extractScript.contains("createTreeWalker"))
+        assertTrue(extractScript.contains("window.__bn_nodes"))
+        assertTrue(extractScript.contains("SCRIPT") && extractScript.contains("STYLE"))
+
+        val replaceScript = BengaliTranslator.buildReplaceScript(listOf("বাংলা ১", "বাংলা ২"))
+        assertTrue(replaceScript.contains("window.__bn_nodes"))
+        assertTrue(replaceScript.contains("বাংলা ১"))
+        assertTrue(replaceScript.contains("বাংলা ২"))
+    }
+
+    @Test
+    fun `test BengaliTranslator online translation and memory caching`() = runBlocking {
+        BengaliTranslator.clearCache()
+        var callCount = 0
+        BengaliTranslator.testTranslatorOverride = { text ->
+            callCount++
+            "অনুবাদ-$text"
+        }
+
+        try {
+            val result = BengaliTranslator.translateBatch(listOf("Hello", "World"))
+            assertTrue(result.isSuccess)
+            val list = result.getOrThrow()
+            assertEquals("অনুবাদ-Hello", list[0])
+            assertEquals("অনুবাদ-World", list[1])
+            assertEquals(2, callCount)
+
+            // Cache prevents duplicate call for identical string
+            val cachedResult = BengaliTranslator.translateBatch(listOf("Hello"))
+            assertTrue(cachedResult.isSuccess)
+            assertEquals("অনুবাদ-Hello", cachedResult.getOrThrow()[0])
+            assertEquals("Cache should avoid redundant network call", 2, callCount)
+        } finally {
+            BengaliTranslator.testTranslatorOverride = null
+            BengaliTranslator.clearCache()
+        }
+    }
+
+    @Test
+    fun `test BengaliTranslator error handling on network failure`() = runBlocking {
+        BengaliTranslator.clearCache()
+        BengaliTranslator.testTranslatorOverride = {
+            throw java.io.IOException("No internet connection")
+        }
+
+        try {
+            val result = BengaliTranslator.translate("Test")
+            assertTrue(result.isFailure)
+        } finally {
+            BengaliTranslator.testTranslatorOverride = null
+            BengaliTranslator.clearCache()
+        }
+    }
+
+    @Test
+    fun `test translateCurrentPage state transitions and restore reloads page`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
+
+        vm.submitQueryOrUrl("https://en.wikipedia.org/wiki/Bangladesh")
+        assertEquals(false, vm.uiState.value.isPageTranslated)
+
+        var reloaded = false
+        // Simulate page is translated
+        vm.translateCurrentPage(
+            evaluateJs = { _, _ -> },
+            reloadPage = { reloaded = true }
+        )
+
+        // When not translated, clicking starts translation
+        assertTrue(vm.uiState.value.isTranslating)
+
+        // If page becomes translated, clicking Original Page restores by calling reloadPage
+        vm.onPageCommitVisible()
+        val privateField = vm.javaClass.getDeclaredField("_uiState").apply { isAccessible = true }
+        @Suppress("UNCHECKED_CAST")
+        val stateFlow = privateField.get(vm) as kotlinx.coroutines.flow.MutableStateFlow<com.muslim.browser.pro.browser.BrowserUiState>
+        stateFlow.value = stateFlow.value.copy(isPageTranslated = true, isTranslating = false)
+
+        vm.translateCurrentPage(
+            evaluateJs = { _, _ -> },
+            reloadPage = { reloaded = true }
+        )
+        assertTrue("Page should reload to restore original content", reloaded)
+        assertFalse(vm.uiState.value.isPageTranslated)
     }
 }

@@ -38,6 +38,7 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
+    val isPageTranslated: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val isPageContentVisible: Boolean = false,
@@ -66,7 +67,9 @@ data class BrowserUiState(
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
-    val isDesktopModeEnabled: Boolean = false
+    val isDesktopModeEnabled: Boolean = false,
+    val isPageTranslated: Boolean = false,
+    val isTranslating: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -198,6 +201,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 canGoBack = tab.canGoBack,
                 canGoForward = tab.canGoForward,
                 blockedInfo = tab.blockedInfo,
+                isPageTranslated = tab.isPageTranslated,
                 isTabsDialogOpen = false
             )
         }
@@ -234,7 +238,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPageContentVisible = newCurrentTab.isPageContentVisible,
                 canGoBack = newCurrentTab.canGoBack,
                 canGoForward = newCurrentTab.canGoForward,
-                blockedInfo = newCurrentTab.blockedInfo
+                blockedInfo = newCurrentTab.blockedInfo,
+                isPageTranslated = newCurrentTab.isPageTranslated
             )
         }
         persistTabs()
@@ -251,6 +256,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         pageTitle = "Home",
                         isLoading = false,
                         blockedInfo = null,
+                        isPageTranslated = false,
                         isPageContentVisible = false,
                         bundle = null
                     )
@@ -264,6 +270,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = "Home",
                 isLoading = false,
                 blockedInfo = null,
+                isPageTranslated = false,
+                isTranslating = false,
                 isPageContentVisible = false,
                 isTabsDialogOpen = false
             )
@@ -373,6 +381,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = targetUrl,
                         searchInput = targetUrl,
                         blockedInfo = null,
+                        isPageTranslated = false,
                         isLoading = true,
                         // Reset page content visibility if coming from home page or if never rendered yet
                         isPageContentVisible = if (wasOnHomePage) false else tab.isPageContentVisible
@@ -385,6 +394,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
                 blockedInfo = null,
+                isPageTranslated = false,
+                isTranslating = false,
                 isLoading = true,
                 isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
@@ -453,6 +464,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = url,
                         searchInput = url,
                         blockedInfo = null,
+                        isPageTranslated = false,
                         isHomePage = false
                     )
                 } else tab
@@ -463,6 +475,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = url,
                 searchInput = url,
                 blockedInfo = null,
+                isPageTranslated = false,
+                isTranslating = false,
                 isHomePage = false
             )
         }
@@ -573,6 +587,116 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleDesktopMode(enabled: Boolean) {
         repository.isDesktopModeEnabled = enabled
         _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
+    }
+
+    /**
+     * Translates the current webpage DOM to Bengali using the online BengaliTranslator.
+     * When already translated, triggers page reload to restore original state.
+     */
+    fun translateCurrentPage(
+        evaluateJs: (script: String, callback: ((String?) -> Unit)?) -> Unit,
+        reloadPage: () -> Unit
+    ) {
+        closeMenu()
+        val state = _uiState.value
+        if (state.isHomePage || state.currentUrl.isBlank() || state.currentUrl.startsWith("about:")) {
+            showToast("Translate works on active webpages")
+            return
+        }
+
+        if (state.isTranslating) {
+            showToast("Translation in progress...")
+            return
+        }
+
+        if (state.isPageTranslated) {
+            reloadPage()
+            _uiState.update { s ->
+                val updatedTabs = s.tabs.map { tab ->
+                    if (tab.id == s.currentTabId) tab.copy(isPageTranslated = false) else tab
+                }
+                s.copy(
+                    tabs = updatedTabs,
+                    isPageTranslated = false,
+                    isTranslating = false
+                )
+            }
+            showToast("Original page restored")
+            return
+        }
+
+        _uiState.update { it.copy(isTranslating = true) }
+        showToast("Translating to বাংলা...")
+
+        val extractScript = BengaliTranslator.buildExtractScript()
+        evaluateJs(extractScript) { jsonResult ->
+            if (jsonResult.isNullOrBlank() || jsonResult == "null") {
+                _uiState.update { it.copy(isTranslating = false) }
+                showToast("Cannot extract webpage content")
+                return@evaluateJs
+            }
+
+            viewModelScope.launch {
+                try {
+                    val cleanJson = if (jsonResult.startsWith("\"") && jsonResult.endsWith("\"")) {
+                        try {
+                            org.json.JSONTokener(jsonResult).nextValue() as String
+                        } catch (_: Exception) {
+                            jsonResult
+                        }
+                    } else {
+                        jsonResult
+                    }
+
+                    val jsonObj = org.json.JSONObject(cleanJson)
+                    val textsArray = jsonObj.optJSONArray("texts")
+                    if (textsArray == null || textsArray.length() == 0) {
+                        _uiState.update { it.copy(isTranslating = false) }
+                        showToast("No translatable text found")
+                        return@launch
+                    }
+
+                    val texts = ArrayList<String>(textsArray.length())
+                    for (i in 0 until textsArray.length()) {
+                        texts.add(textsArray.getString(i))
+                    }
+
+                    val translationResult = BengaliTranslator.translateBatch(texts)
+
+                    if (translationResult.isSuccess) {
+                        val translatedList = translationResult.getOrThrow()
+                        val replaceScript = BengaliTranslator.buildReplaceScript(translatedList)
+                        withContext(Dispatchers.Main) {
+                            evaluateJs(replaceScript) {
+                                _uiState.update { s ->
+                                    val updatedTabs = s.tabs.map { tab ->
+                                        if (tab.id == s.currentTabId) tab.copy(isPageTranslated = true) else tab
+                                    }
+                                    s.copy(
+                                        tabs = updatedTabs,
+                                        isPageTranslated = true,
+                                        isTranslating = false
+                                    )
+                                }
+                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
+                            }
+                        }
+                    } else {
+                        val error = translationResult.exceptionOrNull()
+                        val errorMsg = error?.message ?: "Translation unavailable. Check your internet connection."
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(isTranslating = false) }
+                            showToast(errorMsg)
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(isTranslating = false) }
+                        showToast("Translation unavailable. Check your internet connection.")
+                    }
+                }
+            }
+        }
     }
 
     fun onHistoryCleared() {

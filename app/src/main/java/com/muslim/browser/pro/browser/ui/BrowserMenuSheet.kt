@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,6 +76,7 @@ fun BrowserMenuSheet(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
+    onTranslateToBengali: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var newKeywordInput by remember { mutableStateOf("") }
@@ -259,6 +261,50 @@ fun BrowserMenuSheet(
                 }
 
                 HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Translate to বাংলা (বা Original Page Restore)
+                Surface(
+                    onClick = onTranslateToBengali,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_translate_bengali"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (uiState.isPageTranslated) Color(0xFF1E3A5F) else Color(0xFF182238),
+                    border = BorderStroke(1.dp, if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0x1F42A5F5))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = "Translate to বাংলা",
+                                tint = if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0xFF81D4FA),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (uiState.isPageTranslated) "Original Page" else "Translate to বাংলা",
+                                color = Color.White,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (uiState.isTranslating) {
+                            Text(
+                                text = "Translating...",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Browsing History (ইতিহাস)
