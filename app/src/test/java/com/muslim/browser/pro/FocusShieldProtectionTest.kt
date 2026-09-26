@@ -8,6 +8,9 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.SettingsRepository
+import com.muslim.browser.pro.browser.TranslationManager
+import com.muslim.browser.pro.browser.TranslationMode
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -359,41 +362,16 @@ class FocusShieldProtectionTest {
     }
 
     @Test
-    fun `test fast bangla translation on active webpage and homepage`() {
+    fun `test in-place bangla translation url remains unchanged`() {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
-        // 1. On homepage without search
-        val homeTranslateUrl = viewModel.translateToBangla()
-        assertTrue("Should open Google translate", homeTranslateUrl.contains("translate.google.com"))
-        assertTrue("Should target Bengali tl=bn", homeTranslateUrl.contains("tl=bn"))
-        assertTrue("Should include host language hl=bn", homeTranslateUrl.contains("hl=bn"))
-        assertFalse("Menu should be closed after translation", viewModel.uiState.value.isMenuOpen)
-
-        // 2. On active web page - directly generates .translate.goog URL without iframe wrapper
         viewModel.submitQueryOrUrl("https://en.wikipedia.org/wiki/Bangladesh")
-        val pageTranslateUrl = viewModel.translateToBangla()
-        assertEquals(
-            "https://en-wikipedia-org.translate.goog/wiki/Bangladesh?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
-            pageTranslateUrl
-        )
+        assertEquals("https://en.wikipedia.org/wiki/Bangladesh", viewModel.uiState.value.currentUrl)
 
-        // 3. Repeated translation on already translated page must prevent duplicate reload loop
-        val repeatedTranslateUrl = viewModel.translateToBangla(pageTranslateUrl)
-        assertEquals("Repeated translation must not re-wrap or duplicate URL", pageTranslateUrl, repeatedTranslateUrl)
-
-        // 4. Translation on live WebView URL
-        val liveTranslateUrl = viewModel.translateToBangla("https://example.com/page")
-        assertEquals(
-            "https://example-com.translate.goog/page?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
-            liveTranslateUrl
-        )
-
-        // 5. Translation on Google Search query page sets hl=bn
-        viewModel.submitQueryOrUrl("https://www.google.com/search?q=islam&safe=active")
-        val searchTranslateUrl = viewModel.translateToBangla("https://www.google.com/search?q=islam&safe=active")
-        assertTrue("Search page should be translated with hl=bn", searchTranslateUrl.contains("hl=bn"))
-        assertTrue("Search page should preserve safe search", searchTranslateUrl.contains("safe=active"))
+        // Translation preserves the URL without proxying through translate.goog
+        assertFalse(viewModel.uiState.value.currentUrl.contains("translate.goog"))
+        assertFalse(viewModel.uiState.value.currentUrl.contains("_x_tr_sl"))
     }
 
     @Test
@@ -869,118 +847,107 @@ class FocusShieldProtectionTest {
     }
 
     // ==========================================
-    // TRANSLATION MODE SWITCH & PERSISTENCE TESTS
+    // ==========================================
+    // IN-PLACE BENGALI TRANSLATION & MODE TESTS
     // ==========================================
 
     @Test
-    fun `test translation mode switch toggle and persistence across app restart`() {
-        // 1. Initial default state should be false
-        assertFalse("Translation mode default should be false", repository.isTranslationModeEnabled)
+    fun `test translation mode selection and persistence (MT vs LIVE)`() {
+        // 1. Initial default state should be MT Translation (ML Kit on-device)
+        assertEquals(TranslationMode.MT, repository.translationMode)
 
-        // 2. Turn ON
-        repository.isTranslationModeEnabled = true
-        assertTrue("Translation mode should now be true", repository.isTranslationModeEnabled)
+        // 2. Select LIVE Translation (LibreTranslate Online)
+        repository.translationMode = TranslationMode.LIVE
+        assertEquals(TranslationMode.LIVE, repository.translationMode)
 
         // 3. Verify persistence across re-creation (restart)
         val reloadedRepo1 = SettingsRepository(context)
-        assertTrue("Translation mode ON must persist after reload", reloadedRepo1.isTranslationModeEnabled)
+        assertEquals(TranslationMode.LIVE, reloadedRepo1.translationMode)
 
-        // 4. Turn OFF
-        repository.isTranslationModeEnabled = false
-        assertFalse("Translation mode should now be false", repository.isTranslationModeEnabled)
+        // 4. Switch back to MT Translation
+        repository.translationMode = TranslationMode.MT
+        assertEquals(TranslationMode.MT, repository.translationMode)
 
-        // 5. Verify persistence across re-creation (restart)
         val reloadedRepo2 = SettingsRepository(context)
-        assertFalse("Translation mode OFF must persist after reload", reloadedRepo2.isTranslationModeEnabled)
-    }
+        assertEquals(TranslationMode.MT, reloadedRepo2.translationMode)
 
-    @Test
-    fun `test viewModel translation toggle updates uiState and handles translation urls`() {
+        // 5. Test ViewModel updates UI state when changing mode
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
+        assertEquals(TranslationMode.MT, vm.uiState.value.translationMode)
 
-        // Initial state
-        assertFalse("uiState should start with isTranslationModeEnabled = false", vm.uiState.value.isTranslationModeEnabled)
-
-        // Toggle ON on webpage
-        vm.submitQueryOrUrl("https://en.wikipedia.org/wiki/Islam")
-        val targetTranslateUrl = vm.toggleTranslationMode(true, "https://en.wikipedia.org/wiki/Islam")
-        assertTrue("uiState should have isTranslationModeEnabled = true", vm.uiState.value.isTranslationModeEnabled)
-        assertNotNull("Target translation url should not be null", targetTranslateUrl)
-        assertEquals(
-            "https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
-            targetTranslateUrl
-        )
-
-        // Toggle OFF on translated page reverts to original URL
-        val revertedUrl = vm.toggleTranslationMode(false, targetTranslateUrl)
-        assertFalse("uiState should have isTranslationModeEnabled = false", vm.uiState.value.isTranslationModeEnabled)
-        assertEquals("https://en.wikipedia.org/wiki/Islam", revertedUrl)
-
-        // Test extracting original URL from .translate.goog format
-        val originalFromGoog = vm.getOriginalUrlFromTranslation("https://en-wikipedia-org.translate.goog/wiki/Islam?_x_tr_sl=auto&_x_tr_tl=bn")
-        assertNotNull(originalFromGoog)
-        assertEquals("https://en.wikipedia.org/wiki/Islam", originalFromGoog)
+        vm.setTranslationMode(TranslationMode.LIVE)
+        assertEquals(TranslationMode.LIVE, vm.uiState.value.translationMode)
+        assertEquals(TranslationMode.LIVE, repository.translationMode)
     }
 
     @Test
-    fun `test translation url detection and filtering logic preserves protection`() {
-        // 1. Translation host detection
-        assertTrue(ProtectionEngine.isTranslationHost("translate.google.com"))
-        assertTrue(ProtectionEngine.isTranslationHost("moldovalive-md.translate.goog"))
-        assertTrue(ProtectionEngine.isTranslationHost("translate.goog"))
-        assertFalse(ProtectionEngine.isTranslationHost("google.com"))
-        assertFalse(ProtectionEngine.isTranslationHost("moldovalive.md"))
+    fun `test in-place DOM translation scripts generated correctly`() {
+        // 1. DOM extraction script
+        val extractScript = TranslationManager.buildDomExtractionScript()
+        assertTrue("Extract script must use TreeWalker", extractScript.contains("createTreeWalker"))
+        assertTrue("Extract script must filter out scripts and styles", extractScript.contains("SCRIPT") && extractScript.contains("STYLE"))
+        assertTrue("Extract script must store nodes in window.__fs_nodes", extractScript.contains("window.__fs_nodes"))
+        // Guarantees URL is untouched
+        assertFalse(extractScript.contains("translate.goog"))
 
-        // 2. Translation URL detection
-        val moldovaTranslateUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fmoldovalive.md"
-        val moldovaGoogUrl = "https://moldovalive-md.translate.goog/?_x_tr_sl=auto&_x_tr_tl=bn"
-        assertTrue(ProtectionEngine.isTranslationUrl(moldovaTranslateUrl))
-        assertTrue(ProtectionEngine.isTranslationUrl(moldovaGoogUrl))
-        assertFalse(ProtectionEngine.isTranslationUrl("https://moldovalive.md"))
+        // 2. DOM replacement script
+        val replaceScript = TranslationManager.buildDomReplacementScript(listOf("বাংলা ১", "বাংলা ২"))
+        assertTrue(replaceScript.contains("window.__fs_isTranslated = true"))
+        assertTrue(replaceScript.contains("বাংলা ১"))
+        assertTrue(replaceScript.contains("বাংলা ২"))
 
-        // 3. Search query extractor must NOT treat Google Translate URLs as search queries
-        assertNull("Google Translate must not be extracted as search query",
-            ProtectionEngine.extractSearchEngineQuery(moldovaTranslateUrl))
-        assertNull("translate.google.com homepage must not be extracted as search query",
-            ProtectionEngine.extractSearchEngineQuery("https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"))
+        // 3. DOM revert script
+        val revertScript = TranslationManager.buildDomRevertScript()
+        assertTrue(revertScript.contains("window.__fs_isTranslated = false"))
+        assertTrue(revertScript.contains("item.orig"))
+    }
 
-        // 4. Safe site through Google Translate must be ALLOWED
-        val checkAllowed = ProtectionEngine.checkDirectUrl(moldovaTranslateUrl, emptySet())
-        assertTrue("Legitimate site translation must be allowed", checkAllowed is ProtectionEngine.FilterResult.Allowed)
+    @Test
+    fun `test strict mode separation and memory caching in TranslationManager`() = runBlocking {
+        TranslationManager.clearCache()
 
-        val checkGoogAllowed = ProtectionEngine.checkDirectUrl(moldovaGoogUrl, emptySet())
-        assertTrue("translate.goog proxy for legitimate site must be allowed", checkGoogAllowed is ProtectionEngine.FilterResult.Allowed)
+        var mtCount = 0
+        var liveCount = 0
+        TranslationManager.mtTranslatorOverride = { text ->
+            mtCount++
+            "এমটি-$text"
+        }
+        TranslationManager.liveTranslatorOverride = { text ->
+            liveCount++
+            "লাইভ-$text"
+        }
 
-        // 5. Adult site through Google Translate must STILL BE BLOCKED (Preserve protection)
-        val adultTranslateUrl = "https://translate.google.com/translate?sl=auto&tl=bn&hl=bn&u=https%3A%2F%2Fpornhub.com"
-        val checkBlocked = ProtectionEngine.checkDirectUrl(adultTranslateUrl, emptySet())
-        assertTrue("Adult site accessed via translation must be blocked", checkBlocked is ProtectionEngine.FilterResult.Blocked)
+        try {
+            // A. In MT Mode: ONLY MT engine is executed; Live engine is NEVER touched
+            val mtResult = TranslationManager.translateBatch(listOf("Hello", "World"), TranslationMode.MT)
+            assertTrue(mtResult.isSuccess)
+            val mtList = mtResult.getOrThrow()
+            assertEquals("এমটি-Hello", mtList[0])
+            assertEquals("এমটি-World", mtList[1])
+            assertEquals(2, mtCount)
+            assertEquals(0, liveCount)
+            assertEquals(TranslationMode.MT, TranslationManager.lastUsedEngine)
 
-        val adultGoogUrl = "https://pornhub-com.translate.goog/"
-        val checkGoogBlocked = ProtectionEngine.checkDirectUrl(adultGoogUrl, emptySet())
-        assertTrue("Adult site accessed via translate.goog must be blocked", checkGoogBlocked is ProtectionEngine.FilterResult.Blocked)
+            // B. Memory cache verification: identical text re-translated uses in-memory cache
+            val cachedResult = TranslationManager.translateBatch(listOf("Hello"), TranslationMode.MT)
+            assertTrue(cachedResult.isSuccess)
+            assertEquals("এমটি-Hello", cachedResult.getOrThrow()[0])
+            assertEquals("Cache should prevent redundant MT call", 2, mtCount)
 
-        // 6. Direct translation URL builder & host conversion (.translate.goog)
-        val directUrl = ProtectionEngine.buildDirectTranslateUrl("https://en.wikipedia.org/wiki/Bangladesh")
-        assertEquals(
-            "https://en-wikipedia-org.translate.goog/wiki/Bangladesh?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
-            directUrl
-        )
-
-        // Hyphenated domains should be escaped with double hyphens
-        val directHyphenUrl = ProtectionEngine.buildDirectTranslateUrl("https://my-site.org/page?id=1")
-        assertEquals(
-            "https://my--site-org.translate.goog/page?id=1&_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn",
-            directHyphenUrl
-        )
-
-        // Host encoding and decoding symmetry
-        assertEquals("example-com.translate.goog", ProtectionEngine.encodeTranslateHost("example.com"))
-        assertEquals("my--site-org.translate.goog", ProtectionEngine.encodeTranslateHost("my-site.org"))
-        assertEquals("example.com", ProtectionEngine.decodeTranslateHost("example-com.translate.goog"))
-        assertEquals("my-site.org", ProtectionEngine.decodeTranslateHost("my--site-org.translate.goog"))
-        assertEquals("sub.my-site.org", ProtectionEngine.decodeTranslateHost("sub-my--site-org.translate.goog"))
+            // C. In LIVE Mode: ONLY Live engine is executed; MT engine is NEVER touched
+            val liveResult = TranslationManager.translateBatch(listOf("NewText"), TranslationMode.LIVE)
+            assertTrue(liveResult.isSuccess)
+            val liveList = liveResult.getOrThrow()
+            assertEquals("লাইভ-NewText", liveList[0])
+            assertEquals("MT engine must not have been invoked during LIVE mode", 2, mtCount)
+            assertEquals(1, liveCount)
+            assertEquals(TranslationMode.LIVE, TranslationManager.lastUsedEngine)
+        } finally {
+            TranslationManager.mtTranslatorOverride = null
+            TranslationManager.liveTranslatorOverride = null
+            TranslationManager.clearCache()
+        }
     }
 
     @Test
@@ -994,81 +961,5 @@ class FocusShieldProtectionTest {
         // 2. Verify applying light theme completes safely
         MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
         org.junit.Assert.assertFalse(MainActivity.isDarkThemeActive)
-    }
-
-    @Test
-    fun `test exact moldovalive translation url trace and diagnostics`() {
-        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
-        val exactUrl = "https://moldovalive-md.translate.goog/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
-        val host = ProtectionEngine.extractHost(exactUrl)
-        val isTranslationHost = ProtectionEngine.isTranslationHost(host)
-        val isTranslationUrl = ProtectionEngine.isTranslationUrl(exactUrl)
-        val decodedUrl = ProtectionEngine.getOriginalUrlFromTranslation(exactUrl)
-        val result = ProtectionEngine.checkDirectUrl(exactUrl, emptySet())
-        val isVmBlocked = viewModel.checkAndFilterUrl(exactUrl)
-
-        println("=== DIAGNOSTIC REPORT START ===")
-        println("TRANSLATION_URL=$exactUrl")
-        println("TRANSLATION_HOST=$host")
-        println("ORIGINAL_URL=$decodedUrl")
-        println("IS_TRANSLATION_HOST=$isTranslationHost")
-        println("IS_TRANSLATION_URL=$isTranslationUrl")
-        println("PROTECTION_RESULT=" + if (result is ProtectionEngine.FilterResult.Allowed) "Allowed" else "Blocked")
-        println("VM_BLOCKED=$isVmBlocked")
-        println("=== DIAGNOSTIC REPORT END ===")
-
-        assertTrue("Host must be recognized as translation host", isTranslationHost)
-        assertTrue("URL must be recognized as translation URL", isTranslationUrl)
-        assertEquals(
-            "https://moldovalive.md/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/",
-            decodedUrl
-        )
-        assertTrue("Legitimate translation must be Allowed", result is ProtectionEngine.FilterResult.Allowed)
-        assertFalse("ViewModel must not block legitimate translation", isVmBlocked)
-        assertNull("BlockedInfo must remain null", viewModel.uiState.value.blockedInfo)
-    }
-
-    @Test
-    fun `test graceful translation failure handling without retry loops`() {
-        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
-        val originalUrl = "https://moldovalive.md/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/"
-        val translatedUrl = "https://moldovalive-md.translate.goog/tofan-says-free-media-and-security-services-helped-moldova-withstand-russian-interference/?_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
-
-        // 1. Initial navigation to original page
-        viewModel.submitQueryOrUrl(originalUrl)
-        assertEquals(originalUrl, viewModel.uiState.value.currentUrl)
-        assertNull(viewModel.uiState.value.translationFailure)
-
-        // 2. User taps Translate to Bangla -> single attempt
-        val targetTranslate = viewModel.translateToBangla(originalUrl)
-        assertEquals(translatedUrl, targetTranslate)
-        assertEquals(translatedUrl, viewModel.uiState.value.currentUrl)
-        assertNull(viewModel.uiState.value.translationFailure)
-
-        // 3. Translated page encounters frame/CSP error in WebView -> graceful failure
-        viewModel.onTranslationFailed(translatedUrl)
-        assertNotNull("Translation failure must be set", viewModel.uiState.value.translationFailure)
-        assertEquals("বাংলায় অনুবাদ করা যায়নি", viewModel.uiState.value.translationFailure!!.message)
-        assertEquals(originalUrl, viewModel.uiState.value.translationFailure!!.originalUrl)
-        assertEquals(translatedUrl, viewModel.uiState.value.translationFailure!!.translatedUrl)
-
-        // 4. Repeated error callbacks must NOT trigger retry loop or overwrite state
-        viewModel.onTranslationFailed(translatedUrl)
-        assertNotNull(viewModel.uiState.value.translationFailure)
-
-        // 5. Revert to original page preserves browsing state and clears failure banner
-        val reverted = viewModel.revertTranslationToOriginal()
-        assertEquals(originalUrl, reverted)
-        assertEquals(originalUrl, viewModel.uiState.value.currentUrl)
-        assertNull("Failure state must be cleared after returning to original", viewModel.uiState.value.translationFailure)
-        assertNull("BlockedInfo must remain null", viewModel.uiState.value.blockedInfo)
-
-        // 6. Navigation to other URL clears failure state
-        viewModel.onTranslationFailed(translatedUrl)
-        assertNotNull(viewModel.uiState.value.translationFailure)
-        viewModel.onPageStarted("https://example.com/other")
-        assertNull("Navigating to new URL must reset failure state", viewModel.uiState.value.translationFailure)
     }
 }

@@ -46,6 +46,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -63,6 +65,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.browser.TranslationMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -76,7 +79,8 @@ fun BrowserMenuSheet(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
-    onTranslateToBangla: () -> Unit,
+    onToggleTranslation: () -> Unit,
+    onSelectTranslationMode: (TranslationMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var newKeywordInput by remember { mutableStateOf("") }
@@ -263,35 +267,45 @@ fun BrowserMenuSheet(
                 HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Bangla Translation (বাংলা ট্রান্সলেশন)
+                // Bangla Translation (বাংলা ট্রান্সলেশন - In-place DOM Translation)
                 Surface(
-                    onClick = onTranslateToBangla,
+                    onClick = onToggleTranslation,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("action_bangla_translate"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = if (uiState.isPageTranslated) Color(0xFF1E3A5F) else Color(0xFF182238),
+                    border = BorderStroke(1.dp, if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0x1F42A5F5))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Translate,
-                            contentDescription = "বাংলা ট্রান্সলেশন",
-                            tint = Color(0xFF81D4FA),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "বাংলা ট্রান্সলেশন",
-                            color = Color.White,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = "বাংলা ট্রান্সলেশন",
+                                tint = if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0xFF81D4FA),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (uiState.isPageTranslated) "মূল টেক্সট দেখান (Restore)" else "বাংলায় অনুবাদ করুন (Translate)",
+                                color = Color.White,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        if (uiState.isTranslating) {
+                            Text(
+                                text = "অনুবাদ হচ্ছে...",
+                                color = Color(0xFF00E5FF),
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
 
@@ -506,6 +520,140 @@ fun BrowserMenuSheet(
                             ),
                             modifier = Modifier.testTag("popup_blocking_switch")
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Translation Mode Settings (MT Translation vs Live Translation)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("section_translation_settings"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF182238),
+                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00E5FF),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Translation",
+                                    color = Color.White,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                text = "Target: বাংলা",
+                                color = Color(0xFF81D4FA),
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Option 1: MT Translation (On-device)
+                        Surface(
+                            onClick = { onSelectTranslationMode(TranslationMode.MT) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (uiState.translationMode == TranslationMode.MT) Color(0xFF1E2E4A) else Color.Transparent,
+                            border = BorderStroke(1.dp, if (uiState.translationMode == TranslationMode.MT) Color(0xFF00E5FF) else Color(0x2242A5F5)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("radio_translation_mt")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = (uiState.translationMode == TranslationMode.MT),
+                                    onClick = { onSelectTranslationMode(TranslationMode.MT) },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color(0xFF00E5FF),
+                                        unselectedColor = Color(0xFF90A4AE)
+                                    ),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "MT Translation",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "On-device (Offline)",
+                                        color = Color(0xFF90A4AE),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Option 2: Live Translation (Online)
+                        Surface(
+                            onClick = { onSelectTranslationMode(TranslationMode.LIVE) },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (uiState.translationMode == TranslationMode.LIVE) Color(0xFF1E2E4A) else Color.Transparent,
+                            border = BorderStroke(1.dp, if (uiState.translationMode == TranslationMode.LIVE) Color(0xFF00E5FF) else Color(0x2242A5F5)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("radio_translation_live")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = (uiState.translationMode == TranslationMode.LIVE),
+                                    onClick = { onSelectTranslationMode(TranslationMode.LIVE) },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color(0xFF00E5FF),
+                                        unselectedColor = Color(0xFF90A4AE)
+                                    ),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Live Translation",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Online (LibreTranslate)",
+                                        color = Color(0xFF90A4AE),
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 

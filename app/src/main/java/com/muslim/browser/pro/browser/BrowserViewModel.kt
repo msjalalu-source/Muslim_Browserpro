@@ -1,13 +1,17 @@
 package com.muslim.browser.pro.browser
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -25,12 +29,6 @@ data class FavoriteSite(
     val badgeColor: Long = 0xFF4285F4
 )
 
-data class TranslationFailure(
-    val originalUrl: String,
-    val translatedUrl: String,
-    val message: String = "বাংলায় অনুবাদ করা যায়নি"
-)
-
 data class BrowserTab(
     val id: String = java.util.UUID.randomUUID().toString(),
     val url: String = "",
@@ -40,7 +38,7 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
-    val translationFailure: TranslationFailure? = null,
+    val isPageTranslated: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val isPageContentVisible: Boolean = false,
@@ -64,14 +62,15 @@ data class BrowserUiState(
     val isHistoryOpen: Boolean = false,
     val browsingHistory: List<HistoryEntry> = emptyList(),
     val blockedInfo: BlockedInfo? = null,
-    val translationFailure: TranslationFailure? = null,
     val toastMessage: String? = null,
     val favoriteSites: List<FavoriteSite> = emptyList(),
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
     val isDesktopModeEnabled: Boolean = false,
-    val isTranslationModeEnabled: Boolean = false
+    val translationMode: TranslationMode = TranslationMode.MT,
+    val isPageTranslated: Boolean = false,
+    val isTranslating: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -100,7 +99,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
-                isTranslationModeEnabled = repository.isTranslationModeEnabled,
+                translationMode = repository.translationMode,
                 browsingHistory = repository.getHistory()
             )
         )
@@ -352,52 +351,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         return true
     }
 
-    /**
-     * Translation Mode (বাংলা অনুবাদ - Bengali):
-     * If browsing a webpage, translates the entire page to Bangla via Google Translate (hl=bn, tl=bn).
-     * Prevents nested translation loops if already translated to Bengali.
-     * If on home or search input, translates text or opens Google Translate Bangla.
-     */
-    fun translateToBangla(liveUrl: String? = null): String {
-        val rawCurrent = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" }
-            ?: _uiState.value.currentUrl
 
-        val isAlreadyTranslated = rawCurrent.contains("translate.google.com/translate") && rawCurrent.contains("tl=bn") ||
-                (rawCurrent.contains(".translate.goog") && (rawCurrent.contains("tl=bn") || rawCurrent.contains("_x_tr_tl=bn")))
-
-        if (isAlreadyTranslated) {
-            closeMenu()
-            showToast("ইতিমধ্যে বাংলায় অনুবাদ করা হয়েছে")
-            return rawCurrent
-        }
-
-        val cleanCurrent = getOriginalUrlFromTranslation(rawCurrent) ?: rawCurrent
-
-        val targetUrl = if (!_uiState.value.isHomePage && cleanCurrent.isNotBlank() && !cleanCurrent.startsWith("about:")) {
-            val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(cleanCurrent)
-            if (searchEngineQuery != null) {
-                val encodedQuery = URLEncoder.encode(searchEngineQuery, StandardCharsets.UTF_8.name())
-                "https://www.google.com/search?q=$encodedQuery&hl=bn&safe=active"
-            } else {
-                ProtectionEngine.buildDirectTranslateUrl(cleanCurrent) ?: cleanCurrent
-            }
-        } else {
-            val query = _uiState.value.searchInput.trim()
-            if (query.isNotEmpty() && !query.startsWith("http://") && !query.startsWith("https://") && !isWebUrl(query)) {
-                val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
-                "https://translate.google.com/?sl=auto&tl=bn&hl=bn&text=$encodedQuery&op=translate"
-            } else if (isWebUrl(query)) {
-                val formatted = formatDirectUrl(query)
-                ProtectionEngine.buildDirectTranslateUrl(formatted) ?: formatted
-            } else {
-                "https://translate.google.com/?sl=auto&tl=bn&hl=bn&op=translate"
-            }
-        }
-        loadTargetUrl(targetUrl)
-        closeMenu()
-        showToast("বাংলায় অনুবাদ করা হচ্ছে...")
-        return targetUrl
-    }
 
     private fun isWebUrl(input: String): Boolean {
         if (input.startsWith("http://", ignoreCase = true) || input.startsWith("https://", ignoreCase = true)) {
@@ -424,7 +378,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = targetUrl,
                         searchInput = targetUrl,
                         blockedInfo = null,
-                        translationFailure = null,
+                        isPageTranslated = false,
                         isLoading = true,
                         // Reset page content visibility if coming from home page or if never rendered yet
                         isPageContentVisible = if (wasOnHomePage) false else tab.isPageContentVisible
@@ -437,7 +391,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
                 blockedInfo = null,
-                translationFailure = null,
+                isPageTranslated = false,
+                isTranslating = false,
                 isLoading = true,
                 isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
@@ -483,16 +438,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return true
         }
 
-        // Check if direct download URL (skip for translation URLs)
-        if (!ProtectionEngine.isTranslationUrl(url)) {
-            val downloadStatus = ProtectionEngine.checkDownloadType(url, null, null)
-            if (downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
-                downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
-                downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_APK
-            ) {
-                showToast("This file type is blocked.")
-                return true
-            }
+        // Check if direct download of blocked file types
+        val downloadStatus = ProtectionEngine.checkDownloadType(url, null, null)
+        if (downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
+            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
+            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_APK
+        ) {
+            showToast("This file type is blocked.")
+            return true
         }
 
         return false
@@ -508,7 +461,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = url,
                         searchInput = url,
                         blockedInfo = null,
-                        translationFailure = if (tab.translationFailure?.translatedUrl == url) tab.translationFailure else null,
+                        isPageTranslated = false,
                         isHomePage = false
                     )
                 } else tab
@@ -519,77 +472,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = url,
                 searchInput = url,
                 blockedInfo = null,
-                translationFailure = if (state.translationFailure?.translatedUrl == url) state.translationFailure else null,
+                isPageTranslated = false,
+                isTranslating = false,
                 isHomePage = false
             )
-        }
-    }
-
-    /**
-     * Graceful Translation Failure Handling:
-     * When a translated page fails in WebView (e.g. ERR_BLOCKED_BY_RESPONSE / CSP frame-ancestors),
-     * records the failure, notifies the user without any infinite retry loop, and provides an option
-     * to return to the original untranslated page while preserving current browsing state.
-     */
-    fun onTranslationFailed(failedUrl: String) {
-        val host = ProtectionEngine.extractHost(failedUrl)
-        if (!ProtectionEngine.isTranslationHost(host)) return
-        val originalUrl = getOriginalUrlFromTranslation(failedUrl) ?: return
-
-        // Prevent repeated toast or loops if already reported for this URL
-        if (_uiState.value.translationFailure?.translatedUrl == failedUrl) return
-
-        val failure = TranslationFailure(
-            originalUrl = originalUrl,
-            translatedUrl = failedUrl,
-            message = "বাংলায় অনুবাদ করা যায়নি"
-        )
-        _uiState.update { state ->
-            val updatedTabs = state.tabs.map { tab ->
-                if (tab.id == state.currentTabId) {
-                    tab.copy(
-                        isLoading = false,
-                        isPageContentVisible = true,
-                        translationFailure = failure
-                    )
-                } else tab
-            }
-            state.copy(
-                tabs = updatedTabs,
-                isLoading = false,
-                isPageContentVisible = true,
-                translationFailure = failure
-            )
-        }
-        showToast("বাংলায় অনুবাদ করা যায়নি")
-    }
-
-    fun revertTranslationToOriginal(): String? {
-        val originalUrl = _uiState.value.translationFailure?.originalUrl
-            ?: getOriginalUrlFromTranslation(_uiState.value.currentUrl)
-        _uiState.update { state ->
-            val updatedTabs = state.tabs.map { tab ->
-                if (tab.id == state.currentTabId) {
-                    tab.copy(translationFailure = null)
-                } else tab
-            }
-            state.copy(tabs = updatedTabs, translationFailure = null)
-        }
-        if (!originalUrl.isNullOrBlank()) {
-            loadTargetUrl(originalUrl)
-            return originalUrl
-        }
-        return null
-    }
-
-    fun dismissTranslationFailure() {
-        _uiState.update { state ->
-            val updatedTabs = state.tabs.map { tab ->
-                if (tab.id == state.currentTabId) {
-                    tab.copy(translationFailure = null)
-                } else tab
-            }
-            state.copy(tabs = updatedTabs, translationFailure = null)
         }
     }
 
@@ -700,37 +586,124 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
     }
 
-    /**
-     * Translation Mode toggle in Settings:
-     * - Persists enabled/disabled state to SettingsRepository.
-     * - If enabled and currently browsing a webpage, translates to Bangla.
-     * - If disabled and currently on a translated URL, unwraps/reverts to the original webpage.
-     */
-    fun toggleTranslationMode(enabled: Boolean, liveUrl: String? = null): String? {
-        repository.isTranslationModeEnabled = enabled
-        _uiState.update { it.copy(isTranslationModeEnabled = enabled) }
-
-        if (enabled) {
-            val current = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" } ?: _uiState.value.currentUrl
-            if (!_uiState.value.isHomePage && current.isNotBlank() && !current.startsWith("about:")) {
-                return translateToBangla(liveUrl)
-            } else {
-                showToast("Translation Mode ON (বাংলা)")
-            }
-        } else {
-            showToast("Translation Mode OFF")
-            val current = liveUrl?.takeIf { it.isNotBlank() && it != "about:blank" } ?: _uiState.value.currentUrl
-            val originalUrl = getOriginalUrlFromTranslation(current)
-            if (originalUrl != null) {
-                loadTargetUrl(originalUrl)
-                return originalUrl
-            }
-        }
-        return null
+    fun setTranslationMode(mode: TranslationMode) {
+        repository.translationMode = mode
+        _uiState.update { it.copy(translationMode = mode) }
     }
 
-    fun getOriginalUrlFromTranslation(url: String): String? {
-        return ProtectionEngine.getOriginalUrlFromTranslation(url)
+    /**
+     * In-place DOM Translation & Reversion:
+     * Translates DOM text nodes directly to Bengali ("bn") in the current WebView.
+     * Webpage URL, links, scripts, and forms are NEVER changed.
+     */
+    fun togglePageTranslation(
+        context: Context,
+        evaluateJs: (script: String, callback: ((String?) -> Unit)?) -> Unit
+    ) {
+        closeMenu()
+        val state = _uiState.value
+        if (state.isHomePage || state.currentUrl.isBlank() || state.currentUrl.startsWith("about:")) {
+            showToast("Translate works on active webpages")
+            return
+        }
+
+        if (state.isTranslating) {
+            showToast("Translation in progress...")
+            return
+        }
+
+        if (state.isPageTranslated) {
+            // Revert back to original
+            val revertScript = TranslationManager.buildDomRevertScript()
+            evaluateJs(revertScript) { _ ->
+                _uiState.update { it.copy(isPageTranslated = false) }
+                showToast("Original text restored")
+            }
+            return
+        }
+
+        // Extract DOM text nodes
+        _uiState.update { it.copy(isTranslating = true) }
+        showToast("বাংলায় অনুবাদ করা হচ্ছে...")
+
+        val extractionScript = TranslationManager.buildDomExtractionScript()
+        evaluateJs(extractionScript) { jsonResult ->
+            if (jsonResult.isNullOrBlank() || jsonResult == "null") {
+                _uiState.update { it.copy(isTranslating = false) }
+                showToast("Cannot extract webpage content")
+                return@evaluateJs
+            }
+
+            viewModelScope.launch {
+                try {
+                    val cleanJson = if (jsonResult.startsWith("\"") && jsonResult.endsWith("\"")) {
+                        try {
+                            org.json.JSONTokener(jsonResult).nextValue() as String
+                        } catch (_: Exception) {
+                            jsonResult
+                        }
+                    } else {
+                        jsonResult
+                    }
+
+                    val jsonObj = org.json.JSONObject(cleanJson)
+                    val action = jsonObj.optString("action")
+                    if (action == "already_translated") {
+                        _uiState.update { it.copy(isPageTranslated = true, isTranslating = false) }
+                        showToast("ইতিমধ্যে বাংলায় অনুবাদ করা হয়েছে")
+                        return@launch
+                    }
+
+                    val textsArray = jsonObj.optJSONArray("texts")
+                    if (textsArray == null || textsArray.length() == 0) {
+                        _uiState.update { it.copy(isTranslating = false) }
+                        showToast("No translatable text found")
+                        return@launch
+                    }
+
+                    val texts = ArrayList<String>(textsArray.length())
+                    for (i in 0 until textsArray.length()) {
+                        texts.add(textsArray.getString(i))
+                    }
+
+                    val currentMode = _uiState.value.translationMode
+                    val translationResult = TranslationManager.translateBatch(texts, currentMode, context)
+
+                    if (translationResult.isSuccess) {
+                        val translatedList = translationResult.getOrThrow()
+                        val replaceScript = TranslationManager.buildDomReplacementScript(translatedList)
+                        withContext(Dispatchers.Main) {
+                            evaluateJs(replaceScript) {
+                                _uiState.update {
+                                    it.copy(
+                                        isPageTranslated = true,
+                                        isTranslating = false
+                                    )
+                                }
+                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
+                            }
+                        }
+                    } else {
+                        val error = translationResult.exceptionOrNull()
+                        val errorMsg = error?.message ?: "Translation failed"
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(isTranslating = false) }
+                            showToast(errorMsg)
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(isTranslating = false) }
+                        val errorMsg = if (_uiState.value.translationMode == TranslationMode.MT) {
+                            "Translation unavailable\nPlease download the Bengali translation model."
+                        } else {
+                            "Live translation unavailable.\nCheck your internet connection."
+                        }
+                        showToast(errorMsg)
+                    }
+                }
+            }
+        }
     }
 
     fun onHistoryCleared() {

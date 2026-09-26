@@ -135,125 +135,6 @@ object ProtectionEngine {
     }
 
     /**
-     * Checks whether the host represents a Google Translate domain.
-     */
-    fun isTranslationHost(host: String?): Boolean {
-        if (host.isNullOrBlank()) return false
-        val clean = host.lowercase(Locale.ROOT)
-        return clean == "translate.google.com" ||
-                clean.endsWith(".translate.google.com") ||
-                clean == "translate.goog" ||
-                clean.endsWith(".translate.goog") ||
-                clean == "translate.googleapis.com" ||
-                clean.endsWith(".translate.googleapis.com")
-    }
-
-    /**
-     * Checks whether the URL is a Google Translate service URL.
-     */
-    fun isTranslationUrl(url: String?): Boolean {
-        if (url.isNullOrBlank()) return false
-        val host = extractHost(url) ?: return false
-        return isTranslationHost(host)
-    }
-
-    /**
-     * Converts an original web hostname into Google Translate proxy hostname (.translate.goog).
-     * Hyphens are escaped as double-hyphens '--', and dots '.' are replaced with '-'.
-     */
-    fun encodeTranslateHost(originalHost: String): String {
-        val clean = originalHost.trim().lowercase(Locale.ROOT)
-        return clean
-            .replace("-", "--")
-            .replace(".", "-") + ".translate.goog"
-    }
-
-    /**
-     * Decodes a Google Translate proxy hostname back to the original domain name.
-     * Removes the .translate.goog suffix, restores dots, and unescapes double-hyphens.
-     */
-    fun decodeTranslateHost(translateHost: String): String {
-        val clean = translateHost.trim().lowercase(Locale.ROOT)
-        val withoutSuffix = if (clean.endsWith(".translate.goog")) {
-            clean.removeSuffix(".translate.goog")
-        } else {
-            clean
-        }
-        return withoutSuffix
-            .replace("--", "\u0000")
-            .replace("-", ".")
-            .replace("\u0000", "-")
-    }
-
-    /**
-     * Builds a direct un-framed Google Translate URL (.translate.goog) for a given original webpage URL.
-     * Query parameters and fragments are preserved.
-     */
-    fun buildDirectTranslateUrl(originalUrl: String): String? {
-        if (originalUrl.isBlank() || originalUrl.startsWith("about:")) return null
-        val trimmed = originalUrl.trim()
-        val uri = try {
-            Uri.parse(trimmed)
-        } catch (_: Exception) {
-            return null
-        }
-        val host = uri.host ?: return null
-        if (host.isBlank()) return null
-
-        // If already translated, return trimmed
-        if (host.lowercase(Locale.ROOT).endsWith(".translate.goog")) {
-            return trimmed
-        }
-
-        val googHost = encodeTranslateHost(host)
-        val path = if (uri.encodedPath.isNullOrEmpty()) "/" else uri.encodedPath
-        val trParams = "_x_tr_sl=auto&_x_tr_tl=bn&_x_tr_hl=bn"
-        val query = uri.encodedQuery
-        val finalQuery = if (query.isNullOrEmpty()) trParams else "$query&$trParams"
-        val fragment = if (uri.encodedFragment.isNullOrEmpty()) "" else "#${uri.encodedFragment}"
-        return "https://$googHost$path?$finalQuery$fragment"
-    }
-
-    /**
-     * Extracts the original URL from a translated URL (.translate.goog or legacy translate.google.com).
-     */
-    fun getOriginalUrlFromTranslation(url: String): String? {
-        if (url.isBlank() || url.startsWith("about:")) return null
-        val trimmed = url.trim()
-        try {
-            val uri = Uri.parse(trimmed)
-            val host = uri.host?.lowercase(Locale.ROOT) ?: return null
-
-            // Direct .translate.goog format
-            if (host.endsWith(".translate.goog")) {
-                val originalHost = decodeTranslateHost(host)
-                val path = uri.encodedPath ?: ""
-                val query = uri.query?.split("&")
-                    ?.filterNot { it.startsWith("_x_tr_") }
-                    ?.joinToString("&")
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { "?$it" } ?: ""
-                val fragment = if (uri.encodedFragment.isNullOrBlank()) "" else "#${uri.encodedFragment}"
-                return "https://$originalHost$path$query$fragment"
-            }
-
-            // Fallback for translate.google.com/translate?u=...
-            if (host == "translate.google.com" || host.endsWith(".translate.google.com")) {
-                val paramU = uri.getQueryParameter("u")
-                if (!paramU.isNullOrBlank()) return paramU
-            }
-        } catch (_: Exception) {}
-        return null
-    }
-
-    /**
-     * Extracts original target URL from Google Translate proxy URL if present.
-     */
-    fun extractUnderlyingTargetUrl(url: String): String? {
-        return getOriginalUrlFromTranslation(url)
-    }
-
-    /**
      * Detects if a URL is a search request from known search providers
      * (Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Ecosia, Startpage, Ask)
      * and extracts the clean search query string.
@@ -270,7 +151,6 @@ object ProtectionEngine {
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
         if (scheme != "http" && scheme != "https") return null
         val host = uri.host?.lowercase(Locale.ROOT) ?: return null
-        if (isTranslationHost(host)) return null
         val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
         return when {
@@ -380,20 +260,6 @@ object ProtectionEngine {
 
         // 2. Direct Adult Domain Matching (O(1) host lookup first)
         val host = extractHost(trimmed)
-        if (host != null && isTranslationHost(host)) {
-            val underlyingUrl = extractUnderlyingTargetUrl(trimmed)
-            android.util.Log.d("DIAGNOSTIC", "TRANSLATION_URL=$trimmed")
-            android.util.Log.d("DIAGNOSTIC", "TRANSLATION_HOST=$host")
-            android.util.Log.d("DIAGNOSTIC", "ORIGINAL_URL=$underlyingUrl")
-            android.util.Log.d("DIAGNOSTIC", "DECODED_URL=$underlyingUrl")
-            if (underlyingUrl != null) {
-                return checkDirectUrl(underlyingUrl, customKeywords, normalizedKeywords)
-            }
-            android.util.Log.d("DIAGNOSTIC", "PROTECTION_RESULT=Allowed")
-            android.util.Log.d("DIAGNOSTIC", "RESULT=Allowed")
-            return FilterResult.Allowed
-        }
-
         if (host != null && host.isNotEmpty()) {
             if (matchesDomainOrSubdomain(host, KNOWN_ADULT_DOMAINS)) {
                 android.util.Log.e("DIAGNOSTIC", "BLOCK_FUNCTION=ProtectionEngine.checkDirectUrl (Adult Domain)")
