@@ -29,6 +29,7 @@ object FaviconManager {
     private const val CACHE_DIR_NAME = "favicons"
     private const val CONNECT_TIMEOUT_MS = 3500
     private const val READ_TIMEOUT_MS = 4000
+    private val SAFE_FILENAME_REGEX = Regex("[^a-zA-Z0-9.-]")
 
     // In-memory LRU cache for 64 icons to prevent disk reads and network requests on recomposition
     private val memoryCache = LruCache<String, Bitmap>(64)
@@ -152,7 +153,7 @@ object FaviconManager {
     private fun getDiskCacheFile(context: Context, domain: String): File? {
         return try {
             val dir = File(context.cacheDir, CACHE_DIR_NAME)
-            val safeName = domain.replace(Regex("[^a-zA-Z0-9.-]"), "_") + ".png"
+            val safeName = domain.replace(SAFE_FILENAME_REGEX, "_") + ".png"
             File(dir, safeName)
         } catch (_: Exception) {
             null

@@ -30,9 +30,15 @@ class SettingsRepository(context: Context) {
     // In-memory cache of browsing history entries
     private val inMemoryHistory = ArrayList<HistoryEntry>()
 
+    // Cached immutable snapshots to eliminate repeated .toSet() and .toList() allocations
+    private var cachedKeywordsSet: Set<String> = emptySet()
+    private var cachedFavoritesList: List<FavoriteSite> = emptyList()
+    private var cachedHistoryList: List<HistoryEntry> = emptyList()
+
     init {
         val savedKeywords = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
         inMemoryKeywords.addAll(savedKeywords)
+        cachedKeywordsSet = inMemoryKeywords.toSet()
         rebuildNormalizedKeywords()
 
         // Load favorites once from disk into memory
@@ -57,6 +63,7 @@ class SettingsRepository(context: Context) {
         val rawJson = prefs.getString(KEY_FAVORITES, null)
         if (rawJson == null) {
             inMemoryFavorites.addAll(DEFAULT_FAVORITES)
+            cachedFavoritesList = inMemoryFavorites.toList()
             return
         }
         try {
@@ -97,11 +104,16 @@ class SettingsRepository(context: Context) {
         } catch (_: Exception) {
             inMemoryFavorites.addAll(DEFAULT_FAVORITES)
         }
+        cachedFavoritesList = inMemoryFavorites.toList()
     }
 
     private fun loadHistoryFromDisk() {
         inMemoryHistory.clear()
-        val rawJson = prefs.getString(KEY_HISTORY, null) ?: return
+        val rawJson = prefs.getString(KEY_HISTORY, null)
+        if (rawJson == null) {
+            cachedHistoryList = emptyList()
+            return
+        }
         try {
             val jsonArray = JSONArray(rawJson)
             for (i in 0 until jsonArray.length()) {
@@ -116,13 +128,15 @@ class SettingsRepository(context: Context) {
                 )
             }
         } catch (_: Exception) {}
+        cachedHistoryList = inMemoryHistory.toList()
     }
 
     /**
      * Gets unmodifiable view of currently active custom keywords.
+     * Returns cached immutable set snapshot to eliminate per-call allocations.
      */
     fun getCustomKeywords(): Set<String> {
-        return inMemoryKeywords.toSet()
+        return cachedKeywordsSet
     }
 
     /**
@@ -149,18 +163,19 @@ class SettingsRepository(context: Context) {
 
         inMemoryKeywords.add(trimmed)
         inMemoryNormalizedKeywords.add(normalized)
+        cachedKeywordsSet = inMemoryKeywords.toSet()
         prefs.edit()
-            .putStringSet(KEY_CUSTOM_KEYWORDS, inMemoryKeywords.toSet())
+            .putStringSet(KEY_CUSTOM_KEYWORDS, cachedKeywordsSet)
             .apply()
         return true
     }
 
     /**
      * Retrieves the list of favorite websites from fast in-memory cache.
-     * Avoids JSON parsing on UI recomposition or navigation.
+     * Returns cached immutable list to eliminate allocations.
      */
     fun getFavoriteSites(): List<FavoriteSite> {
-        return inMemoryFavorites.toList()
+        return cachedFavoritesList
     }
 
     /**
@@ -169,6 +184,7 @@ class SettingsRepository(context: Context) {
     fun saveFavoriteSites(sites: List<FavoriteSite>) {
         inMemoryFavorites.clear()
         inMemoryFavorites.addAll(sites)
+        cachedFavoritesList = inMemoryFavorites.toList()
 
         val jsonArray = JSONArray()
         for (site in sites) {
@@ -243,9 +259,10 @@ class SettingsRepository(context: Context) {
 
     /**
      * Returns unmodifiable list of browsing history entries (most recent first).
+     * Returns cached immutable list to eliminate allocations.
      */
     fun getHistory(): List<HistoryEntry> {
-        return inMemoryHistory.toList()
+        return cachedHistoryList
     }
 
     /**
@@ -301,10 +318,12 @@ class SettingsRepository(context: Context) {
      */
     fun clearHistory() {
         inMemoryHistory.clear()
+        cachedHistoryList = emptyList()
         prefs.edit().remove(KEY_HISTORY).apply()
     }
 
     private fun saveHistoryToDisk() {
+        cachedHistoryList = inMemoryHistory.toList()
         val jsonArray = JSONArray()
         for (item in inMemoryHistory) {
             val obj = JSONObject().apply {

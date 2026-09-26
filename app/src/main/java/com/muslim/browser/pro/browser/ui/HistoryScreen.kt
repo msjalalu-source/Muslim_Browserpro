@@ -371,6 +371,14 @@ private fun HistoryItemRow(
     }
 }
 
+private val timeFormat = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue(): SimpleDateFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+}
+
+private val dateFormat = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue(): SimpleDateFormat = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+}
+
 /**
  * Returns grouping category: "Today", "Yesterday", or formatted date.
  */
@@ -385,7 +393,7 @@ private fun getHistoryDateGroup(timestamp: Long): String {
     return when {
         isSameYear && dayOfYearNow == dayOfYearItem -> "Today"
         isSameYear && dayOfYearNow - dayOfYearItem == 1 -> "Yesterday"
-        else -> SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(timestamp))
+        else -> dateFormat.get()?.format(Date(timestamp)) ?: ""
     }
 }
 
@@ -393,5 +401,5 @@ private fun getHistoryDateGroup(timestamp: Long): String {
  * Formats timestamp to time format e.g. "11:25 AM".
  */
 private fun formatHistoryTime(timestamp: Long): String {
-    return SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+    return timeFormat.get()?.format(Date(timestamp)) ?: ""
 }
