@@ -38,7 +38,6 @@ data class BrowserTab(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val blockedInfo: BlockedInfo? = null,
-    val isPageTranslated: Boolean = false,
     val isLoading: Boolean = false,
     val loadingProgress: Int = 0,
     val isPageContentVisible: Boolean = false,
@@ -67,10 +66,7 @@ data class BrowserUiState(
     val customKeywords: Set<String> = emptySet(),
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
-    val isDesktopModeEnabled: Boolean = false,
-    val translationMode: TranslationMode = TranslationMode.MT,
-    val isPageTranslated: Boolean = false,
-    val isTranslating: Boolean = false
+    val isDesktopModeEnabled: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -99,7 +95,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
-                translationMode = repository.translationMode,
                 browsingHistory = repository.getHistory()
             )
         )
@@ -378,7 +373,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = targetUrl,
                         searchInput = targetUrl,
                         blockedInfo = null,
-                        isPageTranslated = false,
                         isLoading = true,
                         // Reset page content visibility if coming from home page or if never rendered yet
                         isPageContentVisible = if (wasOnHomePage) false else tab.isPageContentVisible
@@ -391,8 +385,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = targetUrl,
                 searchInput = targetUrl,
                 blockedInfo = null,
-                isPageTranslated = false,
-                isTranslating = false,
                 isLoading = true,
                 isPageContentVisible = if (wasOnHomePage) false else state.isPageContentVisible
             )
@@ -461,7 +453,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         url = url,
                         searchInput = url,
                         blockedInfo = null,
-                        isPageTranslated = false,
                         isHomePage = false
                     )
                 } else tab
@@ -472,8 +463,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 currentUrl = url,
                 searchInput = url,
                 blockedInfo = null,
-                isPageTranslated = false,
-                isTranslating = false,
                 isHomePage = false
             )
         }
@@ -584,126 +573,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleDesktopMode(enabled: Boolean) {
         repository.isDesktopModeEnabled = enabled
         _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
-    }
-
-    fun setTranslationMode(mode: TranslationMode) {
-        repository.translationMode = mode
-        _uiState.update { it.copy(translationMode = mode) }
-    }
-
-    /**
-     * In-place DOM Translation & Reversion:
-     * Translates DOM text nodes directly to Bengali ("bn") in the current WebView.
-     * Webpage URL, links, scripts, and forms are NEVER changed.
-     */
-    fun togglePageTranslation(
-        context: Context,
-        evaluateJs: (script: String, callback: ((String?) -> Unit)?) -> Unit
-    ) {
-        closeMenu()
-        val state = _uiState.value
-        if (state.isHomePage || state.currentUrl.isBlank() || state.currentUrl.startsWith("about:")) {
-            showToast("Translate works on active webpages")
-            return
-        }
-
-        if (state.isTranslating) {
-            showToast("Translation in progress...")
-            return
-        }
-
-        if (state.isPageTranslated) {
-            // Revert back to original
-            val revertScript = TranslationManager.buildDomRevertScript()
-            evaluateJs(revertScript) { _ ->
-                _uiState.update { it.copy(isPageTranslated = false) }
-                showToast("Original text restored")
-            }
-            return
-        }
-
-        // Extract DOM text nodes
-        _uiState.update { it.copy(isTranslating = true) }
-        showToast("বাংলায় অনুবাদ করা হচ্ছে...")
-
-        val extractionScript = TranslationManager.buildDomExtractionScript()
-        evaluateJs(extractionScript) { jsonResult ->
-            if (jsonResult.isNullOrBlank() || jsonResult == "null") {
-                _uiState.update { it.copy(isTranslating = false) }
-                showToast("Cannot extract webpage content")
-                return@evaluateJs
-            }
-
-            viewModelScope.launch {
-                try {
-                    val cleanJson = if (jsonResult.startsWith("\"") && jsonResult.endsWith("\"")) {
-                        try {
-                            org.json.JSONTokener(jsonResult).nextValue() as String
-                        } catch (_: Exception) {
-                            jsonResult
-                        }
-                    } else {
-                        jsonResult
-                    }
-
-                    val jsonObj = org.json.JSONObject(cleanJson)
-                    val action = jsonObj.optString("action")
-                    if (action == "already_translated") {
-                        _uiState.update { it.copy(isPageTranslated = true, isTranslating = false) }
-                        showToast("ইতিমধ্যে বাংলায় অনুবাদ করা হয়েছে")
-                        return@launch
-                    }
-
-                    val textsArray = jsonObj.optJSONArray("texts")
-                    if (textsArray == null || textsArray.length() == 0) {
-                        _uiState.update { it.copy(isTranslating = false) }
-                        showToast("No translatable text found")
-                        return@launch
-                    }
-
-                    val texts = ArrayList<String>(textsArray.length())
-                    for (i in 0 until textsArray.length()) {
-                        texts.add(textsArray.getString(i))
-                    }
-
-                    val currentMode = _uiState.value.translationMode
-                    val translationResult = TranslationManager.translateBatch(texts, currentMode, context)
-
-                    if (translationResult.isSuccess) {
-                        val translatedList = translationResult.getOrThrow()
-                        val replaceScript = TranslationManager.buildDomReplacementScript(translatedList)
-                        withContext(Dispatchers.Main) {
-                            evaluateJs(replaceScript) {
-                                _uiState.update {
-                                    it.copy(
-                                        isPageTranslated = true,
-                                        isTranslating = false
-                                    )
-                                }
-                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
-                            }
-                        }
-                    } else {
-                        val error = translationResult.exceptionOrNull()
-                        val errorMsg = error?.message ?: "Translation failed"
-                        withContext(Dispatchers.Main) {
-                            _uiState.update { it.copy(isTranslating = false) }
-                            showToast(errorMsg)
-                        }
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        _uiState.update { it.copy(isTranslating = false) }
-                        val errorMsg = if (_uiState.value.translationMode == TranslationMode.MT) {
-                            "Translation unavailable\nPlease download the Bengali translation model."
-                        } else {
-                            "Live translation unavailable.\nCheck your internet connection."
-                        }
-                        showToast(errorMsg)
-                    }
-                }
-            }
-        }
     }
 
     fun onHistoryCleared() {

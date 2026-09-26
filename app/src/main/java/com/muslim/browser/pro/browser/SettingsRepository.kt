@@ -247,19 +247,6 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
         }
 
-    var translationMode: TranslationMode
-        get() {
-            val saved = prefs.getString(KEY_TRANSLATION_MODE_SELECTION, TranslationMode.MT.name)
-            return try {
-                TranslationMode.valueOf(saved ?: TranslationMode.MT.name)
-            } catch (_: Exception) {
-                TranslationMode.MT
-            }
-        }
-        set(value) {
-            prefs.edit().putString(KEY_TRANSLATION_MODE_SELECTION, value.name).apply()
-        }
-
     // ==========================================
     // BROWSING HISTORY PERSISTENCE
     // ==========================================
@@ -417,7 +404,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
-        private const val KEY_TRANSLATION_MODE_SELECTION = "key_translation_mode_selection"
         private const val KEY_FAVORITES = "key_favorite_sites"
         private const val KEY_SAVED_TABS = "key_saved_tabs"
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"

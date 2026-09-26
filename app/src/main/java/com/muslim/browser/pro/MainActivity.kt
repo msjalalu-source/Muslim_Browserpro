@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
             )
             applyWebViewTheme(this, isDarkTheme)
 
-            // Ensure cookies and third-party cookies are accepted for cross-origin assets (e.g. translation)
+            // Ensure cookies and third-party cookies are accepted for cross-origin assets
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
@@ -867,15 +867,7 @@ fun BrowserApp(
                     onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
-                    onToggleDesktopMode = onToggleDesktopMode,
-                    onToggleTranslation = {
-                        viewModel.togglePageTranslation(context) { script, callback ->
-                            webView.evaluateJavascript(script, callback)
-                        }
-                    },
-                    onSelectTranslationMode = { mode ->
-                        viewModel.setTranslationMode(mode)
-                    }
+                    onToggleDesktopMode = onToggleDesktopMode
                 )
             }
 

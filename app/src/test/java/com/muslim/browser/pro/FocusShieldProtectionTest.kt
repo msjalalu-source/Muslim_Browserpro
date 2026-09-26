@@ -8,8 +8,6 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.SettingsRepository
-import com.muslim.browser.pro.browser.TranslationManager
-import com.muslim.browser.pro.browser.TranslationMode
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -359,19 +357,6 @@ class FocusShieldProtectionTest {
         val allowed = viewModel.submitQueryOrUrl("https://www.pornhub.com")
         assertFalse("Adult content must be blocked on new tabs", allowed)
         assertTrue("Blocked info must be set", viewModel.uiState.value.blockedInfo != null)
-    }
-
-    @Test
-    fun `test in-place bangla translation url remains unchanged`() {
-        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
-
-        viewModel.submitQueryOrUrl("https://en.wikipedia.org/wiki/Bangladesh")
-        assertEquals("https://en.wikipedia.org/wiki/Bangladesh", viewModel.uiState.value.currentUrl)
-
-        // Translation preserves the URL without proxying through translate.goog
-        assertFalse(viewModel.uiState.value.currentUrl.contains("translate.goog"))
-        assertFalse(viewModel.uiState.value.currentUrl.contains("_x_tr_sl"))
     }
 
     @Test
@@ -844,110 +829,6 @@ class FocusShieldProtectionTest {
         // Survives app restart as empty
         val vmAfterClear = com.muslim.browser.pro.browser.BrowserViewModel(app)
         assertTrue(vmAfterClear.uiState.value.browsingHistory.isEmpty())
-    }
-
-    // ==========================================
-    // ==========================================
-    // IN-PLACE BENGALI TRANSLATION & MODE TESTS
-    // ==========================================
-
-    @Test
-    fun `test translation mode selection and persistence (MT vs LIVE)`() {
-        // 1. Initial default state should be MT Translation (ML Kit on-device)
-        assertEquals(TranslationMode.MT, repository.translationMode)
-
-        // 2. Select LIVE Translation (LibreTranslate Online)
-        repository.translationMode = TranslationMode.LIVE
-        assertEquals(TranslationMode.LIVE, repository.translationMode)
-
-        // 3. Verify persistence across re-creation (restart)
-        val reloadedRepo1 = SettingsRepository(context)
-        assertEquals(TranslationMode.LIVE, reloadedRepo1.translationMode)
-
-        // 4. Switch back to MT Translation
-        repository.translationMode = TranslationMode.MT
-        assertEquals(TranslationMode.MT, repository.translationMode)
-
-        val reloadedRepo2 = SettingsRepository(context)
-        assertEquals(TranslationMode.MT, reloadedRepo2.translationMode)
-
-        // 5. Test ViewModel updates UI state when changing mode
-        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val vm = com.muslim.browser.pro.browser.BrowserViewModel(app)
-        assertEquals(TranslationMode.MT, vm.uiState.value.translationMode)
-
-        vm.setTranslationMode(TranslationMode.LIVE)
-        assertEquals(TranslationMode.LIVE, vm.uiState.value.translationMode)
-        assertEquals(TranslationMode.LIVE, repository.translationMode)
-    }
-
-    @Test
-    fun `test in-place DOM translation scripts generated correctly`() {
-        // 1. DOM extraction script
-        val extractScript = TranslationManager.buildDomExtractionScript()
-        assertTrue("Extract script must use TreeWalker", extractScript.contains("createTreeWalker"))
-        assertTrue("Extract script must filter out scripts and styles", extractScript.contains("SCRIPT") && extractScript.contains("STYLE"))
-        assertTrue("Extract script must store nodes in window.__fs_nodes", extractScript.contains("window.__fs_nodes"))
-        // Guarantees URL is untouched
-        assertFalse(extractScript.contains("translate.goog"))
-
-        // 2. DOM replacement script
-        val replaceScript = TranslationManager.buildDomReplacementScript(listOf("বাংলা ১", "বাংলা ২"))
-        assertTrue(replaceScript.contains("window.__fs_isTranslated = true"))
-        assertTrue(replaceScript.contains("বাংলা ১"))
-        assertTrue(replaceScript.contains("বাংলা ২"))
-
-        // 3. DOM revert script
-        val revertScript = TranslationManager.buildDomRevertScript()
-        assertTrue(revertScript.contains("window.__fs_isTranslated = false"))
-        assertTrue(revertScript.contains("item.orig"))
-    }
-
-    @Test
-    fun `test strict mode separation and memory caching in TranslationManager`() = runBlocking {
-        TranslationManager.clearCache()
-
-        var mtCount = 0
-        var liveCount = 0
-        TranslationManager.mtTranslatorOverride = { text ->
-            mtCount++
-            "এমটি-$text"
-        }
-        TranslationManager.liveTranslatorOverride = { text ->
-            liveCount++
-            "লাইভ-$text"
-        }
-
-        try {
-            // A. In MT Mode: ONLY MT engine is executed; Live engine is NEVER touched
-            val mtResult = TranslationManager.translateBatch(listOf("Hello", "World"), TranslationMode.MT)
-            assertTrue(mtResult.isSuccess)
-            val mtList = mtResult.getOrThrow()
-            assertEquals("এমটি-Hello", mtList[0])
-            assertEquals("এমটি-World", mtList[1])
-            assertEquals(2, mtCount)
-            assertEquals(0, liveCount)
-            assertEquals(TranslationMode.MT, TranslationManager.lastUsedEngine)
-
-            // B. Memory cache verification: identical text re-translated uses in-memory cache
-            val cachedResult = TranslationManager.translateBatch(listOf("Hello"), TranslationMode.MT)
-            assertTrue(cachedResult.isSuccess)
-            assertEquals("এমটি-Hello", cachedResult.getOrThrow()[0])
-            assertEquals("Cache should prevent redundant MT call", 2, mtCount)
-
-            // C. In LIVE Mode: ONLY Live engine is executed; MT engine is NEVER touched
-            val liveResult = TranslationManager.translateBatch(listOf("NewText"), TranslationMode.LIVE)
-            assertTrue(liveResult.isSuccess)
-            val liveList = liveResult.getOrThrow()
-            assertEquals("লাইভ-NewText", liveList[0])
-            assertEquals("MT engine must not have been invoked during LIVE mode", 2, mtCount)
-            assertEquals(1, liveCount)
-            assertEquals(TranslationMode.LIVE, TranslationManager.lastUsedEngine)
-        } finally {
-            TranslationManager.mtTranslatorOverride = null
-            TranslationManager.liveTranslatorOverride = null
-            TranslationManager.clearCache()
-        }
     }
 
     @Test

@@ -139,7 +139,7 @@ object ProtectionEngine {
      * (Google, Bing, DuckDuckGo, Yahoo, Yandex, Baidu, Ecosia, Startpage, Ask)
      * and extracts the clean search query string.
      *
-     * Returns null if the URL is a regular web page, search engine homepage, or translation URL.
+     * Returns null if the URL is a regular web page or search engine homepage.
      */
     fun extractSearchEngineQuery(url: String): String? {
         if (url.isBlank()) return null
