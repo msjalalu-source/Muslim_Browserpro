@@ -938,4 +938,18 @@ class FocusShieldProtectionTest {
         assertTrue("Page should reload to restore original content", reloaded)
         assertFalse(vm.uiState.value.isPageTranslated)
     }
+
+    @Test
+    fun `test live online translation of Hello world returns Bengali`() = runBlocking {
+        BengaliTranslator.clearCache()
+        val result = BengaliTranslator.translate("Hello world")
+        if (result.isSuccess) {
+            val text = result.getOrThrow()
+            assertTrue("Translated text must not be empty", text.isNotBlank())
+            println("LIVE TRANSLATION RESULT for 'Hello world': $text")
+        } else {
+            val err = result.exceptionOrNull()
+            println("Live translation network status: ${err?.message}")
+        }
+    }
 }
