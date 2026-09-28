@@ -52,6 +52,8 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+import com.muslim.browser.pro.ui.theme.LocalAppColors
+
 /**
  * Dedicated Browsing History Screen.
  * Displays visited web pages grouped by date with individual delete and clear all options.
@@ -65,6 +67,7 @@ fun HistoryScreen(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
     if (showClearConfirmDialog) {
@@ -73,7 +76,7 @@ fun HistoryScreen(
             title = {
                 Text(
                     text = "Clear Browsing History",
-                    color = Color.White,
+                    color = colors.textPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
@@ -81,7 +84,7 @@ fun HistoryScreen(
             text = {
                 Text(
                     text = "Are you sure you want to clear your entire browsing history? This action cannot be undone.",
-                    color = Color(0xFFCFD8DC),
+                    color = colors.textSecondary,
                     fontSize = 13.sp
                 )
             },
@@ -92,7 +95,7 @@ fun HistoryScreen(
                         onClearAll()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFD32F2F),
+                        containerColor = if (colors.isMonochrome) colors.border.copy(alpha = 0.5f) else Color(0xFFD32F2F),
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(8.dp),
@@ -105,14 +108,14 @@ fun HistoryScreen(
                 OutlinedButton(
                     onClick = { showClearConfirmDialog = false },
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF90A4AE)),
-                    border = BorderStroke(1.dp, Color(0xFF37474F)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
+                    border = BorderStroke(1.dp, colors.border),
                     modifier = Modifier.testTag("cancel_clear_history_button")
                 ) {
                     Text("Cancel")
                 }
             },
-            containerColor = Color(0xFF162036),
+            containerColor = colors.surface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.testTag("dialog_clear_history")
         )
@@ -121,15 +124,15 @@ fun HistoryScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0B111E))
+            .background(colors.background)
             .testTag("history_screen")
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header Bar
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF131D31),
-                border = BorderStroke(0.5.dp, Color(0x3342A5F5)),
+                color = colors.surface,
+                border = BorderStroke(0.5.dp, colors.border),
                 shadowElevation = 6.dp
             ) {
                 Row(
@@ -149,7 +152,7 @@ fun HistoryScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = Color(0xFF00E5FF),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -157,13 +160,13 @@ fun HistoryScreen(
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = null,
-                            tint = Color(0xFF00E5FF),
+                            tint = colors.accent,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "History",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -173,8 +176,8 @@ fun HistoryScreen(
                         Button(
                             onClick = { showClearConfirmDialog = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0x28EF5350),
-                                contentColor = Color(0xFFFF8A80)
+                                containerColor = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x28EF5350),
+                                contentColor = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF8A80)
                             ),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
@@ -208,15 +211,15 @@ fun HistoryScreen(
                     ) {
                         Surface(
                             shape = RoundedCornerShape(20.dp),
-                            color = Color(0xFF131D31),
-                            border = BorderStroke(1.dp, Color(0x2200E5FF)),
+                            color = colors.surfaceVariant,
+                            border = BorderStroke(1.dp, colors.border),
                             modifier = Modifier.size(72.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.History,
                                     contentDescription = null,
-                                    tint = Color(0xFF546E7A),
+                                    tint = colors.textSecondary,
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
@@ -224,14 +227,14 @@ fun HistoryScreen(
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = "No Browsing History",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "Websites you visit will appear here.",
-                            color = Color(0xFF90A4AE),
+                            color = colors.textSecondary,
                             fontSize = 13.sp
                         )
                     }
@@ -252,7 +255,7 @@ fun HistoryScreen(
                         item(key = "header_$dateHeader") {
                             Text(
                                 text = dateHeader,
-                                color = Color(0xFF00E5FF),
+                                color = colors.accent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 6.dp)
@@ -283,14 +286,15 @@ private fun HistoryItemRow(
     onSelect: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = LocalAppColors.current
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onSelect() }
             .testTag("history_item_${entry.id}"),
         shape = RoundedCornerShape(10.dp),
-        color = Color(0xFF131D31),
-        border = BorderStroke(0.8.dp, Color(0x2242A5F5)),
+        color = colors.surfaceVariant,
+        border = BorderStroke(0.8.dp, colors.border),
         tonalElevation = 2.dp
     ) {
         Row(
@@ -307,14 +311,14 @@ private fun HistoryItemRow(
             ) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0x2200E5FF),
+                    color = colors.accent.copy(alpha = 0.15f),
                     modifier = Modifier.size(34.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Public,
                             contentDescription = null,
-                            tint = Color(0xFF81D4FA),
+                            tint = colors.accent,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -325,7 +329,7 @@ private fun HistoryItemRow(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = entry.title,
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -338,7 +342,7 @@ private fun HistoryItemRow(
                     ) {
                         Text(
                             text = entry.url,
-                            color = Color(0xFF78909C),
+                            color = colors.textSecondary,
                             fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -346,7 +350,7 @@ private fun HistoryItemRow(
                         )
                         Text(
                             text = formatHistoryTime(entry.timestamp),
-                            color = Color(0xFF90A4AE),
+                            color = colors.textSecondary,
                             fontSize = 10.sp
                         )
                     }
@@ -363,7 +367,7 @@ private fun HistoryItemRow(
                 Icon(
                     imageVector = Icons.Default.DeleteOutline,
                     contentDescription = "Delete item",
-                    tint = Color(0xFFEF5350),
+                    tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFFEF5350),
                     modifier = Modifier.size(18.dp)
                 )
             }

@@ -2,8 +2,8 @@ package com.muslim.browser.pro.browser.ui
 
 import android.annotation.SuppressLint
 import android.webkit.WebView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.muslim.browser.pro.MainActivity
 import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -57,26 +58,30 @@ fun BrowserWebView(
     onReload: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
     var isEditingUrl by remember { mutableStateOf(false) }
-    var editUrlText by remember(uiState.currentUrl) { mutableStateOf(uiState.currentUrl) }
-    val isDarkTheme = isSystemInDarkTheme()
-    val canvasBg = if (isDarkTheme) Color(0xFF0F172A) else Color.White
+    var editUrlText by remember { mutableStateOf("") }
 
-    LaunchedEffect(isDarkTheme) {
-        MainActivity.applyWebViewTheme(webView, isDarkTheme)
+    // Synchronize edit field with actual active URL when external navigation occurs
+    LaunchedEffect(uiState.currentUrl) {
+        if (!isEditingUrl) {
+            editUrlText = uiState.currentUrl
+        }
     }
+
+    val canvasBg = colors.background
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A))
+            .background(colors.background)
             .testTag("browser_web_view_container")
     ) {
         // Top Web Address Bar (38.dp × 1.10 = 41.8.dp)
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = Color(0xFF0F172A),
-            shadowElevation = 3.dp
+            color = colors.surface,
+            shadowElevation = if (colors.isMonochrome) 0.dp else 2.dp
         ) {
             Column {
                 Row(
@@ -89,7 +94,7 @@ fun BrowserWebView(
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = "Secure Connection",
-                        tint = Color(0xFF00E5FF),
+                        tint = colors.accent,
                         modifier = Modifier.size(13.dp)
                     )
 
@@ -100,7 +105,8 @@ fun BrowserWebView(
                             .weight(1f)
                             .height(32.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF1E293B)
+                        color = colors.surfaceVariant,
+                        border = BorderStroke(0.5.dp, colors.border)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -119,11 +125,11 @@ fun BrowserWebView(
                                     .testTag("browser_top_url_bar"),
                                 singleLine = true,
                                 textStyle = TextStyle(
-                                    color = Color.White,
+                                    color = colors.textPrimary,
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
                                 ),
-                                cursorBrush = SolidColor(Color(0xFF00E5FF)),
+                                cursorBrush = SolidColor(colors.accent),
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                                 keyboardActions = KeyboardActions(
                                     onGo = {
@@ -139,7 +145,7 @@ fun BrowserWebView(
                                         if ((isEditingUrl && editUrlText.isEmpty()) || (!isEditingUrl && uiState.currentUrl.isEmpty())) {
                                             Text(
                                                 text = "Search or enter address...",
-                                                color = Color(0xFF78909C),
+                                                color = colors.textSecondary,
                                                 fontSize = 12.sp,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
@@ -158,7 +164,7 @@ fun BrowserWebView(
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Clear",
-                                        tint = Color(0xFF90A4AE),
+                                        tint = colors.textSecondary,
                                         modifier = Modifier.size(12.dp)
                                     )
                                 }
@@ -177,7 +183,7 @@ fun BrowserWebView(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Refresh page",
-                            tint = Color.White,
+                            tint = colors.iconTint,
                             modifier = Modifier.size(15.dp)
                         )
                     }
@@ -190,8 +196,8 @@ fun BrowserWebView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(2.dp),
-                        color = Color(0xFF00E5FF),
-                        trackColor = Color(0x3300E5FF)
+                        color = colors.accent,
+                        trackColor = colors.accent.copy(alpha = 0.2f)
                     )
                 } else {
                     Spacer(modifier = Modifier.height(2.dp))
@@ -208,14 +214,12 @@ fun BrowserWebView(
             AndroidView(
                 factory = { webView },
                 update = { view ->
-                    MainActivity.applyWebViewTheme(view, isDarkTheme)
+                    MainActivity.applyWebViewTheme(view, !colors.isLight)
                 },
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Lightweight neutral loading transition surface:
-            // Prevents exposing unrendered/unpainted blank canvas while the first frame is being fetched and prepared.
-            // Disappears immediately once onPageCommitVisible paints content or the page finishes.
+            // Lightweight neutral loading transition surface
             if (!uiState.isPageContentVisible && uiState.isLoading) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -227,7 +231,7 @@ fun BrowserWebView(
                     ) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(32.dp),
-                            color = Color(0xFF00E5FF),
+                            color = colors.accent,
                             strokeWidth = 2.5.dp
                         )
                     }

@@ -69,7 +69,9 @@ data class BrowserUiState(
     val isAdBlockingEnabled: Boolean = true,
     val isDesktopModeEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
-    val isTranslating: Boolean = false
+    val isTranslating: Boolean = false,
+    val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK,
+    val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -98,7 +100,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
-                browsingHistory = repository.getHistory()
+                browsingHistory = repository.getHistory(),
+                appTheme = repository.appTheme,
+                selectedTranslationEngine = repository.selectedTranslationEngine
             )
         )
     }
@@ -112,6 +116,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     val favoriteSites: List<FavoriteSite>
         get() = _uiState.value.favoriteSites.ifEmpty { repository.getFavoriteSites() }
+
+    fun setAppTheme(theme: com.muslim.browser.pro.ui.theme.AppTheme) {
+        repository.appTheme = theme
+        _uiState.update { it.copy(appTheme = theme) }
+    }
+
+    fun selectTranslationEngine(engine: TranslationEngine) {
+        repository.selectedTranslationEngine = engine
+        _uiState.update { it.copy(selectedTranslationEngine = engine) }
+    }
 
     fun getNormalizedKeywords(): List<String> = repository.getNormalizedKeywords()
 
@@ -661,7 +675,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         texts.add(textsArray.getString(i))
                     }
 
-                    val translationResult = BengaliTranslator.translateBatch(texts)
+                    val currentEngine = _uiState.value.selectedTranslationEngine
+                    val translationResult = BengaliTranslator.translateBatch(texts, currentEngine)
 
                     if (translationResult.isSuccess) {
                         val translatedList = translationResult.getOrThrow()

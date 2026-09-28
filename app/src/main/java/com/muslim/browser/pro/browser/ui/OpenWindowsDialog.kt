@@ -39,19 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.BrowserTab
 import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 /**
  * Minimal Dropdown for Open Windows.
  * Triggered by long-pressing the '+' button in BottomNavBar.
- *
- * Characteristics:
- * - Small floating card positioned directly above the bottom nav '+' button.
- * - Dark theme with simple rounded corners, minimal border, minimal shadow.
- * - No header, no window count, no '+ New Window' button inside.
- * - Starts directly with the window list.
- * - Active window highlighted with a brighter background and thin border (no "Active" badge).
- * - Overall visual size is ~20% larger for comfortable legibility and tap ergonomics.
- * - Tapping outside dismisses the dropdown.
  */
 @Composable
 fun OpenWindowsDialog(
@@ -62,11 +54,13 @@ fun OpenWindowsDialog(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
+
     // Backdrop: lightweight click-to-dismiss layer that keeps the browser page visible
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.25f))
+            .background(Color.Black.copy(alpha = 0.4f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -86,9 +80,9 @@ fun OpenWindowsDialog(
                 ) { /* Consume clicks to prevent dismiss */ }
                 .testTag("open_windows_panel"),
             shape = RoundedCornerShape(14.dp),
-            color = Color(0xFF131D31),
-            border = BorderStroke(1.dp, Color(0x3342A5F5)),
-            shadowElevation = 4.dp
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.border),
+            shadowElevation = 6.dp
         ) {
             // Direct Window List without Header or '+ New Window' button
             Column(
@@ -123,13 +117,14 @@ private fun WindowTabItem(
     onClick: () -> Unit,
     onClose: () -> Unit
 ) {
+    val colors = LocalAppColors.current
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(10.dp),
-        color = if (isActive) Color(0xFF1E2E4A) else Color(0xFF162032),
+        color = if (isActive) colors.surfaceVariant else colors.surface,
         border = BorderStroke(
             width = 1.dp,
-            color = if (isActive) Color(0xFF00E5FF) else Color(0x2242A5F5)
+            color = if (isActive) colors.accent else colors.border.copy(alpha = 0.5f)
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -150,7 +145,7 @@ private fun WindowTabItem(
                 Icon(
                     imageVector = if (tab.isHomePage) Icons.Default.Home else Icons.Default.Language,
                     contentDescription = if (tab.isHomePage) "Home Page" else "Web Page",
-                    tint = if (isActive) Color(0xFF00E5FF) else Color(0xFF81D4FA),
+                    tint = if (isActive) colors.accent else colors.iconTint,
                     modifier = Modifier.size(20.dp)
                 )
 
@@ -160,7 +155,7 @@ private fun WindowTabItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (tab.isHomePage) "Browser Home Page" else tab.pageTitle.ifEmpty { "Web Page" },
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 14.sp,
                         fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                         maxLines = 1,
@@ -168,7 +163,7 @@ private fun WindowTabItem(
                     )
                     Text(
                         text = if (tab.isHomePage) "Home" else tab.url.ifEmpty { "about:blank" },
-                        color = if (isActive) Color(0xFF80DEEA) else Color(0xFF78909C),
+                        color = if (isActive) colors.accent else colors.textSecondary,
                         fontSize = 11.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -189,7 +184,7 @@ private fun WindowTabItem(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Close Window",
-                        tint = Color(0xFF90A4AE),
+                        tint = colors.textSecondary,
                         modifier = Modifier.size(16.dp)
                     )
                 }

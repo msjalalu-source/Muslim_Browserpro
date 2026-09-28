@@ -328,7 +328,13 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MyApplicationTheme {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+            LaunchedEffect(uiState.appTheme) {
+                applyWebViewTheme(webView, isDarkTheme = uiState.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE)
+            }
+
+            MyApplicationTheme(appTheme = uiState.appTheme) {
                 BrowserApp(
                     viewModel = viewModel,
                     webView = webView,
@@ -679,6 +685,7 @@ fun BrowserApp(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
+    val colors = com.muslim.browser.pro.ui.theme.LocalAppColors.current
 
     // Toast / Snackbar feedback
     LaunchedEffect(uiState.toastMessage) {
@@ -748,7 +755,7 @@ fun BrowserApp(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFF0F172A))
+                .background(colors.background)
         ) {
             // 1. BrowserWebView is persistently kept in the Box layout so the WebView instance
             // remains warm and attached to the window, preventing teardown, re-attaching, and blank flashes.
@@ -873,7 +880,9 @@ fun BrowserApp(
                             evaluateJs = { script, cb -> webView.evaluateJavascript(script, cb) },
                             reloadPage = { webView.reload() }
                         )
-                    }
+                    },
+                    onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
+                    onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) }
                 )
             }
 

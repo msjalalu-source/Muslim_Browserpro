@@ -944,7 +944,7 @@ class FocusShieldProtectionTest {
         BengaliTranslator.clearCache()
         val result = BengaliTranslator.translate("Hello world")
         val cause = result.exceptionOrNull()?.cause?.message
-        println("REAL LIBRETRANSLATE API RESULT for 'Hello world': isSuccess=${result.isSuccess}, errorMsg=${result.exceptionOrNull()?.message}, rootCause=$cause")
+        println("REAL LIBRETRANSLATE API RESULT for 'Hello world': isSuccess=${result.isSuccess}, text='${result.getOrNull()}', errorMsg=${result.exceptionOrNull()?.message}, rootCause=$cause")
     }
 
     @Test

@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.BlockedInfo
 
+import com.muslim.browser.pro.ui.theme.LocalAppColors
+
 @Composable
 fun BlockedScreen(
     blockedInfo: BlockedInfo,
@@ -44,18 +46,12 @@ fun BlockedScreen(
     canGoBack: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0F172A),
-                        Color(0xFF1E1015),
-                        Color(0xFF0F172A)
-                    )
-                )
-            )
+            .background(colors.background)
             .padding(24.dp)
             .testTag("blocked_screen"),
         contentAlignment = Alignment.Center
@@ -63,8 +59,8 @@ fun BlockedScreen(
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xEE1E293B),
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350)),
+            color = colors.surface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0xFFEF5350)),
             shadowElevation = 16.dp
         ) {
             Column(
@@ -73,14 +69,14 @@ fun BlockedScreen(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = Color(0x33EF5350),
+                    color = if (colors.isMonochrome) colors.surfaceVariant else Color(0x33EF5350),
                     modifier = Modifier.size(72.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Shield,
                             contentDescription = "Blocked Alert",
-                            tint = Color(0xFFEF5350),
+                            tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -90,7 +86,7 @@ fun BlockedScreen(
 
                 Text(
                     text = "ACCESS RESTRICTED",
-                    color = Color(0xFFEF5350),
+                    color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     letterSpacing = 1.2.sp
@@ -100,11 +96,11 @@ fun BlockedScreen(
 
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0x33EF5350)
+                    color = if (colors.isMonochrome) colors.surfaceVariant else Color(0x33EF5350)
                 ) {
                     Text(
                         text = blockedInfo.reason,
-                        color = Color(0xFFFFCDD2),
+                        color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFFCDD2),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -115,7 +111,7 @@ fun BlockedScreen(
 
                 Text(
                     text = blockedInfo.detail,
-                    color = Color(0xFFECEFF1),
+                    color = colors.textPrimary,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                     lineHeight = 20.sp
@@ -125,7 +121,7 @@ fun BlockedScreen(
 
                 Text(
                     text = blockedInfo.targetUrl,
-                    color = Color(0xFF90A4AE),
+                    color = colors.textSecondary,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
                     maxLines = 2
@@ -140,8 +136,8 @@ fun BlockedScreen(
                         .testTag("blocked_go_home_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00E5FF),
-                        contentColor = Color(0xFF0A0F1D)
+                        containerColor = colors.buttonBackground,
+                        contentColor = colors.buttonText
                     )
                 ) {
                     Icon(imageVector = Icons.Default.Home, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -158,9 +154,9 @@ fun BlockedScreen(
                             .testTag("blocked_go_back_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
+                            contentColor = colors.textPrimary
                         ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x44FFFFFF))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.border)
                     ) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))

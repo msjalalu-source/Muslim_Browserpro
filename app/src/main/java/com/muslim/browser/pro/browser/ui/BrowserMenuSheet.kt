@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
@@ -46,10 +47,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +67,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.browser.TranslationEngine
+import com.muslim.browser.pro.ui.theme.AppTheme
+import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -77,12 +84,89 @@ fun BrowserMenuSheet(
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onTranslateToBengali: () -> Unit,
+    onSelectTheme: (AppTheme) -> Unit,
+    onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
+
     var newKeywordInput by remember { mutableStateOf("") }
     var keywordError by remember { mutableStateOf<String?>(null) }
     var showClearAllDataDialog by remember { mutableStateOf(false) }
     var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    // Dialog: Theme Selection (Settings -> Theme)
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = {
+                Text(
+                    text = "Theme",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    color = colors.textPrimary
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppTheme.values().forEach { theme ->
+                        val isSelected = uiState.appTheme == theme
+                        Surface(
+                            onClick = {
+                                onSelectTheme(theme)
+                                showThemeDialog = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) colors.surfaceVariant else Color.Transparent,
+                            border = BorderStroke(1.dp, if (isSelected) colors.accent else colors.border.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("theme_option_${theme.name.lowercase()}")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onSelectTheme(theme)
+                                        showThemeDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = colors.accent,
+                                        unselectedColor = colors.textSecondary
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = theme.displayName,
+                                    color = colors.textPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    onClick = { showThemeDialog = false },
+                    modifier = Modifier.testTag("dismiss_theme_dialog_button")
+                ) {
+                    Text("Close", color = colors.accent)
+                }
+            },
+            containerColor = colors.surface,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.testTag("dialog_theme_selector")
+        )
+    }
 
     // Dialog: Clear All Data
     if (showClearAllDataDialog) {
@@ -93,13 +177,13 @@ fun BrowserMenuSheet(
                     text = "Clear All Data?",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = Color.White
+                    color = colors.textPrimary
                 )
             },
             text = {
                 Text(
                     text = "Clear browsing history, cache and cookies.",
-                    color = Color(0xFFCFD8DC),
+                    color = colors.textSecondary,
                     fontSize = 13.sp
                 )
             },
@@ -123,8 +207,8 @@ fun BrowserMenuSheet(
                 Button(
                     onClick = { showClearAllDataDialog = false },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0x3390A4AE),
-                        contentColor = Color(0xFFECEFF1)
+                        containerColor = colors.border.copy(alpha = 0.2f),
+                        contentColor = colors.textPrimary
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("cancel_clear_all_data_button")
@@ -132,7 +216,7 @@ fun BrowserMenuSheet(
                     Text("Cancel")
                 }
             },
-            containerColor = Color(0xFF162036),
+            containerColor = colors.surface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.testTag("dialog_clear_all_data")
         )
@@ -147,7 +231,7 @@ fun BrowserMenuSheet(
                     text = "Clear Cache & Cookies?",
                     fontWeight = FontWeight.Bold,
                     fontSize = 17.sp,
-                    color = Color.White
+                    color = colors.textPrimary
                 )
             },
             confirmButton = {
@@ -157,8 +241,8 @@ fun BrowserMenuSheet(
                         onClearCacheAndCookies()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00E5FF),
-                        contentColor = Color(0xFF0A0F1D)
+                        containerColor = colors.buttonBackground,
+                        contentColor = colors.buttonText
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("confirm_clear_cache_cookies_button")
@@ -170,8 +254,8 @@ fun BrowserMenuSheet(
                 Button(
                     onClick = { showClearCacheCookiesDialog = false },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0x3390A4AE),
-                        contentColor = Color(0xFFECEFF1)
+                        containerColor = colors.border.copy(alpha = 0.2f),
+                        contentColor = colors.textPrimary
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("cancel_clear_cache_cookies_button")
@@ -179,7 +263,7 @@ fun BrowserMenuSheet(
                     Text("Cancel")
                 }
             },
-            containerColor = Color(0xFF162036),
+            containerColor = colors.surface,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.testTag("dialog_clear_cache_cookies")
         )
@@ -209,8 +293,8 @@ fun BrowserMenuSheet(
                 ) { /* Consume clicks inside panel to prevent dismissing */ }
                 .testTag("floating_menu_panel"),
             shape = RoundedCornerShape(18.dp),
-            color = Color(0xFF131D31),
-            border = BorderStroke(1.dp, Color(0x4000E5FF)),
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.border),
             shadowElevation = 14.dp,
             tonalElevation = 6.dp
         ) {
@@ -233,13 +317,13 @@ fun BrowserMenuSheet(
                         Icon(
                             imageVector = Icons.Default.Security,
                             contentDescription = null,
-                            tint = Color(0xFF00E5FF),
+                            tint = colors.iconTint,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Muslim Browser",
-                            color = Color.White,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -254,13 +338,13 @@ fun BrowserMenuSheet(
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Close Menu",
-                            tint = Color(0xFF90A4AE),
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
 
-                HorizontalDivider(color = Color(0x3342A5F5), thickness = 0.5.dp)
+                HorizontalDivider(color = colors.border, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Translate to বাংলা (বা Original Page Restore)
@@ -270,8 +354,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("menu_item_translate_bengali"),
                     shape = RoundedCornerShape(8.dp),
-                    color = if (uiState.isPageTranslated) Color(0xFF1E3A5F) else Color(0xFF182238),
-                    border = BorderStroke(1.dp, if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0x1F42A5F5))
+                    color = if (uiState.isPageTranslated) colors.surfaceVariant else colors.surface,
+                    border = BorderStroke(1.dp, if (uiState.isPageTranslated) colors.accent else colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -284,13 +368,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Translate,
                                 contentDescription = "Translate to বাংলা",
-                                tint = if (uiState.isPageTranslated) Color(0xFF00E5FF) else Color(0xFF81D4FA),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (uiState.isPageTranslated) "Original Page" else "Translate to বাংলা",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -298,9 +382,202 @@ fun BrowserMenuSheet(
                         if (uiState.isTranslating) {
                             Text(
                                 text = "Translating...",
-                                color = Color(0xFF00E5FF),
+                                color = colors.accent,
                                 fontSize = 10.5.sp
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Translation Engine Selection (3 Selectable Switches, Single Active Engine)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("section_translation_engine"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Translate,
+                                contentDescription = null,
+                                tint = colors.iconTint,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Translation Engine",
+                                color = colors.textPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // 1. LibreTranslate Switch (Default)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "LibreTranslate",
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.LIBRE_TRANSLATE) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Switch(
+                                checked = uiState.selectedTranslationEngine == TranslationEngine.LIBRE_TRANSLATE,
+                                onCheckedChange = { checked ->
+                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.LIBRE_TRANSLATE) {
+                                        onSelectTranslationEngine(TranslationEngine.LIBRE_TRANSLATE)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = colors.buttonText,
+                                    checkedTrackColor = colors.accent,
+                                    uncheckedThumbColor = colors.textSecondary,
+                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.testTag("switch_engine_libre")
+                            )
+                        }
+
+                        // 2. Lingva Translate Switch
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Lingva Translate",
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.LINGVA) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Switch(
+                                checked = uiState.selectedTranslationEngine == TranslationEngine.LINGVA,
+                                onCheckedChange = { checked ->
+                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.LINGVA) {
+                                        onSelectTranslationEngine(TranslationEngine.LINGVA)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = colors.buttonText,
+                                    checkedTrackColor = colors.accent,
+                                    uncheckedThumbColor = colors.textSecondary,
+                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.testTag("switch_engine_lingva")
+                            )
+                        }
+
+                        // 3. MyMemory Translate Switch
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "MyMemory Translate",
+                                color = colors.textPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.MYMEMORY) FontWeight.Bold else FontWeight.Normal
+                            )
+                            Switch(
+                                checked = uiState.selectedTranslationEngine == TranslationEngine.MYMEMORY,
+                                onCheckedChange = { checked ->
+                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.MYMEMORY) {
+                                        onSelectTranslationEngine(TranslationEngine.MYMEMORY)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = colors.buttonText,
+                                    checkedTrackColor = colors.accent,
+                                    uncheckedThumbColor = colors.textSecondary,
+                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                                ),
+                                modifier = Modifier.testTag("switch_engine_mymemory")
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Settings -> Theme (Centralized Theme Selection: Black, White, Black & White)
+                Surface(
+                    onClick = { showThemeDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_theme"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Theme",
+                                tint = colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Theme",
+                                color = colors.textPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = colors.accent.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = uiState.appTheme.displayName,
+                                    color = colors.accent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -314,8 +591,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("menu_item_history"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -328,13 +605,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.History,
                                 contentDescription = "Browsing History",
-                                tint = Color(0xFF00E5FF),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "History",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -342,7 +619,7 @@ fun BrowserMenuSheet(
 
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = Color(0x2200E5FF)
+                            color = colors.accent.copy(alpha = 0.15f)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -350,7 +627,7 @@ fun BrowserMenuSheet(
                             ) {
                                 Text(
                                     text = "View",
-                                    color = Color(0xFF00E5FF),
+                                    color = colors.accent,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -358,7 +635,7 @@ fun BrowserMenuSheet(
                                 Icon(
                                     imageVector = Icons.Default.ChevronRight,
                                     contentDescription = null,
-                                    tint = Color(0xFF00E5FF),
+                                    tint = colors.accent,
                                     modifier = Modifier.size(12.dp)
                                 )
                             }
@@ -374,8 +651,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_desktop_mode"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -391,13 +668,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
                                 contentDescription = null,
-                                tint = Color(0xFF00E5FF),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Desktop Mode",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -407,10 +684,10 @@ fun BrowserMenuSheet(
                             checked = uiState.isDesktopModeEnabled,
                             onCheckedChange = onToggleDesktopMode,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF0A0F1D),
-                                checkedTrackColor = Color(0xFF00E5FF),
-                                uncheckedThumbColor = Color(0xFF78909C),
-                                uncheckedTrackColor = Color(0xFF263238)
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("desktop_mode_switch")
                         )
@@ -425,8 +702,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_ad_blocking"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -442,13 +719,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Security,
                                 contentDescription = null,
-                                tint = Color(0xFF81D4FA),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Ad Blocking",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -458,10 +735,10 @@ fun BrowserMenuSheet(
                             checked = uiState.isAdBlockingEnabled,
                             onCheckedChange = onToggleAdBlocking,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF0A0F1D),
-                                checkedTrackColor = Color(0xFF00E5FF),
-                                uncheckedThumbColor = Color(0xFF78909C),
-                                uncheckedTrackColor = Color(0xFF263238)
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("ad_blocking_switch")
                         )
@@ -476,8 +753,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_popup_blocking"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -493,13 +770,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Block,
                                 contentDescription = null,
-                                tint = Color(0xFF81D4FA),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Pop-up Blocking",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -509,16 +786,15 @@ fun BrowserMenuSheet(
                             checked = uiState.isPopupBlockingEnabled,
                             onCheckedChange = onTogglePopupBlocking,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF0A0F1D),
-                                checkedTrackColor = Color(0xFF00E5FF),
-                                uncheckedThumbColor = Color(0xFF78909C),
-                                uncheckedTrackColor = Color(0xFF263238)
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("popup_blocking_switch")
                         )
                     }
                 }
-
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -528,8 +804,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_adult_protection"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x2B00E5FF))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -545,13 +821,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Shield,
                                 contentDescription = null,
-                                tint = Color(0xFF00E5FF),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Adult Protection",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -559,8 +835,8 @@ fun BrowserMenuSheet(
 
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = Color(0x2200E5FF),
-                            border = BorderStroke(1.dp, Color(0xFF00E5FF))
+                            color = colors.accent.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, colors.accent)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -569,13 +845,13 @@ fun BrowserMenuSheet(
                                 Icon(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = "Permanently Locked",
-                                    tint = Color(0xFF00E5FF),
+                                    tint = colors.accent,
                                     modifier = Modifier.size(10.dp)
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     text = "Always Active",
-                                    color = Color(0xFF00E5FF),
+                                    color = colors.accent,
                                     fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -592,8 +868,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_clear_cache_cookies"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
@@ -609,13 +885,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.CleaningServices,
                                 contentDescription = null,
-                                tint = Color(0xFFFFB74D),
+                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFFFB74D),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Clear Cache & Cookies",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -624,8 +900,8 @@ fun BrowserMenuSheet(
                         Button(
                             onClick = { showClearCacheCookiesDialog = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0x3342A5F5),
-                                contentColor = Color(0xFF81D4FA)
+                                containerColor = colors.accent.copy(alpha = 0.2f),
+                                contentColor = colors.accent
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                             shape = RoundedCornerShape(6.dp),
@@ -646,8 +922,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_clear_all_data"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x2BEF5350))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x2BEF5350))
                 ) {
                     Row(
                         modifier = Modifier
@@ -663,13 +939,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.DeleteSweep,
                                 contentDescription = null,
-                                tint = Color(0xFFEF5350),
+                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFEF5350),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Clear All Data",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -678,8 +954,8 @@ fun BrowserMenuSheet(
                         Button(
                             onClick = { showClearAllDataDialog = true },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0x33EF5350),
-                                contentColor = Color(0xFFFF8A80)
+                                containerColor = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33EF5350),
+                                contentColor = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF8A80)
                             ),
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                             shape = RoundedCornerShape(6.dp),
@@ -700,8 +976,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_custom_keywords"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                         Row(
@@ -711,13 +987,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Key,
                                 contentDescription = null,
-                                tint = Color(0xFFFFA726),
+                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFFFA726),
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Custom Keywords",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -736,7 +1012,7 @@ fun BrowserMenuSheet(
                                     keywordError = null
                                 },
                                 placeholder = {
-                                    Text("Enter keyword...", color = Color(0xFF78909C), fontSize = 11.sp)
+                                    Text("Enter keyword...", color = colors.textSecondary, fontSize = 11.sp)
                                 },
                                 singleLine = true,
                                 modifier = Modifier
@@ -744,11 +1020,11 @@ fun BrowserMenuSheet(
                                     .height(42.dp)
                                     .testTag("keyword_input_field"),
                                 colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    focusedBorderColor = Color(0xFF00E5FF),
-                                    unfocusedBorderColor = Color(0x4442A5F5),
-                                    cursorColor = Color(0xFF00E5FF)
+                                    focusedTextColor = colors.textPrimary,
+                                    unfocusedTextColor = colors.textPrimary,
+                                    focusedBorderColor = colors.accent,
+                                    unfocusedBorderColor = colors.border,
+                                    cursorColor = colors.accent
                                 )
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -764,8 +1040,8 @@ fun BrowserMenuSheet(
                                 },
                                 shape = RoundedCornerShape(6.dp),
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF00E5FF),
-                                    contentColor = Color(0xFF0A0F1D)
+                                    containerColor = colors.buttonBackground,
+                                    contentColor = colors.buttonText
                                 ),
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                                 modifier = Modifier
@@ -796,8 +1072,8 @@ fun BrowserMenuSheet(
                                 uiState.customKeywords.forEach { kw ->
                                     Surface(
                                         shape = RoundedCornerShape(5.dp),
-                                        color = Color(0x33FF7043),
-                                        border = BorderStroke(1.dp, Color(0x66FF7043)),
+                                        color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33FF7043),
+                                        border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x66FF7043)),
                                         modifier = Modifier.testTag("protected_keyword_$kw")
                                     ) {
                                         Row(
@@ -807,13 +1083,13 @@ fun BrowserMenuSheet(
                                             Icon(
                                                 imageVector = Icons.Default.Lock,
                                                 contentDescription = "Protected",
-                                                tint = Color(0xFFFF7043),
+                                                tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF7043),
                                                 modifier = Modifier.size(9.dp)
                                             )
                                             Spacer(modifier = Modifier.width(2.dp))
                                             Text(
                                                 text = kw,
-                                                color = Color(0xFFFFCCBC),
+                                                color = colors.textPrimary,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Medium
                                             )
@@ -833,8 +1109,8 @@ fun BrowserMenuSheet(
                         .fillMaxWidth()
                         .testTag("section_download_protection"),
                     shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF182238),
-                    border = BorderStroke(1.dp, Color(0x1F42A5F5))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                         Row(
@@ -844,13 +1120,13 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = null,
-                                tint = Color(0xFF42A5F5),
+                                tint = colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Download Protection",
-                                color = Color.White,
+                                color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -872,6 +1148,8 @@ fun BrowserMenuSheet(
 
 @Composable
 fun DownloadItemCompact(label: String, isBlocked: Boolean) {
+    val colors = LocalAppColors.current
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -881,13 +1159,13 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
     ) {
         Text(
             text = label,
-            color = if (isBlocked) Color(0xFFB0BEC5) else Color(0xFFECEFF1),
+            color = if (isBlocked) colors.textSecondary else colors.textPrimary,
             fontSize = 11.sp
         )
         if (isBlocked) {
             Surface(
                 shape = RoundedCornerShape(3.dp),
-                color = Color(0x33EF5350)
+                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33EF5350)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -896,13 +1174,13 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
                     Icon(
                         imageVector = Icons.Default.Lock,
                         contentDescription = "Permanently Blocked",
-                        tint = Color(0xFFEF5350),
+                        tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                         modifier = Modifier.size(9.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "Blocked",
-                        color = Color(0xFFEF5350),
+                        color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -911,7 +1189,7 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
         } else {
             Surface(
                 shape = RoundedCornerShape(3.dp),
-                color = Color(0x3366BB6A)
+                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x3366BB6A)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -920,13 +1198,13 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
                     Icon(
                         imageVector = Icons.Default.Check,
                         contentDescription = "Allowed",
-                        tint = Color(0xFF66BB6A),
+                        tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFF66BB6A),
                         modifier = Modifier.size(9.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
                         text = "Allowed",
-                        color = Color(0xFF66BB6A),
+                        color = if (colors.isMonochrome) colors.textPrimary else Color(0xFF66BB6A),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )

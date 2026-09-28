@@ -247,6 +247,34 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
         }
 
+    var appTheme: com.muslim.browser.pro.ui.theme.AppTheme
+        get() {
+            val name = prefs.getString(KEY_APP_THEME, com.muslim.browser.pro.ui.theme.AppTheme.BLACK.name)
+                ?: com.muslim.browser.pro.ui.theme.AppTheme.BLACK.name
+            return try {
+                com.muslim.browser.pro.ui.theme.AppTheme.valueOf(name)
+            } catch (_: Exception) {
+                com.muslim.browser.pro.ui.theme.AppTheme.BLACK
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_APP_THEME, value.name).apply()
+        }
+
+    var selectedTranslationEngine: TranslationEngine
+        get() {
+            val name = prefs.getString(KEY_SELECTED_TRANSLATION_ENGINE, TranslationEngine.LIBRE_TRANSLATE.name)
+                ?: TranslationEngine.LIBRE_TRANSLATE.name
+            return try {
+                TranslationEngine.valueOf(name)
+            } catch (_: Exception) {
+                TranslationEngine.LIBRE_TRANSLATE
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_SELECTED_TRANSLATION_ENGINE, value.name).apply()
+        }
+
     // ==========================================
     // BROWSING HISTORY PERSISTENCE
     // ==========================================
@@ -404,6 +432,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
+        private const val KEY_APP_THEME = "key_app_theme"
+        private const val KEY_SELECTED_TRANSLATION_ENGINE = "key_selected_translation_engine"
         private const val KEY_FAVORITES = "key_favorite_sites"
         private const val KEY_SAVED_TABS = "key_saved_tabs"
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"

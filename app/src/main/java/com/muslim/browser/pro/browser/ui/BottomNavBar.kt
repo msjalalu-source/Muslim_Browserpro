@@ -29,9 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -47,15 +47,17 @@ fun BottomNavBar(
     onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xF00A0F1D))
+            .background(colors.surface.copy(alpha = 0.95f))
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
         HorizontalDivider(
             thickness = 0.5.dp,
-            color = Color(0x3342A5F5)
+            color = colors.border
         )
 
         Row(
@@ -76,7 +78,7 @@ fun BottomNavBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = if (canGoBack) Color.White else Color(0x44FFFFFF),
+                    tint = if (canGoBack) colors.textPrimary else colors.textSecondary.copy(alpha = 0.35f),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -92,7 +94,7 @@ fun BottomNavBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                     contentDescription = "Forward",
-                    tint = if (canGoForward) Color.White else Color(0x44FFFFFF),
+                    tint = if (canGoForward) colors.textPrimary else colors.textSecondary.copy(alpha = 0.35f),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -112,15 +114,15 @@ fun BottomNavBar(
             ) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = Color(0x2200E5FF),
-                    border = BorderStroke(1.2.dp, Color(0xFF00E5FF)),
+                    color = colors.accent.copy(alpha = 0.15f),
+                    border = BorderStroke(1.2.dp, colors.accent),
                     modifier = Modifier.size(28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "New Tab",
-                            tint = Color(0xFF00E5FF),
+                            tint = colors.accent,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -137,7 +139,7 @@ fun BottomNavBar(
                 Icon(
                     imageVector = Icons.Default.DesktopWindows,
                     contentDescription = if (isDesktopModeEnabled) "Desktop Mode Enabled" else "Desktop Mode Disabled",
-                    tint = if (isDesktopModeEnabled) Color(0xFF00E5FF) else Color(0xAAFFFFFF),
+                    tint = if (isDesktopModeEnabled) colors.accent else colors.textSecondary,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -152,7 +154,7 @@ fun BottomNavBar(
                 Icon(
                     imageVector = Icons.Default.Menu,
                     contentDescription = "Menu and Settings",
-                    tint = Color(0xFF00E5FF),
+                    tint = colors.iconTint,
                     modifier = Modifier.size(23.dp)
                 )
             }

@@ -63,6 +63,7 @@ import com.muslim.browser.pro.R
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.FavoriteSite
 import com.muslim.browser.pro.browser.rememberFavicon
+import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 @Composable
 fun HomePage(
@@ -73,6 +74,8 @@ fun HomePage(
     onAddFavorite: (name: String, url: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalAppColors.current
+
     // State for Add Favorite Dialog
     var showFavoriteDialog by remember { mutableStateOf(false) }
     var dialogName by remember { mutableStateOf("") }
@@ -93,24 +96,31 @@ fun HomePage(
             )
         )
     }
-    val searchBarBorder = remember { BorderStroke(1.dp, Color(0x5542A5F5)) }
-    val quoteAreaBorder = remember { BorderStroke(1.dp, Color(0x3300E5FF)) }
+    val searchBarBorder = remember(colors.border) { BorderStroke(1.dp, colors.border) }
+    val quoteAreaBorder = remember(colors.border) { BorderStroke(1.dp, colors.border) }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        // Background wallpaper image
-        Image(
-            painter = painterResource(id = R.drawable.home_bg),
-            contentDescription = "Home background",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.background)
+    ) {
+        // In Black Theme: show aesthetic wallpaper with dark scrim
+        // In White Theme: pure clean light background
+        // In Black & White Theme: pure monochrome black background (no colorful gradients or artwork)
+        if (!colors.isLight && !colors.isMonochrome) {
+            Image(
+                painter = painterResource(id = R.drawable.home_bg),
+                contentDescription = "Home background",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
 
-        // Dark gradient scrim overlay for visual contrast
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(scrimBrush)
-        )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(scrimBrush)
+            )
+        }
 
         // Content
         Column(
@@ -129,14 +139,14 @@ fun HomePage(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = Color(0x3300E5FF),
+                    color = colors.accent.copy(alpha = 0.15f),
                     modifier = Modifier.size(34.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Shield,
                             contentDescription = "Shield Protection",
-                            tint = Color(0xFF00E5FF),
+                            tint = colors.accent,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -145,14 +155,14 @@ fun HomePage(
                 Column {
                     Text(
                         text = "MUSLIM BROWSER PRO",
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.5.sp
                     )
                     Text(
                         text = "Ultra-Lightweight • Protected Browser",
-                        color = Color(0xFF90CAF9),
+                        color = colors.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -168,9 +178,9 @@ fun HomePage(
                     .fillMaxWidth()
                     .testTag("home_search_bar"),
                 shape = RoundedCornerShape(28.dp),
-                color = Color(0xCC1A233A),
+                color = colors.surface,
                 border = searchBarBorder,
-                shadowElevation = 8.dp
+                shadowElevation = if (colors.isMonochrome) 0.dp else 4.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -179,7 +189,7 @@ fun HomePage(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = Color(0xFF81D4FA),
+                        tint = colors.iconTint,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -192,54 +202,61 @@ fun HomePage(
                         placeholder = {
                             Text(
                                 text = "Search web or enter URL...",
-                                color = Color(0xFF90A4AE),
+                                color = colors.textSecondary,
                                 fontSize = 14.sp
                             )
                         },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            cursorColor = Color(0xFF00E5FF),
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary,
+                            cursorColor = colors.accent,
                             focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledBorderColor = Color.Transparent
                         ),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                        keyboardActions = KeyboardActions(onGo = { onSubmitQuery(uiState.searchInput) })
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                if (uiState.searchInput.isNotBlank()) {
+                                    onSubmitQuery(uiState.searchInput)
+                                }
+                            }
+                        )
                     )
 
+                    // Clear button when query is not empty
                     if (uiState.searchInput.isNotEmpty()) {
                         IconButton(
                             onClick = { onQueryChange("") },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier
+                                .size(28.dp)
+                                .testTag("clear_search_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Clear",
-                                tint = Color(0xFFB0BEC5),
-                                modifier = Modifier.size(18.dp)
+                                tint = colors.textSecondary,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
 
-                    IconButton(
-                        onClick = { onSubmitQuery(uiState.searchInput) },
-                        modifier = Modifier
-                            .size(38.dp)
-                            .testTag("submit_search_button")
-                    ) {
+                    // Go button
+                    if (uiState.searchInput.isNotEmpty()) {
                         Surface(
+                            onClick = { onSubmitQuery(uiState.searchInput) },
                             shape = CircleShape,
-                            color = Color(0xFF00E5FF),
-                            modifier = Modifier.size(32.dp)
+                            color = colors.buttonBackground,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("submit_search_button")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                     contentDescription = "Go",
-                                    tint = Color(0xFF0A0F1D),
+                                    tint = colors.buttonText,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -260,7 +277,7 @@ fun HomePage(
             ) {
                 Text(
                     text = "FAVOURITE WEBSITES",
-                    color = Color(0xFFB0BEC5),
+                    color = colors.textSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     letterSpacing = 1.2.sp
@@ -299,7 +316,7 @@ fun HomePage(
                     .padding(vertical = 12.dp)
                     .testTag("home_quote_area"),
                 shape = RoundedCornerShape(16.dp),
-                color = Color(0x4D0D1B2A),
+                color = colors.surfaceVariant,
                 border = quoteAreaBorder
             ) {
                 Column(
@@ -308,7 +325,7 @@ fun HomePage(
                 ) {
                     Text(
                         text = "\"Clean browsing is clear thinking. Stay focused on your goals.\"",
-                        color = Color(0xFFECEFF1),
+                        color = colors.textPrimary,
                         fontSize = 12.sp,
                         fontStyle = FontStyle.Italic,
                         textAlign = TextAlign.Center,
@@ -317,7 +334,7 @@ fun HomePage(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Focus Shield Safe Engine Active",
-                        color = Color(0xFF00E5FF),
+                        color = colors.accent,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -332,7 +349,7 @@ fun HomePage(
                 title = {
                     Text(
                         text = "Add Favorite Website",
-                        color = Color.White,
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
@@ -342,22 +359,36 @@ fun HomePage(
                         OutlinedTextField(
                             value = dialogName,
                             onValueChange = { dialogName = it },
-                            label = { Text("Website Name") },
-                            placeholder = { Text("e.g. Google, Wikipedia") },
+                            label = { Text("Website Name", color = colors.textSecondary) },
+                            placeholder = { Text("e.g. Google, Wikipedia", color = colors.textSecondary) },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("fav_dialog_name_input")
+                                .testTag("fav_dialog_name_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                cursorColor = colors.accent
+                            )
                         )
                         OutlinedTextField(
                             value = dialogUrl,
                             onValueChange = { dialogUrl = it },
-                            label = { Text("Website URL") },
-                            placeholder = { Text("e.g. https://www.google.com") },
+                            label = { Text("Website URL", color = colors.textSecondary) },
+                            placeholder = { Text("e.g. https://google.com", color = colors.textSecondary) },
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("fav_dialog_url_input")
+                                .testTag("fav_dialog_url_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary,
+                                focusedBorderColor = colors.accent,
+                                unfocusedBorderColor = colors.border,
+                                cursorColor = colors.accent
+                            )
                         )
                     }
                 },
@@ -371,7 +402,7 @@ fun HomePage(
                         },
                         modifier = Modifier.testTag("save_favorite_button")
                     ) {
-                        Text("Save", color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
+                        Text("Save", color = colors.accent, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
@@ -379,10 +410,10 @@ fun HomePage(
                         onClick = { showFavoriteDialog = false },
                         modifier = Modifier.testTag("cancel_favorite_button")
                     ) {
-                        Text("Cancel", color = Color(0xFF90A4AE))
+                        Text("Cancel", color = colors.textSecondary)
                     }
                 },
-                containerColor = Color(0xFF1E293B),
+                containerColor = colors.surface,
                 shape = RoundedCornerShape(16.dp)
             )
         }
@@ -394,6 +425,7 @@ fun FavoriteSiteItem(
     site: FavoriteSite,
     onClick: () -> Unit
 ) {
+    val colors = LocalAppColors.current
     val faviconBitmap = rememberFavicon(site.url)
     val badgeBgColor = remember(site.badgeColor) { Color(site.badgeColor) }
 
@@ -408,9 +440,9 @@ fun FavoriteSiteItem(
         Surface(
             modifier = Modifier.size(52.dp),
             shape = RoundedCornerShape(14.dp),
-            color = if (faviconBitmap != null) Color(0xFF162032) else badgeBgColor,
-            border = BorderStroke(1.dp, if (faviconBitmap != null) Color(0x3342A5F5) else Color(0x22FFFFFF)),
-            shadowElevation = 4.dp
+            color = if (faviconBitmap != null) colors.surfaceVariant else if (colors.isMonochrome) Color(0xFF262626) else badgeBgColor,
+            border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f)),
+            shadowElevation = if (colors.isMonochrome) 0.dp else 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 if (faviconBitmap != null) {
@@ -436,7 +468,7 @@ fun FavoriteSiteItem(
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = site.name,
-            color = Color(0xFFECEFF1),
+            color = colors.textPrimary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -449,6 +481,8 @@ fun FavoriteSiteItem(
 fun AddFavoriteSiteTile(
     onClick: () -> Unit
 ) {
+    val colors = LocalAppColors.current
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -460,15 +494,15 @@ fun AddFavoriteSiteTile(
         Surface(
             modifier = Modifier.size(52.dp),
             shape = RoundedCornerShape(14.dp),
-            color = Color(0x2600E5FF),
-            border = BorderStroke(1.dp, Color(0x6600E5FF)),
-            shadowElevation = 4.dp
+            color = colors.accent.copy(alpha = 0.15f),
+            border = BorderStroke(1.dp, colors.accent),
+            shadowElevation = if (colors.isMonochrome) 0.dp else 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = "Add Website",
-                    tint = Color(0xFF00E5FF),
+                    tint = colors.accent,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -476,7 +510,7 @@ fun AddFavoriteSiteTile(
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = "Add",
-            color = Color(0xFF00E5FF),
+            color = colors.accent,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
