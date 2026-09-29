@@ -295,12 +295,16 @@ class MainActivity : ComponentActivity() {
                 when (decision) {
                     is DownloadPolicy.Result.Blocked -> {
                         viewModel.showToast(decision.reason)
+                        viewModel.onPageCommitVisible()
                     }
                     is DownloadPolicy.Result.Allowed -> {
                         try {
                             val request = DownloadManager.Request(Uri.parse(url)).apply {
                                 if (!mimetype.isNullOrBlank()) {
                                     setMimeType(mimetype)
+                                }
+                                if (!userAgent.isNullOrBlank()) {
+                                    addRequestHeader("User-Agent", userAgent)
                                 }
                                 val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
                                 setTitle(fileName)
@@ -314,6 +318,7 @@ class MainActivity : ComponentActivity() {
                         } catch (e: Exception) {
                             viewModel.showToast("Download started.")
                         }
+                        viewModel.onPageCommitVisible()
                     }
                 }
             }
@@ -408,6 +413,9 @@ class MainActivity : ComponentActivity() {
             // 5. Clear Form data & SSL preferences
             webView.clearFormData()
             webView.clearSslPreferences()
+
+            // 6. Clear pending trusted download origins
+            DownloadPolicy.clearTrustedOrigin()
 
             viewModel.showToast("All browsing data cleared.")
         } catch (e: Exception) {
@@ -868,6 +876,28 @@ fun BrowserApp(
                     uiState = uiState,
                     onDismiss = { viewModel.closeMenu() },
                     onOpenHistory = { viewModel.openHistory() },
+                    onOpenDownloads = {
+                        viewModel.closeMenu()
+                        try {
+                            val intent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(
+                                        Uri.parse(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path),
+                                        "*/*"
+                                    )
+                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                viewModel.showToast("Could not open Downloads.")
+                            }
+                        }
+                    },
                     onAddKeyword = { kw -> viewModel.addCustomKeyword(kw) },
                     onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
                     onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },

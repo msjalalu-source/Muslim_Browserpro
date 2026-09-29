@@ -291,6 +291,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        DownloadPolicy.clearTrustedOrigin()
         persistTabs()
     }
 

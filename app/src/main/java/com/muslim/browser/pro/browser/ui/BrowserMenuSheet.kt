@@ -77,6 +77,7 @@ fun BrowserMenuSheet(
     uiState: BrowserUiState,
     onDismiss: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit = {},
     onAddKeyword: (String) -> Boolean,
     onTogglePopupBlocking: (Boolean) -> Unit,
     onToggleAdBlocking: (Boolean) -> Unit,
@@ -611,6 +612,67 @@ fun BrowserMenuSheet(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "History",
+                                color = colors.textPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = colors.accent.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "View",
+                                    color = colors.accent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Downloads (Settings item labeled exactly 'Downloads')
+                Surface(
+                    onClick = onOpenDownloads,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_downloads"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Downloads",
+                                tint = colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Downloads",
                                 color = colors.textPrimary,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold
