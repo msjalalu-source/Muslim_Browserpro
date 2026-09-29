@@ -355,12 +355,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return false
         }
 
-        // Check if direct download of blocked file types
-        val downloadCheck = ProtectionEngine.checkDownloadType(formattedUrl, null, null)
-        if (downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
-            downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
-            downloadCheck == ProtectionEngine.DownloadStatus.BLOCKED_APK
-        ) {
+        // Check if direct download of blocked file types via centralized DownloadPolicy
+        if (DownloadPolicy.shouldBlockUrlNavigation(formattedUrl)) {
             showToast("This file type is blocked.")
             return false
         }
@@ -456,12 +452,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return true
         }
 
-        // Check if direct download of blocked file types
-        val downloadStatus = ProtectionEngine.checkDownloadType(url, null, null)
-        if (downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_VIDEO ||
-            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_AUDIO ||
-            downloadStatus == ProtectionEngine.DownloadStatus.BLOCKED_APK
-        ) {
+        // Check if direct download of blocked file types via centralized DownloadPolicy
+        if (DownloadPolicy.shouldBlockUrlNavigation(url)) {
             showToast("This file type is blocked.")
             return true
         }

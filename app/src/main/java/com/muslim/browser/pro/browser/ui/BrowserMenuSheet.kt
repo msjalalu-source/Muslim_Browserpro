@@ -1135,7 +1135,7 @@ fun BrowserMenuSheet(
                         Spacer(modifier = Modifier.height(4.dp))
 
                         DownloadItemCompact(label = "Video (.mp4, .mkv)", isBlocked = true)
-                        DownloadItemCompact(label = "Audio (.mp3, .wav)", isBlocked = true)
+                        DownloadItemCompact(label = "Audio (.mp3, .wav)", isBlocked = false)
                         DownloadItemCompact(label = "Apps (.apk)", isBlocked = true)
                         DownloadItemCompact(label = "Images (.jpg, .png)", isBlocked = false)
                         DownloadItemCompact(label = "PDF Documents (.pdf)", isBlocked = false)

@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.DownloadPolicy
 import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.ui.BlockedScreen
@@ -290,19 +291,17 @@ class MainActivity : ComponentActivity() {
             }
 
             setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-                val status = ProtectionEngine.checkDownloadType(url, mimetype, contentDisposition)
-                when (status) {
-                    ProtectionEngine.DownloadStatus.BLOCKED_VIDEO,
-                    ProtectionEngine.DownloadStatus.BLOCKED_AUDIO,
-                    ProtectionEngine.DownloadStatus.BLOCKED_APK,
-                    ProtectionEngine.DownloadStatus.BLOCKED_OTHER -> {
-                        viewModel.showToast("This file type is blocked.")
+                val decision = DownloadPolicy.evaluate(url, mimetype, contentDisposition)
+                when (decision) {
+                    is DownloadPolicy.Result.Blocked -> {
+                        viewModel.showToast(decision.reason)
                     }
-                    ProtectionEngine.DownloadStatus.ALLOWED_IMAGE,
-                    ProtectionEngine.DownloadStatus.ALLOWED_PDF -> {
+                    is DownloadPolicy.Result.Allowed -> {
                         try {
                             val request = DownloadManager.Request(Uri.parse(url)).apply {
-                                setMimeType(mimetype)
+                                if (!mimetype.isNullOrBlank()) {
+                                    setMimeType(mimetype)
+                                }
                                 val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
                                 setTitle(fileName)
                                 setDescription("Downloading with Muslim Browser Pro...")
