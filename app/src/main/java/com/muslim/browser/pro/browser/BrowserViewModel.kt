@@ -77,6 +77,7 @@ data class BrowserUiState(
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = SettingsRepository(application)
+    private var activeTranslationJob: kotlinx.coroutines.Job? = null
 
     private val _uiState: MutableStateFlow<BrowserUiState>
 
@@ -470,6 +471,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun onPageStarted(url: String) {
         if (url.isBlank() || url == "about:blank") return
+        activeTranslationJob?.cancel()
+        activeTranslationJob = null
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
@@ -650,7 +653,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 return@evaluateJs
             }
 
-            viewModelScope.launch {
+            activeTranslationJob?.cancel()
+            activeTranslationJob = viewModelScope.launch {
                 try {
                     val cleanJson = if (jsonResult.startsWith("\"") && jsonResult.endsWith("\"")) {
                         try {

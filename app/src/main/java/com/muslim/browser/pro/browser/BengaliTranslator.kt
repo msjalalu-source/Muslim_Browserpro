@@ -87,6 +87,18 @@ object BengaliTranslator {
         TranslationStats.reset()
     }
 
+    private fun putInCache(key: String, value: String) {
+        if (memoryCache.size > 1000) {
+            val iterator = memoryCache.keys().iterator()
+            var count = 0
+            while (iterator.hasNext() && count < 200) {
+                memoryCache.remove(iterator.next())
+                count++
+            }
+        }
+        memoryCache[key] = value
+    }
+
     fun cacheKey(engine: TranslationEngine, text: String): String {
         return "${engine.name}:auto:$TARGET_LANGUAGE:$text"
     }
@@ -221,7 +233,55 @@ object BengaliTranslator {
             }
         }
 
-        // Controlled concurrency (MAX_CONCURRENT_REQUESTS = 3)
+        // For LibreTranslate, utilize native array batch translation (up to MAX_BATCH_ITEMS per HTTP request)
+        // This drops network requests from ~50 individual calls to 2-3 batch calls, eliminating HTTP 429 rate limits.
+        if (engine == TranslationEngine.LIBRE_TRANSLATE) {
+            val batches = chunkIntoBatches(neededTexts.toList())
+            var batchSuccessCount = 0
+            var lastBatchError: Throwable? = null
+
+            for (batch in batches) {
+                val batchResult = translateBatchWithLibreTranslate(batch)
+                if (batchResult.isSuccess) {
+                    val translatedBatch = batchResult.getOrThrow()
+                    for (i in batch.indices) {
+                        val original = batch[i]
+                        val translated = translatedBatch.getOrNull(i)?.trim() ?: original
+                        if (translated.isNotBlank() && translated != original) {
+                            val key = cacheKey(engine, original)
+                            putInCache(key, translated)
+                            translationMap[original] = translated
+                            batchSuccessCount++
+                        }
+                    }
+                } else {
+                    lastBatchError = batchResult.exceptionOrNull()
+                    Log.w(TAG, "LibreTranslate batch error: ${lastBatchError?.message}")
+                    // Gracefully fallback to translating individual items within this batch using LibreTranslate only (no cross-engine fallback)
+                    for (item in batch) {
+                        val singleRes = translateSingleText(item, TranslationEngine.LIBRE_TRANSLATE)
+                        if (singleRes.isSuccess) {
+                            val translated = singleRes.getOrThrow()
+                            if (translated.isNotBlank()) {
+                                putInCache(cacheKey(engine, item), translated)
+                                translationMap[item] = translated
+                                batchSuccessCount++
+                            }
+                        }
+                    }
+                }
+            }
+
+            val totalTranslated = translationMap.count { (k, v) -> k != v }
+            if (neededTexts.isNotEmpty() && batchSuccessCount == 0 && totalTranslated == 0) {
+                return@withContext Result.failure(
+                    IllegalStateException("Translation unavailable with LibreTranslate. Please try again.", lastBatchError)
+                )
+            }
+            return@withContext Result.success(mapFinalResults())
+        }
+
+        // For Lingva and MyMemory, translate with controlled concurrency (MAX_CONCURRENT_REQUESTS = 3)
         val semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
         var successCount = 0
         var lastError: Throwable? = null
@@ -235,7 +295,7 @@ object BengaliTranslator {
                             val translated = singleRes.getOrThrow()
                             if (translated.isNotBlank()) {
                                 val key = cacheKey(engine, needed)
-                                memoryCache[key] = translated
+                                putInCache(key, translated)
                                 translationMap[needed] = translated
                                 synchronized(neededTexts) { successCount++ }
                             }
@@ -365,6 +425,98 @@ object BengaliTranslator {
     }
 
     /**
+     * Provider 1 Batch: LibreTranslate
+     * Sends native JSON array request {"q": ["...", "..."], ...} in a single HTTP POST.
+     * Completes batch in ~1s instead of dozens of sequential requests, eliminating 429 rate limit.
+     */
+    internal suspend fun translateBatchWithLibreTranslate(texts: List<String>): Result<List<String>> {
+        if (texts.isEmpty()) return Result.success(emptyList())
+        if (texts.size == 1) {
+            return translateWithLibreTranslate(texts.first()).map { listOf(it) }
+        }
+
+        var attempts = 0
+        val maxAttempts = 2
+
+        while (attempts < maxAttempts) {
+            attempts++
+            var connection: HttpURLConnection? = null
+            try {
+                awaitDispatchSlot()
+                val url = URL(LIBRE_TRANSLATE_URL)
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
+                    connectTimeout = CONNECT_TIMEOUT_MS
+                    readTimeout = READ_TIMEOUT_MS
+                    doOutput = true
+                    doInput = true
+                }
+
+                val jsonArray = JSONArray()
+                for (t in texts) {
+                    jsonArray.put(t)
+                }
+
+                val payload = JSONObject().apply {
+                    put("q", jsonArray)
+                    put("source", "auto")
+                    put("target", TARGET_LANGUAGE)
+                    put("format", "text")
+                }
+
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(payload.toString())
+                    writer.flush()
+                }
+
+                val statusCode = connection.responseCode
+                if (statusCode == HttpURLConnection.HTTP_OK) {
+                    val responseStr = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    if (!responseStr.trimStart().startsWith("{")) {
+                        return Result.failure(IllegalStateException("Non-JSON response from LibreTranslate"))
+                    }
+                    val jsonObj = JSONObject(responseStr)
+                    val transArray = jsonObj.optJSONArray("translatedText")
+                    if (transArray != null) {
+                        val resultList = ArrayList<String>(transArray.length())
+                        for (i in 0 until transArray.length()) {
+                            resultList.add(transArray.getString(i))
+                        }
+                        return Result.success(resultList)
+                    }
+                    val singleTrans = jsonObj.optString("translatedText", "")
+                    if (singleTrans.isNotEmpty()) {
+                        return Result.success(listOf(singleTrans))
+                    }
+                    return Result.failure(IllegalStateException("Empty translatedText array from LibreTranslate"))
+                } else if (statusCode == 429) {
+                    TranslationStats.http429Count++
+                    if (attempts < maxAttempts) {
+                        TranslationStats.retryCount++
+                        delay(1000L)
+                        continue
+                    }
+                    return Result.failure(IllegalStateException("LibreTranslate rate limit (HTTP 429)"))
+                } else {
+                    val errorBody = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                    return Result.failure(IllegalStateException("LibreTranslate HTTP $statusCode: $errorBody"))
+                }
+            } catch (e: Exception) {
+                if (attempts >= maxAttempts) {
+                    return Result.failure(e)
+                }
+                delay(600L)
+            } finally {
+                connection?.disconnect()
+            }
+        }
+        return Result.failure(IllegalStateException("LibreTranslate batch request failed"))
+    }
+
+    /**
      * Provider 2: Lingva Translate
      * Direct GET request to REST API v1 endpoint (/api/v1/auto/bn/:query).
      * No fallback to other engines.
@@ -441,6 +593,15 @@ object BengaliTranslator {
                     return Result.failure(IllegalStateException("Non-JSON response from MyMemory"))
                 }
                 val jsonObj = JSONObject(responseStr)
+                val quotaFinished = jsonObj.optBoolean("quotaFinished", false)
+                if (quotaFinished) {
+                    return Result.failure(IllegalStateException("MyMemory quota limit exceeded"))
+                }
+                val responseStatus = jsonObj.optInt("responseStatus", 200)
+                if (responseStatus == 403 || responseStatus == 429) {
+                    return Result.failure(IllegalStateException("MyMemory quota limit exceeded (status $responseStatus)"))
+                }
+
                 val responseData = jsonObj.optJSONObject("responseData")
                 val rawText = responseData?.optString("translatedText", "")?.trim() ?: ""
 
