@@ -79,13 +79,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.DownloadEntry
 import com.muslim.browser.pro.browser.DownloadPolicy
+import com.muslim.browser.pro.browser.DownloadStatus
 import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.ui.BlockedScreen
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
+import com.muslim.browser.pro.browser.ui.DownloadHistoryScreen
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.HistoryScreen
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
@@ -110,10 +113,64 @@ class MainActivity : ComponentActivity() {
         callback.onReceiveValue(uris)
     }
 
+    private val downloadReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                val downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                if (downloadId != -1L) {
+                    checkDownloadStatus(downloadId)
+                }
+            }
+        }
+    }
+
+    private fun checkDownloadStatus(downloadId: Long) {
+        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return
+        val query = DownloadManager.Query().setFilterById(downloadId)
+        try {
+            dm.query(query)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val status = if (statusIndex != -1) cursor.getInt(statusIndex) else -1
+                    val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                    val localUri = if (localUriIndex != -1) cursor.getString(localUriIndex) else null
+                    val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    val totalBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else -1L
+
+                    when (status) {
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            viewModel.updateDownloadStatus(
+                                downloadId = downloadId,
+                                status = DownloadStatus.COMPLETED,
+                                localUri = localUri,
+                                totalBytes = totalBytes
+                            )
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            viewModel.updateDownloadStatus(
+                                downloadId = downloadId,
+                                status = DownloadStatus.FAILED,
+                                localUri = localUri,
+                                totalBytes = totalBytes
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val downloadFilter = android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(downloadReceiver, downloadFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(downloadReceiver, downloadFilter)
+        }
 
         val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
@@ -146,15 +203,26 @@ class MainActivity : ComponentActivity() {
                 }
                 mediaPlaybackRequiresUserGesture = true
                 saveFormData = false
-                if (viewModel.uiState.value.isDesktopModeEnabled) {
-                    userAgentString = DESKTOP_USER_AGENT
-                }
             }
+            applyDesktopModeToWebView(this, viewModel.uiState.value.isDesktopModeEnabled)
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
                     android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading: URL=$url")
+                    if (view != null) {
+                        applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, url)
+                    }
+                    return handleUrlNavigation(view, url)
+                }
+
+                @Deprecated("Deprecated in Java", ReplaceWith("shouldOverrideUrlLoading(view, request)"))
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    if (url == null) return false
+                    android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading(String): URL=$url")
+                    if (view != null) {
+                        applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, url)
+                    }
                     return handleUrlNavigation(view, url)
                 }
 
@@ -183,6 +251,9 @@ class MainActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     android.util.Log.d("DIAGNOSTIC", "onPageStarted: URL=$url")
+                    if (view != null && url != null) {
+                        applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, url)
+                    }
                     url?.let { viewModel.onPageStarted(it) }
                 }
 
@@ -250,6 +321,9 @@ class MainActivity : ComponentActivity() {
                     if (resultMsg != null) {
                         val transport = resultMsg.obj as? WebView.WebViewTransport
                         transport?.webView = view
+                        if (view != null) {
+                            applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, view.url)
+                        }
                         resultMsg.sendToTarget()
                         return true
                     }
@@ -299,6 +373,7 @@ class MainActivity : ComponentActivity() {
                     }
                     is DownloadPolicy.Result.Allowed -> {
                         try {
+                            val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
                             val request = DownloadManager.Request(Uri.parse(url)).apply {
                                 if (!mimetype.isNullOrBlank()) {
                                     setMimeType(mimetype)
@@ -306,15 +381,23 @@ class MainActivity : ComponentActivity() {
                                 if (!userAgent.isNullOrBlank()) {
                                     addRequestHeader("User-Agent", userAgent)
                                 }
-                                val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
                                 setTitle(fileName)
                                 setDescription("Downloading with Muslim Browser Pro...")
                                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                             }
                             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-                            dm?.enqueue(request)
-                            viewModel.showToast("Downloading file...")
+                            val downloadId = dm?.enqueue(request) ?: -1L
+                            val entry = DownloadEntry(
+                                downloadId = downloadId,
+                                fileName = fileName,
+                                url = url,
+                                mimeType = mimetype ?: "",
+                                timestamp = System.currentTimeMillis(),
+                                status = DownloadStatus.DOWNLOADING
+                            )
+                            viewModel.recordDownload(entry)
+                            viewModel.showToast("Downloading $fileName...")
                         } catch (e: Exception) {
                             viewModel.showToast("Download started.")
                         }
@@ -377,6 +460,9 @@ class MainActivity : ComponentActivity() {
 
             // Normalize to Google SafeSearch and load
             val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(searchEngineQuery)
+            if (view != null) {
+                applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, safeUrl)
+            }
             view?.loadUrl(safeUrl)
             return true // Intercepted and redirected
         }
@@ -446,9 +532,7 @@ class MainActivity : ComponentActivity() {
     private fun setDesktopMode(enabled: Boolean) {
         viewModel.toggleDesktopMode(enabled)
         val webView = webViewInstance ?: return
-        webView.settings.userAgentString = if (enabled) DESKTOP_USER_AGENT else null
-        webView.settings.useWideViewPort = true
-        webView.settings.loadWithOverviewMode = true
+        applyDesktopModeToWebView(webView, enabled, viewModel.uiState.value.currentUrl)
         if (!viewModel.uiState.value.isHomePage && viewModel.uiState.value.currentUrl.isNotEmpty()) {
             webView.reload()
         }
@@ -471,6 +555,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(downloadReceiver)
+        } catch (_: Exception) {}
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null
         webViewInstance?.apply {
@@ -490,6 +577,99 @@ class MainActivity : ComponentActivity() {
 
         @Volatile
         var isDarkThemeActive: Boolean = true
+
+        /**
+         * Checks whether a given URL targets Google account authentication endpoints.
+         * Used to ensure standards-compliant authentication without user-agent spoofing.
+         */
+        fun isGoogleAuthUrl(url: String?): Boolean {
+            if (url.isNullOrBlank()) return false
+            return try {
+                val uri = Uri.parse(url)
+                val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+                val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+
+                // 1. Dedicated Google auth and account management hosts
+                if (host == "accounts.google.com" ||
+                    host.endsWith(".accounts.google.com") ||
+                    host == "accounts.youtube.com" ||
+                    host == "myaccount.google.com" ||
+                    host == "oauth2.googleapis.com"
+                ) {
+                    return true
+                }
+
+                // 2. Google / YouTube / Gmail login and authentication endpoints
+                val isGoogleDomain = host == "google.com" || host.endsWith(".google.com") ||
+                        host == "youtube.com" || host.endsWith(".youtube.com") ||
+                        host == "gmail.com" || host.endsWith(".gmail.com")
+
+                if (isGoogleDomain) {
+                    if (path.startsWith("/servicelogin") ||
+                        path.startsWith("/signin") ||
+                        path.startsWith("/signup") ||
+                        path.startsWith("/o/oauth2") ||
+                        path.contains("/signin/") ||
+                        (uri.getQueryParameter("service") != null && path.contains("login"))
+                    ) {
+                        return true
+                    }
+                }
+
+                // 3. Direct Gmail entry points that redirect into Google authentication
+                if (host == "mail.google.com" || host == "gmail.com") {
+                    if (path.isEmpty() || path == "/" || path.contains("signin") || path.contains("login")) {
+                        return true
+                    }
+                }
+
+                false
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        /**
+         * Centralized function to configure Desktop Mode on any WebView instance.
+         * Enforces browser-level Desktop Mode preference across all creations, navigations,
+         * tab restorations, and window transfers.
+         *
+         * When Desktop Mode is ON:
+         * - Applies DESKTOP_USER_AGENT to all standard browsing and search pages.
+         * - Uses standard supported mobile configuration on Google account authentication
+         *   endpoints (accounts.google.com) to comply with Google security policies and prevent
+         *   unsupported browser / insecure app security warnings.
+         * - Sets useWideViewPort = true and loadWithOverviewMode = true.
+         *
+         * When Desktop Mode is OFF:
+         * - Reverts userAgentString to null (system default mobile UA).
+         */
+        fun applyDesktopModeToWebView(
+            webView: WebView,
+            enabled: Boolean,
+            url: String? = null
+        ) {
+            try {
+                val isGoogleAuth = enabled && isGoogleAuthUrl(url)
+                val targetUserAgent = if (enabled && !isGoogleAuth) {
+                    DESKTOP_USER_AGENT
+                } else {
+                    null
+                }
+
+                if (targetUserAgent == null) {
+                    if (webView.settings.userAgentString == DESKTOP_USER_AGENT) {
+                        webView.settings.userAgentString = null
+                    }
+                } else {
+                    if (webView.settings.userAgentString != targetUserAgent) {
+                        webView.settings.userAgentString = targetUserAgent
+                    }
+                }
+                webView.settings.useWideViewPort = true
+                webView.settings.loadWithOverviewMode = true
+            } catch (_: Exception) {}
+        }
 
         /**
          * Applies the native dark or light theme settings to the WebView.
@@ -706,6 +886,7 @@ fun BrowserApp(
     // Handle Hardware/Gesture Back
     BackHandler(enabled = true) {
         when {
+            uiState.isDownloadsOpen -> viewModel.closeDownloads()
             uiState.isHistoryOpen -> viewModel.closeHistory()
             uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
             uiState.isMenuOpen -> viewModel.closeMenu()
@@ -744,6 +925,7 @@ fun BrowserApp(
                         viewModel.saveCurrentTabState(bundle)
                     }
                     viewModel.openNewTab()
+                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled)
                 },
                 onShowTabs = {
                     viewModel.openTabsDialog()
@@ -772,10 +954,14 @@ fun BrowserApp(
                 onUrlSubmit = { url ->
                     val success = viewModel.submitQueryOrUrl(url)
                     if (success) {
+                        MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
                         webView.loadUrl(viewModel.uiState.value.currentUrl)
                     }
                 },
-                onReload = { webView.reload() },
+                onReload = {
+                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                    webView.reload()
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -788,6 +974,7 @@ fun BrowserApp(
                     onSubmitQuery = { query ->
                         val success = viewModel.submitQueryOrUrl(query)
                         if (success) {
+                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
                             webView.loadUrl(viewModel.uiState.value.currentUrl)
                         }
                     },
@@ -832,6 +1019,7 @@ fun BrowserApp(
                                 if (targetTab.isHomePage) {
                                     // Composable HomePage will be displayed
                                 } else {
+                                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, targetTab.url)
                                     if (targetTab.bundle != null) {
                                         webView.restoreState(targetTab.bundle)
                                     } else if (targetTab.url.isNotEmpty()) {
@@ -849,6 +1037,7 @@ fun BrowserApp(
                         if (wasActive) {
                             val newActive = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
                             if (newActive != null && !newActive.isHomePage) {
+                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, newActive.url)
                                 if (newActive.bundle != null) {
                                     webView.restoreState(newActive.bundle)
                                 } else if (newActive.url.isNotEmpty()) {
@@ -865,6 +1054,7 @@ fun BrowserApp(
                             viewModel.saveCurrentTabState(bundle)
                         }
                         viewModel.openNewTab()
+                        MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled)
                     },
                     onDismiss = { viewModel.closeTabsDialog() }
                 )
@@ -878,25 +1068,7 @@ fun BrowserApp(
                     onOpenHistory = { viewModel.openHistory() },
                     onOpenDownloads = {
                         viewModel.closeMenu()
-                        try {
-                            val intent = Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
-                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                            }
-                            context.startActivity(intent)
-                        } catch (_: Exception) {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(
-                                        Uri.parse(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).path),
-                                        "*/*"
-                                    )
-                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                                }
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                viewModel.showToast("Could not open Downloads.")
-                            }
-                        }
+                        viewModel.openDownloads()
                     },
                     onAddKeyword = { kw -> viewModel.addCustomKeyword(kw) },
                     onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
@@ -907,7 +1079,10 @@ fun BrowserApp(
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
                             evaluateJs = { script, cb -> webView.evaluateJavascript(script, cb) },
-                            reloadPage = { webView.reload() }
+                            reloadPage = {
+                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                                webView.reload()
+                            }
                         )
                     },
                     onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
@@ -923,6 +1098,7 @@ fun BrowserApp(
                         viewModel.closeHistory()
                         val success = viewModel.submitQueryOrUrl(url)
                         if (success) {
+                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
                             webView.loadUrl(viewModel.uiState.value.currentUrl)
                         }
                     },
@@ -932,6 +1108,91 @@ fun BrowserApp(
                     modifier = Modifier.fillMaxSize()
                 )
             }
+
+            // In-App Download History Screen Overlay
+            if (uiState.isDownloadsOpen) {
+                DownloadHistoryScreen(
+                    downloads = uiState.downloadHistory,
+                    onOpenFile = { entry -> openDownloadedFile(context, entry) },
+                    onDeleteEntry = { id -> viewModel.deleteDownloadEntry(id) },
+                    onClearAll = { viewModel.clearAllDownloadHistory() },
+                    onDismiss = { viewModel.closeDownloads() },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
+    }
+}
+
+/**
+ * Safely opens a completed downloaded file with the appropriate application using ACTION_VIEW.
+ * Handles DownloadManager content URIs, FileProvider content URIs, and mime-type detection.
+ */
+private fun openDownloadedFile(context: Context, entry: DownloadEntry) {
+    try {
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        var uri: Uri? = null
+
+        // 1. Try DownloadManager content URI
+        if (entry.downloadId != -1L) {
+            try {
+                uri = dm?.getUriForDownloadedFile(entry.downloadId)
+            } catch (_: Exception) {}
+        }
+
+        // 2. Try parsing localUri
+        if (uri == null && !entry.localUri.isNullOrBlank()) {
+            val rawUri = Uri.parse(entry.localUri)
+            uri = if (rawUri.scheme == "file") {
+                val file = java.io.File(rawUri.path ?: "")
+                if (file.exists()) {
+                    androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file
+                    )
+                } else rawUri
+            } else {
+                rawUri
+            }
+        }
+
+        // 3. Try finding in Public Downloads directory
+        if (uri == null) {
+            val publicFile = java.io.File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                entry.fileName
+            )
+            if (publicFile.exists()) {
+                uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    publicFile
+                )
+            }
+        }
+
+        if (uri == null) {
+            Toast.makeText(context, "File not found.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val effectiveMime = if (entry.mimeType.isNotBlank() && entry.mimeType != "*/*") {
+            entry.mimeType
+        } else {
+            val ext = entry.fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, effectiveMime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(context, "No app available to open ${entry.fileName}", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        Toast.makeText(context, "Could not open file: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }

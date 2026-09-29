@@ -524,7 +524,7 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Settings -> Theme (Centralized Theme Selection: Black, White, Black & White)
+                // Settings -> Theme (Centralized Theme Selection: White, Black & White)
                 Surface(
                     onClick = { showThemeDialog = true },
                     modifier = Modifier

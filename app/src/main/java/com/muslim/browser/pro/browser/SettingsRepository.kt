@@ -30,10 +30,14 @@ class SettingsRepository(context: Context) {
     // In-memory cache of browsing history entries
     private val inMemoryHistory = ArrayList<HistoryEntry>()
 
+    // In-memory cache of downloads initiated by this browser
+    private val inMemoryDownloads = ArrayList<DownloadEntry>()
+
     // Cached immutable snapshots to eliminate repeated .toSet() and .toList() allocations
     private var cachedKeywordsSet: Set<String> = emptySet()
     private var cachedFavoritesList: List<FavoriteSite> = emptyList()
     private var cachedHistoryList: List<HistoryEntry> = emptyList()
+    private var cachedDownloadList: List<DownloadEntry> = emptyList()
 
     init {
         val savedKeywords = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
@@ -46,6 +50,9 @@ class SettingsRepository(context: Context) {
 
         // Load browsing history once from disk into memory
         loadHistoryFromDisk()
+
+        // Load download history once from disk into memory
+        loadDownloadHistoryFromDisk()
     }
 
     private fun rebuildNormalizedKeywords() {
@@ -129,6 +136,41 @@ class SettingsRepository(context: Context) {
             }
         } catch (_: Exception) {}
         cachedHistoryList = inMemoryHistory.toList()
+    }
+
+    private fun loadDownloadHistoryFromDisk() {
+        inMemoryDownloads.clear()
+        val rawJson = prefs.getString(KEY_DOWNLOAD_HISTORY, null)
+        if (rawJson == null) {
+            cachedDownloadList = emptyList()
+            return
+        }
+        try {
+            val jsonArray = JSONArray(rawJson)
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val statusStr = obj.optString("status", DownloadStatus.COMPLETED.name)
+                val status = try {
+                    DownloadStatus.valueOf(statusStr)
+                } catch (_: Exception) {
+                    DownloadStatus.COMPLETED
+                }
+                inMemoryDownloads.add(
+                    DownloadEntry(
+                        id = obj.optString("id", java.util.UUID.randomUUID().toString()),
+                        downloadId = obj.optLong("downloadId", -1L),
+                        fileName = obj.optString("fileName", "download"),
+                        url = obj.optString("url", ""),
+                        mimeType = obj.optString("mimeType", ""),
+                        timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
+                        status = status,
+                        totalBytes = obj.optLong("totalBytes", -1L),
+                        localUri = obj.optString("localUri", "").ifEmpty { null }
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        cachedDownloadList = inMemoryDownloads.toList()
     }
 
     /**
@@ -249,12 +291,14 @@ class SettingsRepository(context: Context) {
 
     var appTheme: com.muslim.browser.pro.ui.theme.AppTheme
         get() {
-            val name = prefs.getString(KEY_APP_THEME, com.muslim.browser.pro.ui.theme.AppTheme.BLACK.name)
-                ?: com.muslim.browser.pro.ui.theme.AppTheme.BLACK.name
+            val rawName = prefs.getString(KEY_APP_THEME, null)
+                ?: return com.muslim.browser.pro.ui.theme.AppTheme.WHITE
             return try {
-                com.muslim.browser.pro.ui.theme.AppTheme.valueOf(name)
+                com.muslim.browser.pro.ui.theme.AppTheme.valueOf(rawName)
             } catch (_: Exception) {
-                com.muslim.browser.pro.ui.theme.AppTheme.BLACK
+                // Automatically migrate legacy "BLACK" or invalid theme preference to WHITE
+                prefs.edit().putString(KEY_APP_THEME, com.muslim.browser.pro.ui.theme.AppTheme.WHITE.name).commit()
+                com.muslim.browser.pro.ui.theme.AppTheme.WHITE
             }
         }
         set(value) {
@@ -360,6 +404,101 @@ class SettingsRepository(context: Context) {
     }
 
     // ==========================================
+    // DOWNLOAD HISTORY PERSISTENCE
+    // ==========================================
+
+    /**
+     * Returns an unmodifiable list of downloads initiated by Muslim Browser Pro.
+     */
+    fun getDownloadHistory(): List<DownloadEntry> {
+        return cachedDownloadList
+    }
+
+    /**
+     * Adds a newly initiated download to the persistent history.
+     */
+    fun addDownloadEntry(entry: DownloadEntry): DownloadEntry {
+        inMemoryDownloads.add(0, entry)
+        // Cap at 500 download entries to preserve memory
+        if (inMemoryDownloads.size > 500) {
+            inMemoryDownloads.removeAt(inMemoryDownloads.size - 1)
+        }
+        saveDownloadHistoryToDisk()
+        return entry
+    }
+
+    /**
+     * Updates status, local URI, and size for an existing download.
+     */
+    fun updateDownloadStatus(
+        downloadId: Long,
+        status: DownloadStatus,
+        localUri: String? = null,
+        totalBytes: Long = -1L
+    ): Boolean {
+        if (downloadId == -1L) return false
+        var updated = false
+        for (i in inMemoryDownloads.indices) {
+            val item = inMemoryDownloads[i]
+            if (item.downloadId == downloadId) {
+                inMemoryDownloads[i] = item.copy(
+                    status = status,
+                    localUri = localUri ?: item.localUri,
+                    totalBytes = if (totalBytes > 0) totalBytes else item.totalBytes
+                )
+                updated = true
+                break
+            }
+        }
+        if (updated) {
+            saveDownloadHistoryToDisk()
+        }
+        return updated
+    }
+
+    /**
+     * Deletes a specific download record from history.
+     */
+    fun deleteDownloadEntry(id: String): Boolean {
+        val removed = inMemoryDownloads.removeAll { it.id == id }
+        if (removed) {
+            saveDownloadHistoryToDisk()
+        }
+        return removed
+    }
+
+    /**
+     * Clears all download history records.
+     */
+    fun clearAllDownloadHistory() {
+        inMemoryDownloads.clear()
+        cachedDownloadList = emptyList()
+        prefs.edit().remove(KEY_DOWNLOAD_HISTORY).apply()
+    }
+
+    private fun saveDownloadHistoryToDisk() {
+        cachedDownloadList = inMemoryDownloads.toList()
+        val jsonArray = JSONArray()
+        for (item in inMemoryDownloads) {
+            val obj = JSONObject().apply {
+                put("id", item.id)
+                put("downloadId", item.downloadId)
+                put("fileName", item.fileName)
+                put("url", item.url)
+                put("mimeType", item.mimeType)
+                put("timestamp", item.timestamp)
+                put("status", item.status.name)
+                put("totalBytes", item.totalBytes)
+                if (item.localUri != null) {
+                    put("localUri", item.localUri)
+                }
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit().putString(KEY_DOWNLOAD_HISTORY, jsonArray.toString()).apply()
+    }
+
+    // ==========================================
     // WINDOW / TAB STATE PERSISTENCE
     // ==========================================
 
@@ -438,6 +577,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_SAVED_TABS = "key_saved_tabs"
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
         private const val KEY_HISTORY = "key_browsing_history"
+        private const val KEY_DOWNLOAD_HISTORY = "key_download_history"
 
         val DEFAULT_FAVORITES = listOf(
             FavoriteSite(id = "fav_moldovalive", name = "MoldovaLive", url = "https://moldovalive.md", iconLetter = "ML", badgeColor = 0xFF00796B),

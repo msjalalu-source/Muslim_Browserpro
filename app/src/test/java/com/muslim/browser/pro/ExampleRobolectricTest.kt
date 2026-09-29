@@ -2,7 +2,13 @@ package com.muslim.browser.pro
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.muslim.browser.pro.browser.SettingsRepository
+import com.muslim.browser.pro.ui.theme.AppTheme
+import com.muslim.browser.pro.ui.theme.BlackWhiteColors
+import com.muslim.browser.pro.ui.theme.WhiteColors
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -11,6 +17,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ExampleRobolectricTest {
+
+  private val prefsName = "focus_shield_prefs"
+  private val keyAppTheme = "key_app_theme"
 
   @Test
   fun `read string from context`() {
@@ -21,52 +30,103 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify theme persistence across app restart`() {
-    val context = ApplicationProvider.getApplicationContext<Context>()
-    val repo1 = com.muslim.browser.pro.browser.SettingsRepository(context)
-    
-    // Default theme should be BLACK
-    assertEquals(com.muslim.browser.pro.ui.theme.AppTheme.BLACK, repo1.appTheme)
+  fun `verify exactly two theme options exist and black cannot be selected`() {
+    // Exactly 2 options: White, Black & White
+    val themes = AppTheme.values()
+    assertEquals(2, themes.size)
+    assertEquals(AppTheme.WHITE, themes[0])
+    assertEquals(AppTheme.BLACK_WHITE, themes[1])
 
-    // Switch to WHITE
-    repo1.appTheme = com.muslim.browser.pro.ui.theme.AppTheme.WHITE
-    assertEquals(com.muslim.browser.pro.ui.theme.AppTheme.WHITE, repo1.appTheme)
+    assertEquals("White", AppTheme.WHITE.displayName)
+    assertEquals("Black & White", AppTheme.BLACK_WHITE.displayName)
 
-    // Create a new instance of SettingsRepository (simulating app restart)
-    val repo2 = com.muslim.browser.pro.browser.SettingsRepository(context)
-    assertEquals(com.muslim.browser.pro.ui.theme.AppTheme.WHITE, repo2.appTheme)
-
-    // Switch to BLACK_WHITE
-    repo2.appTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE
-    val repo3 = com.muslim.browser.pro.browser.SettingsRepository(context)
-    assertEquals(com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE, repo3.appTheme)
-
-    // Reset back to BLACK
-    repo3.appTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK
+    // Verify "Black" is not an enum constant or option
+    val names = themes.map { it.name }
+    assertFalse("Standalone BLACK must not be present in AppTheme enum", names.contains("BLACK"))
+    val displayNames = themes.map { it.displayName }
+    assertFalse("Standalone Black display name must not be present", displayNames.contains("Black"))
   }
 
   @Test
-  fun `verify three theme options and centralized color tokens`() {
-    // Exactly 3 options: Black, White, Black & White
-    val themes = com.muslim.browser.pro.ui.theme.AppTheme.values()
-    assertEquals(3, themes.size)
-    assertEquals("Black", com.muslim.browser.pro.ui.theme.AppTheme.BLACK.displayName)
-    assertEquals("White", com.muslim.browser.pro.ui.theme.AppTheme.WHITE.displayName)
-    assertEquals("Black & White", com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE.displayName)
+  fun `verify app starts correctly with no theme preference defaulting to WHITE`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    // Clear any previous settings
+    context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
 
-    // BlackColors
-    val blackColors = com.muslim.browser.pro.ui.theme.BlackColors
-    assertEquals(false, blackColors.isLight)
-    assertEquals(false, blackColors.isMonochrome)
+    val repo = SettingsRepository(context)
+    assertEquals(AppTheme.WHITE, repo.appTheme)
+  }
 
-    // WhiteColors
-    val whiteColors = com.muslim.browser.pro.ui.theme.WhiteColors
-    assertEquals(true, whiteColors.isLight)
-    assertEquals(false, whiteColors.isMonochrome)
+  @Test
+  fun `verify switching between WHITE and BLACK_WHITE works and persists across restart`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
 
-    // BlackWhiteColors
-    val bwColors = com.muslim.browser.pro.ui.theme.BlackWhiteColors
-    assertEquals(false, bwColors.isLight)
-    assertEquals(true, bwColors.isMonochrome)
+    val repo1 = SettingsRepository(context)
+    assertEquals(AppTheme.WHITE, repo1.appTheme)
+
+    // Switch to BLACK_WHITE
+    repo1.appTheme = AppTheme.BLACK_WHITE
+    assertEquals(AppTheme.BLACK_WHITE, repo1.appTheme)
+
+    // Restart app (simulate new instance with same context)
+    val repo2 = SettingsRepository(context)
+    assertEquals(AppTheme.BLACK_WHITE, repo2.appTheme)
+
+    // Switch back to WHITE
+    repo2.appTheme = AppTheme.WHITE
+    assertEquals(AppTheme.WHITE, repo2.appTheme)
+
+    val repo3 = SettingsRepository(context)
+    assertEquals(AppTheme.WHITE, repo3.appTheme)
+  }
+
+  @Test
+  fun `verify old stored Black preference migrates safely to White without crash`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+    // Simulate old legacy stored "BLACK" theme in SharedPreferences
+    prefs.edit().putString(keyAppTheme, "BLACK").commit()
+
+    // Read via repository
+    val repo = SettingsRepository(context)
+    val migratedTheme = repo.appTheme
+
+    // Must safely migrate to WHITE
+    assertEquals(AppTheme.WHITE, migratedTheme)
+
+    // SharedPreferences must now store WHITE instead of BLACK
+    assertEquals(AppTheme.WHITE.name, prefs.getString(keyAppTheme, null))
+  }
+
+  @Test
+  fun `verify invalid or corrupted stored theme string migrates safely to White`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+    prefs.edit().putString(keyAppTheme, "NON_EXISTENT_THEME").commit()
+
+    val repo = SettingsRepository(context)
+    assertEquals(AppTheme.WHITE, repo.appTheme)
+    assertEquals(AppTheme.WHITE.name, prefs.getString(keyAppTheme, null))
+  }
+
+  @Test
+  fun `verify centralized color tokens for remaining White and Black & White themes`() {
+    // 1. White Theme tokens
+    assertEquals(true, WhiteColors.isLight)
+    assertEquals(false, WhiteColors.isMonochrome)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFFF4F6F9), WhiteColors.background)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFFFFFFFF), WhiteColors.surface)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFF0F172A), WhiteColors.textPrimary)
+
+    // 2. Black & White Theme tokens
+    assertEquals(false, BlackWhiteColors.isLight)
+    assertEquals(true, BlackWhiteColors.isMonochrome)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFF000000), BlackWhiteColors.background)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFF141414), BlackWhiteColors.surface)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFFFFFFFF), BlackWhiteColors.textPrimary)
+    assertEquals(androidx.compose.ui.graphics.Color(0xFFAAAAAA), BlackWhiteColors.textSecondary)
   }
 }

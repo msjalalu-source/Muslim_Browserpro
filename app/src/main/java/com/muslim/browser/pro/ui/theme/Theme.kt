@@ -9,11 +9,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Three distinct app themes supported by Muslim Browser Pro.
+ * Two distinct app themes supported by Muslim Browser Pro:
+ * 1. White
+ * 2. Black & White
+ *
  * Persisted simply and centrally via SettingsRepository.
  */
 enum class AppTheme(val displayName: String) {
-    BLACK("Black"),
     WHITE("White"),
     BLACK_WHITE("Black & White")
 }
@@ -37,23 +39,7 @@ data class AppColors(
     val isMonochrome: Boolean = false
 )
 
-// 1. Black Theme: Deep dark background, card surfaces, readable light text, cyan accents
-val BlackColors = AppColors(
-    background = Color(0xFF0A0F1D),
-    surface = Color(0xFF131D31),
-    surfaceVariant = Color(0xFF182238),
-    textPrimary = Color(0xFFFFFFFF),
-    textSecondary = Color(0xFF90A4AE),
-    border = Color(0x3300E5FF),
-    iconTint = Color(0xFF00E5FF),
-    accent = Color(0xFF00E5FF),
-    buttonBackground = Color(0xFF00E5FF),
-    buttonText = Color(0xFF0A0F1D),
-    isLight = false,
-    isMonochrome = false
-)
-
-// 2. White Theme: Clean light background, pure white surface, high-contrast dark text, blue accents
+// 1. White Theme: Clean light background, pure white surface, high-contrast dark text, blue accents
 val WhiteColors = AppColors(
     background = Color(0xFFF4F6F9),
     surface = Color(0xFFFFFFFF),
@@ -69,7 +55,7 @@ val WhiteColors = AppColors(
     isMonochrome = false
 )
 
-// 3. Black & White Theme: Pure monochrome, neutral grays, zero colorful gradients or accents
+// 2. Black & White Theme: Pure monochrome, neutral grays, zero colorful gradients or accents
 val BlackWhiteColors = AppColors(
     background = Color(0xFF000000),
     surface = Color(0xFF141414),
@@ -85,14 +71,7 @@ val BlackWhiteColors = AppColors(
     isMonochrome = true
 )
 
-val LocalAppColors = staticCompositionLocalOf { BlackColors }
-
-private val DarkM3Scheme = darkColorScheme(
-    primary = Color(0xFF00E5FF),
-    secondary = Color(0xFF81D4FA),
-    surface = Color(0xFF131D31),
-    background = Color(0xFF0A0F1D)
-)
+val LocalAppColors = staticCompositionLocalOf { WhiteColors }
 
 private val LightM3Scheme = lightColorScheme(
     primary = Color(0xFF0284C7),
@@ -110,17 +89,15 @@ private val MonochromeM3Scheme = darkColorScheme(
 
 @Composable
 fun MyApplicationTheme(
-    appTheme: AppTheme = AppTheme.BLACK,
+    appTheme: AppTheme = AppTheme.WHITE,
     content: @Composable () -> Unit
 ) {
     val appColors = when (appTheme) {
-        AppTheme.BLACK -> BlackColors
         AppTheme.WHITE -> WhiteColors
         AppTheme.BLACK_WHITE -> BlackWhiteColors
     }
 
     val m3Scheme = when (appTheme) {
-        AppTheme.BLACK -> DarkM3Scheme
         AppTheme.WHITE -> LightM3Scheme
         AppTheme.BLACK_WHITE -> MonochromeM3Scheme
     }

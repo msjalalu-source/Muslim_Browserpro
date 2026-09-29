@@ -60,7 +60,9 @@ data class BrowserUiState(
     val isMenuOpen: Boolean = false,
     val isTabsDialogOpen: Boolean = false,
     val isHistoryOpen: Boolean = false,
+    val isDownloadsOpen: Boolean = false,
     val browsingHistory: List<HistoryEntry> = emptyList(),
+    val downloadHistory: List<DownloadEntry> = emptyList(),
     val blockedInfo: BlockedInfo? = null,
     val toastMessage: String? = null,
     val favoriteSites: List<FavoriteSite> = emptyList(),
@@ -70,7 +72,7 @@ data class BrowserUiState(
     val isDesktopModeEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
-    val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK,
+    val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.WHITE,
     val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE
 )
 
@@ -102,6 +104,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
                 browsingHistory = repository.getHistory(),
+                downloadHistory = repository.getDownloadHistory(),
                 appTheme = repository.appTheme,
                 selectedTranslationEngine = repository.selectedTranslationEngine
             )
@@ -749,6 +752,52 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         repository.clearHistory()
         _uiState.update { it.copy(browsingHistory = emptyList()) }
         showToast("Browsing history cleared.")
+    }
+
+    // ==========================================
+    // DOWNLOAD HISTORY NAVIGATION & MANAGEMENT
+    // ==========================================
+
+    fun openDownloads() {
+        _uiState.update {
+            it.copy(
+                isDownloadsOpen = true,
+                isMenuOpen = false,
+                isTabsDialogOpen = false,
+                isHistoryOpen = false,
+                downloadHistory = repository.getDownloadHistory()
+            )
+        }
+    }
+
+    fun closeDownloads() {
+        _uiState.update { it.copy(isDownloadsOpen = false) }
+    }
+
+    fun recordDownload(entry: DownloadEntry) {
+        repository.addDownloadEntry(entry)
+        _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
+    }
+
+    fun updateDownloadStatus(
+        downloadId: Long,
+        status: DownloadStatus,
+        localUri: String? = null,
+        totalBytes: Long = -1L
+    ) {
+        repository.updateDownloadStatus(downloadId, status, localUri, totalBytes)
+        _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
+    }
+
+    fun deleteDownloadEntry(id: String) {
+        repository.deleteDownloadEntry(id)
+        _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
+    }
+
+    fun clearAllDownloadHistory() {
+        repository.clearAllDownloadHistory()
+        _uiState.update { it.copy(downloadHistory = emptyList()) }
+        showToast("Download history cleared.")
     }
 
     fun showToast(msg: String) {

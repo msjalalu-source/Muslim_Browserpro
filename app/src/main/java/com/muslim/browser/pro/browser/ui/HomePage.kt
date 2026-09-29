@@ -46,12 +46,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -59,7 +57,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.muslim.browser.pro.R
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.FavoriteSite
 import com.muslim.browser.pro.browser.rememberFavicon
@@ -87,15 +84,6 @@ fun HomePage(
         showFavoriteDialog = true
     }
 
-    val scrimBrush = remember {
-        Brush.verticalGradient(
-            colors = listOf(
-                Color(0x880A0F1D),
-                Color(0xAA080B14),
-                Color(0xCC05070D)
-            )
-        )
-    }
     val searchBarBorder = remember(colors.border) { BorderStroke(1.dp, colors.border) }
     val quoteAreaBorder = remember(colors.border) { BorderStroke(1.dp, colors.border) }
 
@@ -104,24 +92,6 @@ fun HomePage(
             .fillMaxSize()
             .background(colors.background)
     ) {
-        // In Black Theme: show aesthetic wallpaper with dark scrim
-        // In White Theme: pure clean light background
-        // In Black & White Theme: pure monochrome black background (no colorful gradients or artwork)
-        if (!colors.isLight && !colors.isMonochrome) {
-            Image(
-                painter = painterResource(id = R.drawable.home_bg),
-                contentDescription = "Home background",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(scrimBrush)
-            )
-        }
-
         // Content
         Column(
             modifier = Modifier
