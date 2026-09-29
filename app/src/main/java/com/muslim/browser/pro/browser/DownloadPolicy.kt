@@ -14,23 +14,12 @@ import java.util.Locale
 object DownloadPolicy {
 
     private val VIDEO_EXTS = hashSetOf(
-        "mp4", "mkv", "webm", "avi", "mov", "m4v", "wmv", "flv", "3gp"
-    )
-
-    private val AUDIO_EXTS = hashSetOf(
-        "mp3", "m4a", "wav", "flac", "ogg", "aac", "wma", "opus", "mid", "midi"
+        "mp4", "mkv", "webm", "avi", "mov", "m4v", "wmv", "flv", "3gp",
+        "ts", "mpg", "mpeg", "ogv", "vob", "m2ts"
     )
 
     private val APK_EXTS = hashSetOf(
         "apk", "xapk", "apks"
-    )
-
-    private val ALLOWED_IMAGE_EXTS = hashSetOf(
-        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico"
-    )
-
-    private val ALLOWED_PDF_EXTS = hashSetOf(
-        "pdf"
     )
 
     data class TrustedApkOrigin(
@@ -47,6 +36,88 @@ object DownloadPolicy {
     sealed class Result {
         object Allowed : Result()
         data class Blocked(val reason: String) : Result()
+    }
+
+    /**
+     * Detects if the request targets a video file using MIME type,
+     * Content-Disposition filename, URL path, or extension.
+     */
+    fun isVideo(
+        url: String,
+        mimeType: String? = null,
+        contentDisposition: String? = null
+    ): Boolean {
+        val cleanMime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (cleanMime.startsWith("video/")) return true
+
+        // Check Content-Disposition filename extension
+        if (!contentDisposition.isNullOrBlank()) {
+            val dispExt = extractExtension("", contentDisposition)
+            if (VIDEO_EXTS.contains(dispExt)) return true
+        }
+
+        // Check URL path extension
+        val urlExt = extractExtension(url, null)
+        if (VIDEO_EXTS.contains(urlExt)) return true
+
+        // Check decoded filename extracted from header/query
+        val fileName = extractFileName(url, contentDisposition)
+        val fileExt = fileName.substringAfterLast('.', "")
+        if (VIDEO_EXTS.contains(fileExt)) return true
+
+        // Fallback: check URI path segments
+        try {
+            val uri = Uri.parse(url.trim())
+            val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+            for (ext in VIDEO_EXTS) {
+                if (path.endsWith(".$ext") || path.contains(".$ext/") || path.contains(".$ext?")) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        return false
+    }
+
+    /**
+     * Detects if the request targets an Android package file (APK, XAPK, APKS)
+     * using MIME type, Content-Disposition, URL path, or extension.
+     */
+    fun isApk(
+        url: String,
+        mimeType: String? = null,
+        contentDisposition: String? = null
+    ): Boolean {
+        val cleanMime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (cleanMime == "application/vnd.android.package-archive") return true
+
+        // Check Content-Disposition filename extension
+        if (!contentDisposition.isNullOrBlank()) {
+            val dispExt = extractExtension("", contentDisposition)
+            if (APK_EXTS.contains(dispExt)) return true
+        }
+
+        // Check URL path extension
+        val urlExt = extractExtension(url, null)
+        if (APK_EXTS.contains(urlExt)) return true
+
+        // Check decoded filename extracted from header/query
+        val fileName = extractFileName(url, contentDisposition)
+        val fileExt = fileName.substringAfterLast('.', "")
+        if (APK_EXTS.contains(fileExt)) return true
+
+        // Fallback: check URI path segments
+        try {
+            val uri = Uri.parse(url.trim())
+            val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+            for (ext in APK_EXTS) {
+                if (path.endsWith(".$ext") || path.contains(".$ext/") || path.contains(".$ext?")) {
+                    return true
+                }
+            }
+        } catch (_: Exception) {}
+
+        return false
     }
 
     /**
@@ -131,23 +202,18 @@ object DownloadPolicy {
 
     /**
      * Evaluates a download request (from DownloadListener or explicit file download).
-     * Follows the strict priority rules:
-     * 1. APK -> GitHub allowlist rule (msjalalu-source only, direct or legitimate validated redirect)
-     * 2. Audio -> ALLOW (MP3, WAV, OGG, M4A, AAC, FLAC, etc.)
-     * 3. Video -> BLOCK (existing video download rule)
-     * 4. Other files -> Existing download behavior (Images & PDFs allowed, others blocked)
+     * Authoritative single decision maker:
+     * 1. APK -> Allowed ONLY from github.com with first path segment "msjalalu-source" (direct or verified redirect)
+     * 2. Video -> BLOCKED across all sources
+     * 3. All other file types -> ALLOWED by default (documents, archives, images, audio, etc.)
      */
     fun evaluate(
         url: String,
         mimeType: String? = null,
         contentDisposition: String? = null
     ): Result {
-        val cleanMime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
-        val extension = extractExtension(url, contentDisposition)
-
-        // 1. APK -> GitHub allowlist rule (msjalalu-source only)
-        val isApk = cleanMime == "application/vnd.android.package-archive" || APK_EXTS.contains(extension)
-        if (isApk) {
+        // 1. APK rule: Blocked by default unless strictly from github.com/msjalalu-source/
+        if (isApk(url, mimeType, contentDisposition)) {
             val isDirectAllowed = isAllowedGitHubApkUrl(url)
             val isRedirectAllowed = if (!isDirectAllowed) {
                 validateAndConsumeTrustedOrigin(url, contentDisposition)
@@ -164,30 +230,13 @@ object DownloadPolicy {
             }
         }
 
-        // 2. Audio -> ALLOW
-        val isAudio = cleanMime.startsWith("audio/") || cleanMime == "application/ogg" || AUDIO_EXTS.contains(extension)
-        if (isAudio) {
-            return Result.Allowed
-        }
-
-        // 3. Video -> BLOCK (existing video download rule)
-        val isVideo = cleanMime.startsWith("video/") || VIDEO_EXTS.contains(extension)
-        if (isVideo) {
+        // 2. Video rule: ALL video downloads must be BLOCKED regardless of source
+        if (isVideo(url, mimeType, contentDisposition)) {
             return Result.Blocked("Video downloads are blocked.")
         }
 
-        // 4. Other files -> Existing download behavior (Images & PDFs allowed, others blocked)
-        val isImage = cleanMime.startsWith("image/") || ALLOWED_IMAGE_EXTS.contains(extension)
-        if (isImage) {
-            return Result.Allowed
-        }
-
-        val isPdf = cleanMime == "application/pdf" || ALLOWED_PDF_EXTS.contains(extension)
-        if (isPdf) {
-            return Result.Allowed
-        }
-
-        return Result.Blocked("This file type is blocked.")
+        // 3. All other file types MUST be ALLOWED by default
+        return Result.Allowed
     }
 
     /**
@@ -196,11 +245,13 @@ object DownloadPolicy {
      * Returns true if it should be blocked from loading in the browser.
      */
     fun shouldBlockUrlNavigation(url: String): Boolean {
-        val extension = extractExtension(url, null)
-        if (extension.isEmpty()) return false
+        // 1. Direct Video navigation is BLOCKED
+        if (isVideo(url, null, null)) {
+            return true
+        }
 
-        // 1. Direct APK navigation
-        if (APK_EXTS.contains(extension)) {
+        // 2. Direct APK navigation: allowed only if from github.com/msjalalu-source
+        if (isApk(url, null, null)) {
             if (isAllowedGitHubApkUrl(url)) {
                 recordTrustedOrigin(url)
                 return false
@@ -219,22 +270,13 @@ object DownloadPolicy {
             return true
         }
 
-        // 2. Audio is ALLOWED
-        if (AUDIO_EXTS.contains(extension)) {
-            return false
-        }
-
-        // 3. Direct Video navigation is BLOCKED
-        if (VIDEO_EXTS.contains(extension)) {
-            return true
-        }
-
+        // 3. All other URLs / file types are ALLOWED
         return false
     }
 
     /**
      * Validates whether an APK URL is strictly from:
-     * - hostname exactly "github.com" or "www.github.com"
+     * - hostname exactly "github.com"
      * - URL path's first owner segment exactly "msjalalu-source"
      *
      * ALLOW: https://github.com/msjalalu-source/...
@@ -245,7 +287,7 @@ object DownloadPolicy {
         return try {
             val uri = Uri.parse(url.trim())
             val host = uri.host?.lowercase(Locale.ROOT)
-            if (host != "github.com" && host != "www.github.com") return false
+            if (host != "github.com") return false
             val firstSegment = uri.pathSegments?.firstOrNull()
             firstSegment == "msjalalu-source"
         } catch (_: Exception) {
