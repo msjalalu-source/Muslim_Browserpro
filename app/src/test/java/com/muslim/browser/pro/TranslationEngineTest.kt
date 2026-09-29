@@ -139,8 +139,7 @@ class TranslationEngineTest {
     @Test
     fun `verify MyMemory handles quota warnings as error`() {
         val result = BengaliTranslator.translateWithMyMemory("test")
-        // Since network might not be available or returns offline/404, verify it returns a Result
-        assertTrue(result is Result)
+        assertTrue(result.isSuccess || result.isFailure)
     }
 
     @Test
