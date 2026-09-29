@@ -37,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -303,6 +304,7 @@ private fun DownloadItemRow(
     val colors = LocalAppColors.current
     val isCompleted = entry.status == DownloadStatus.COMPLETED
     val isDownloading = entry.status == DownloadStatus.DOWNLOADING
+    val isPaused = entry.status == DownloadStatus.PAUSED
     val isFailed = entry.status == DownloadStatus.FAILED
 
     Surface(
@@ -315,17 +317,15 @@ private fun DownloadItemRow(
         border = BorderStroke(0.8.dp, colors.border),
         tonalElevation = 2.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            // Icon & Details
             Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 // Type Icon Box
                 Surface(
@@ -357,29 +357,8 @@ private fun DownloadItemRow(
 
                     Spacer(modifier = Modifier.height(3.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Status Badge
-                        StatusBadge(entry.status)
-
-                        // File Size
-                        if (entry.totalBytes > 0) {
-                            Text(
-                                text = formatFileSize(entry.totalBytes),
-                                color = colors.textSecondary,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        // Time
-                        Text(
-                            text = formatDownloadTime(entry.timestamp),
-                            color = colors.textSecondary,
-                            fontSize = 11.sp
-                        )
-                    }
+                    // Status & Real Progress Info
+                    StatusProgressLine(entry = entry)
 
                     if (entry.url.isNotBlank()) {
                         Spacer(modifier = Modifier.height(2.dp))
@@ -392,87 +371,217 @@ private fun DownloadItemRow(
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isCompleted) {
+                        IconButton(
+                            onClick = onOpen,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("download_open_${entry.id}")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Open file",
+                                tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFF4CAF50),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Action: Delete / Cancel
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("download_delete_${entry.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Delete download record",
+                            tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFFEF5350),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
 
-            // Action: Delete / Cancel
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("download_delete_${entry.id}")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DeleteOutline,
-                    contentDescription = "Delete download record",
-                    tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFFEF5350),
-                    modifier = Modifier.size(18.dp)
-                )
+            // Real-time Progress Bar
+            if (isDownloading || isPaused) {
+                Spacer(modifier = Modifier.height(8.dp))
+                if (entry.totalBytes > 0L) {
+                    val progressFraction = (entry.downloadedBytes.toFloat() / entry.totalBytes.toFloat()).coerceIn(0f, 1f)
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = if (isPaused) (if (colors.isMonochrome) colors.textSecondary else Color(0xFFFFB300)) else colors.accent,
+                        trackColor = colors.border.copy(alpha = 0.3f)
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = colors.accent,
+                        trackColor = colors.border.copy(alpha = 0.3f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StatusBadge(status: DownloadStatus) {
+private fun StatusProgressLine(entry: DownloadEntry) {
     val colors = LocalAppColors.current
-    when (status) {
-        DownloadStatus.COMPLETED -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFF4CAF50),
-                    modifier = Modifier.size(12.dp)
-                )
-                Spacer(modifier = Modifier.width(3.dp))
-                Text(
-                    text = "Completed",
-                    color = if (colors.isMonochrome) colors.textSecondary else Color(0xFF4CAF50),
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Medium
-                )
+
+    when (entry.status) {
+        DownloadStatus.DOWNLOADING -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (entry.totalBytes > 0L) {
+                    val percentage = ((entry.downloadedBytes * 100L) / entry.totalBytes).coerceIn(0L, 100L)
+                    Text(
+                        text = "Downloading — $percentage%",
+                        color = colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${formatFileSize(entry.downloadedBytes)} / ${formatFileSize(entry.totalBytes)}",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp
+                    )
+                } else {
+                    Text(
+                        text = "Downloading...",
+                        color = colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (entry.downloadedBytes > 0L) {
+                        Text(
+                            text = "${formatFileSize(entry.downloadedBytes)} downloaded",
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
             }
         }
-        DownloadStatus.DOWNLOADING -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(11.dp),
-                    strokeWidth = 1.5.dp,
-                    color = colors.accent
-                )
-                Spacer(modifier = Modifier.width(4.dp))
+        DownloadStatus.PAUSED -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                val pausedColor = if (colors.isMonochrome) colors.textSecondary else Color(0xFFFFB300)
+                if (entry.totalBytes > 0L && entry.downloadedBytes > 0L) {
+                    val percentage = ((entry.downloadedBytes * 100L) / entry.totalBytes).coerceIn(0L, 100L)
+                    Text(
+                        text = "Paused — $percentage%",
+                        color = pausedColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "${formatFileSize(entry.downloadedBytes)} / ${formatFileSize(entry.totalBytes)}",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp
+                    )
+                } else {
+                    Text(
+                        text = "Paused",
+                        color = pausedColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+        DownloadStatus.COMPLETED -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFF4CAF50),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Completed",
+                        color = if (colors.isMonochrome) colors.textSecondary else Color(0xFF4CAF50),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                if (entry.totalBytes > 0L) {
+                    Text(
+                        text = formatFileSize(entry.totalBytes),
+                        color = colors.textSecondary,
+                        fontSize = 11.sp
+                    )
+                }
                 Text(
-                    text = "Downloading...",
-                    color = colors.accent,
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Medium
+                    text = formatDownloadTime(entry.timestamp),
+                    color = colors.textSecondary,
+                    fontSize = 11.sp
                 )
             }
         }
         DownloadStatus.FAILED -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.ErrorOutline,
-                    contentDescription = null,
-                    tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFFE53935),
-                    modifier = Modifier.size(12.dp)
-                )
-                Spacer(modifier = Modifier.width(3.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (colors.isMonochrome) colors.textSecondary else Color(0xFFE53935),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Failed",
+                        color = if (colors.isMonochrome) colors.textSecondary else Color(0xFFE53935),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
                 Text(
-                    text = "Failed",
-                    color = if (colors.isMonochrome) colors.textSecondary else Color(0xFFE53935),
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Medium
+                    text = formatDownloadTime(entry.timestamp),
+                    color = colors.textSecondary,
+                    fontSize = 11.sp
                 )
             }
         }
         DownloadStatus.CANCELLED -> {
-            Text(
-                text = "Cancelled",
-                color = colors.textSecondary,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Normal
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "Cancelled",
+                    color = colors.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal
+                )
+                Text(
+                    text = formatDownloadTime(entry.timestamp),
+                    color = colors.textSecondary,
+                    fontSize = 11.sp
+                )
+            }
         }
     }
 }

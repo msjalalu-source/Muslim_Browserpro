@@ -2,6 +2,7 @@ package com.muslim.browser.pro.browser
 
 enum class DownloadStatus {
     DOWNLOADING,
+    PAUSED,
     COMPLETED,
     FAILED,
     CANCELLED
@@ -19,6 +20,7 @@ data class DownloadEntry(
     val mimeType: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val status: DownloadStatus = DownloadStatus.DOWNLOADING,
+    val downloadedBytes: Long = 0L,
     val totalBytes: Long = -1L,
     val localUri: String? = null
 )

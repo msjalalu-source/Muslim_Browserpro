@@ -164,6 +164,7 @@ class SettingsRepository(context: Context) {
                         mimeType = obj.optString("mimeType", ""),
                         timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
                         status = status,
+                        downloadedBytes = obj.optLong("downloadedBytes", 0L),
                         totalBytes = obj.optLong("totalBytes", -1L),
                         localUri = obj.optString("localUri", "").ifEmpty { null }
                     )
@@ -428,13 +429,16 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Updates status, local URI, and size for an existing download.
+     * Updates download progress (bytes and status) in memory, with optional disk persistence.
+     * Prevents excessive disk I/O during high-frequency polling while keeping UI state fresh.
      */
-    fun updateDownloadStatus(
+    fun updateDownloadProgress(
         downloadId: Long,
         status: DownloadStatus,
+        downloadedBytes: Long = -1L,
+        totalBytes: Long = -1L,
         localUri: String? = null,
-        totalBytes: Long = -1L
+        persistToDisk: Boolean = false
     ): Boolean {
         if (downloadId == -1L) return false
         var updated = false
@@ -444,16 +448,40 @@ class SettingsRepository(context: Context) {
                 inMemoryDownloads[i] = item.copy(
                     status = status,
                     localUri = localUri ?: item.localUri,
-                    totalBytes = if (totalBytes > 0) totalBytes else item.totalBytes
+                    downloadedBytes = if (downloadedBytes >= 0L) downloadedBytes else item.downloadedBytes,
+                    totalBytes = if (totalBytes > 0L) totalBytes else item.totalBytes
                 )
                 updated = true
                 break
             }
         }
         if (updated) {
-            saveDownloadHistoryToDisk()
+            cachedDownloadList = inMemoryDownloads.toList()
+            if (persistToDisk) {
+                saveDownloadHistoryToDisk()
+            }
         }
         return updated
+    }
+
+    /**
+     * Updates status, local URI, downloaded bytes, and size for an existing download and persists to disk.
+     */
+    fun updateDownloadStatus(
+        downloadId: Long,
+        status: DownloadStatus,
+        localUri: String? = null,
+        downloadedBytes: Long = -1L,
+        totalBytes: Long = -1L
+    ): Boolean {
+        return updateDownloadProgress(
+            downloadId = downloadId,
+            status = status,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes,
+            localUri = localUri,
+            persistToDisk = true
+        )
     }
 
     /**
@@ -488,6 +516,7 @@ class SettingsRepository(context: Context) {
                 put("mimeType", item.mimeType)
                 put("timestamp", item.timestamp)
                 put("status", item.status.name)
+                put("downloadedBytes", item.downloadedBytes)
                 put("totalBytes", item.totalBytes)
                 if (item.localUri != null) {
                     put("localUri", item.localUri)

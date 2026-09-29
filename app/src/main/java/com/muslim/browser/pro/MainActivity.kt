@@ -78,6 +78,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.DownloadEntry
 import com.muslim.browser.pro.browser.DownloadPolicy
@@ -113,6 +118,107 @@ class MainActivity : ComponentActivity() {
         callback.onReceiveValue(uris)
     }
 
+    private var progressPollingJob: Job? = null
+
+    private fun startProgressPolling() {
+        if (progressPollingJob?.isActive == true) return
+
+        progressPollingJob = lifecycleScope.launch {
+            while (isActive) {
+                val hasActive = queryActiveDownloads()
+                if (!hasActive) {
+                    break
+                }
+                delay(1000L)
+            }
+        }
+    }
+
+    private fun queryActiveDownloads(): Boolean {
+        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return false
+        val currentDownloads = viewModel.uiState.value.downloadHistory
+        val activeEntries = currentDownloads.filter {
+            it.downloadId > 0L && (it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.PAUSED)
+        }
+
+        if (activeEntries.isEmpty()) {
+            return false
+        }
+
+        var stillActive = false
+
+        for (entry in activeEntries) {
+            val query = DownloadManager.Query().setFilterById(entry.downloadId)
+            try {
+                dm.query(query)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                        val status = if (statusIndex != -1) cursor.getInt(statusIndex) else -1
+                        val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val downloadedBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else 0L
+                        val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val totalBytes = if (totalBytesIndex != -1) cursor.getLong(totalBytesIndex) else -1L
+                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                        val localUri = if (localUriIndex != -1) cursor.getString(localUriIndex) else null
+
+                        when (status) {
+                            DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING -> {
+                                stillActive = true
+                                viewModel.updateDownloadProgress(
+                                    downloadId = entry.downloadId,
+                                    status = DownloadStatus.DOWNLOADING,
+                                    downloadedBytes = downloadedBytes,
+                                    totalBytes = totalBytes,
+                                    localUri = localUri
+                                )
+                            }
+                            DownloadManager.STATUS_PAUSED -> {
+                                stillActive = true
+                                viewModel.updateDownloadProgress(
+                                    downloadId = entry.downloadId,
+                                    status = DownloadStatus.PAUSED,
+                                    downloadedBytes = downloadedBytes,
+                                    totalBytes = totalBytes,
+                                    localUri = localUri
+                                )
+                            }
+                            DownloadManager.STATUS_SUCCESSFUL -> {
+                                viewModel.updateDownloadStatus(
+                                    downloadId = entry.downloadId,
+                                    status = DownloadStatus.COMPLETED,
+                                    localUri = localUri,
+                                    downloadedBytes = downloadedBytes,
+                                    totalBytes = totalBytes
+                                )
+                            }
+                            DownloadManager.STATUS_FAILED -> {
+                                val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                                val reason = if (reasonIndex != -1) cursor.getInt(reasonIndex) else -1
+                                android.util.Log.d("DownloadManager", "Download ${entry.downloadId} failed: reason=$reason")
+                                viewModel.updateDownloadStatus(
+                                    downloadId = entry.downloadId,
+                                    status = DownloadStatus.FAILED,
+                                    localUri = localUri,
+                                    downloadedBytes = downloadedBytes,
+                                    totalBytes = totalBytes
+                                )
+                            }
+                        }
+                    } else {
+                        viewModel.updateDownloadStatus(
+                            downloadId = entry.downloadId,
+                            status = DownloadStatus.FAILED
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("DownloadManager", "Error querying downloadId ${entry.downloadId}", e)
+            }
+        }
+
+        return stillActive
+    }
+
     private val downloadReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
@@ -134,8 +240,10 @@ class MainActivity : ComponentActivity() {
                     val status = if (statusIndex != -1) cursor.getInt(statusIndex) else -1
                     val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
                     val localUri = if (localUriIndex != -1) cursor.getString(localUriIndex) else null
-                    val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                    val totalBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else -1L
+                    val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    val downloadedBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else 0L
+                    val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    val totalBytes = if (totalBytesIndex != -1) cursor.getLong(totalBytesIndex) else -1L
 
                     when (status) {
                         DownloadManager.STATUS_SUCCESSFUL -> {
@@ -143,6 +251,7 @@ class MainActivity : ComponentActivity() {
                                 downloadId = downloadId,
                                 status = DownloadStatus.COMPLETED,
                                 localUri = localUri,
+                                downloadedBytes = downloadedBytes,
                                 totalBytes = totalBytes
                             )
                         }
@@ -151,13 +260,30 @@ class MainActivity : ComponentActivity() {
                                 downloadId = downloadId,
                                 status = DownloadStatus.FAILED,
                                 localUri = localUri,
+                                downloadedBytes = downloadedBytes,
                                 totalBytes = totalBytes
+                            )
+                        }
+                        DownloadManager.STATUS_PAUSED -> {
+                            viewModel.updateDownloadProgress(
+                                downloadId = downloadId,
+                                status = DownloadStatus.PAUSED,
+                                downloadedBytes = downloadedBytes,
+                                totalBytes = totalBytes,
+                                localUri = localUri
                             )
                         }
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.e("DownloadManager", "Error checking download status for $downloadId", e)
+        }
+        val hasActive = queryActiveDownloads()
+        if (!hasActive) {
+            progressPollingJob?.cancel()
+            progressPollingJob = null
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -171,6 +297,9 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(downloadReceiver, downloadFilter)
         }
+
+        // Check if any ongoing downloads need active progress polling
+        startProgressPolling()
 
         val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
@@ -365,45 +494,12 @@ class MainActivity : ComponentActivity() {
             }
 
             setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
-                val decision = DownloadPolicy.evaluate(url, mimetype, contentDisposition)
-                when (decision) {
-                    is DownloadPolicy.Result.Blocked -> {
-                        viewModel.showToast(decision.reason)
-                        viewModel.onPageCommitVisible()
-                    }
-                    is DownloadPolicy.Result.Allowed -> {
-                        try {
-                            val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
-                            val request = DownloadManager.Request(Uri.parse(url)).apply {
-                                if (!mimetype.isNullOrBlank()) {
-                                    setMimeType(mimetype)
-                                }
-                                if (!userAgent.isNullOrBlank()) {
-                                    addRequestHeader("User-Agent", userAgent)
-                                }
-                                setTitle(fileName)
-                                setDescription("Downloading with Muslim Browser Pro...")
-                                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                            }
-                            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-                            val downloadId = dm?.enqueue(request) ?: -1L
-                            val entry = DownloadEntry(
-                                downloadId = downloadId,
-                                fileName = fileName,
-                                url = url,
-                                mimeType = mimetype ?: "",
-                                timestamp = System.currentTimeMillis(),
-                                status = DownloadStatus.DOWNLOADING
-                            )
-                            viewModel.recordDownload(entry)
-                            viewModel.showToast("Downloading $fileName...")
-                        } catch (e: Exception) {
-                            viewModel.showToast("Download started.")
-                        }
-                        viewModel.onPageCommitVisible()
-                    }
-                }
+                startDownload(
+                    url = url,
+                    userAgent = userAgent,
+                    contentDisposition = contentDisposition,
+                    mimetype = mimetype
+                )
             }
         }
         webViewInstance = webView
@@ -431,6 +527,141 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /**
+     * Centralized download initiator using Android's DownloadManager as the single source of truth.
+     * Enforces policy checks, validates URI schemes, supplies authentication/session cookies and referer,
+     * sanitizes filenames, verifies valid enqueue IDs, and triggers real-time progress polling.
+     */
+    fun startDownload(
+        url: String,
+        userAgent: String? = null,
+        contentDisposition: String? = null,
+        mimetype: String? = null
+    ) {
+        val decision = DownloadPolicy.evaluate(url, mimetype, contentDisposition)
+        if (decision is DownloadPolicy.Result.Blocked) {
+            viewModel.showToast(decision.reason)
+            viewModel.onPageCommitVisible()
+            return
+        }
+
+        val parsedUri = try {
+            Uri.parse(url.trim())
+        } catch (e: Exception) {
+            null
+        }
+
+        val scheme = parsedUri?.scheme?.lowercase(Locale.ROOT)
+        if (scheme != "http" && scheme != "https") {
+            android.util.Log.e("DownloadManager", "Unsupported URI scheme for download: $url")
+            viewModel.showToast("Cannot download: unsupported link scheme.")
+            viewModel.onPageCommitVisible()
+            return
+        }
+
+        var fileName = DownloadPolicy.extractFileName(url, contentDisposition)
+        if (fileName.isBlank()) {
+            fileName = URLUtil.guessFileName(url, contentDisposition, mimetype)
+        }
+        fileName = fileName.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim()
+        if (fileName.isBlank()) {
+            fileName = "download_${System.currentTimeMillis()}"
+        }
+
+        val isMp3 = mimetype?.equals("audio/mpeg", ignoreCase = true) == true ||
+                mimetype?.equals("audio/mp3", ignoreCase = true) == true ||
+                url.substringBefore('?').lowercase(Locale.ROOT).endsWith(".mp3") ||
+                fileName.lowercase(Locale.ROOT).endsWith(".mp3")
+
+        if (isMp3 && !fileName.lowercase(Locale.ROOT).endsWith(".mp3")) {
+            fileName = if (fileName.contains('.')) {
+                fileName.substringBeforeLast('.') + ".mp3"
+            } else {
+                "$fileName.mp3"
+            }
+        }
+
+        val effectiveMime = if (isMp3) {
+            "audio/mpeg"
+        } else if (!mimetype.isNullOrBlank() && mimetype != "*/*") {
+            mimetype
+        } else {
+            val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+        }
+
+        val effectiveUserAgent = if (!userAgent.isNullOrBlank()) {
+            userAgent
+        } else {
+            webViewInstance?.settings?.userAgentString
+        }
+
+        var downloadId: Long = -1L
+        try {
+            val request = DownloadManager.Request(parsedUri).apply {
+                setMimeType(effectiveMime)
+                if (!effectiveUserAgent.isNullOrBlank()) {
+                    addRequestHeader("User-Agent", effectiveUserAgent)
+                }
+                val cookie = CookieManager.getInstance().getCookie(url)
+                if (!cookie.isNullOrBlank()) {
+                    addRequestHeader("Cookie", cookie)
+                }
+                val currentWebUrl = webViewInstance?.url
+                if (!currentWebUrl.isNullOrBlank() && !currentWebUrl.startsWith("data:") && !currentWebUrl.startsWith("about:")) {
+                    addRequestHeader("Referer", currentWebUrl)
+                }
+
+                setTitle(fileName)
+                setDescription("Downloading with Muslim Browser Pro...")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            }
+
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            if (dm != null) {
+                downloadId = dm.enqueue(request)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("DownloadManager", "Failed to enqueue download for $url", e)
+            downloadId = -1L
+        }
+
+        if (downloadId <= 0L) {
+            val failedEntry = DownloadEntry(
+                downloadId = -1L,
+                fileName = fileName,
+                url = url,
+                mimeType = effectiveMime,
+                timestamp = System.currentTimeMillis(),
+                status = DownloadStatus.FAILED
+            )
+            viewModel.recordDownload(failedEntry)
+            viewModel.showToast("Download failed to start.")
+            viewModel.onPageCommitVisible()
+            return
+        }
+
+        val entry = DownloadEntry(
+            downloadId = downloadId,
+            fileName = fileName,
+            url = url,
+            mimeType = effectiveMime,
+            timestamp = System.currentTimeMillis(),
+            status = DownloadStatus.DOWNLOADING
+        )
+        viewModel.recordDownload(entry)
+        viewModel.showToast("Download started.")
+        viewModel.onPageCommitVisible()
+        startProgressPolling()
+    }
+
+    private fun isDirectAudioUrl(url: String): Boolean {
+        val clean = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        return clean.endsWith(".mp3") || clean.endsWith(".wav") || clean.endsWith(".ogg") ||
+                clean.endsWith(".m4a") || clean.endsWith(".aac") || clean.endsWith(".flac")
     }
 
     private fun handleUrlNavigation(view: WebView?, url: String): Boolean {
@@ -467,7 +698,18 @@ class MainActivity : ComponentActivity() {
             return true // Intercepted and redirected
         }
 
-        // 2. Direct URL navigation check
+        // 2. Direct audio / MP3 link check
+        if (isDirectAudioUrl(url)) {
+            startDownload(
+                url = url,
+                userAgent = view?.settings?.userAgentString,
+                contentDisposition = null,
+                mimetype = "audio/mpeg"
+            )
+            return true
+        }
+
+        // 3. Direct URL navigation check
         val isBlocked = viewModel.checkAndFilterUrl(url)
         if (isBlocked) {
             return true // Block navigation
@@ -555,6 +797,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        progressPollingJob?.cancel()
+        progressPollingJob = null
         try {
             unregisterReceiver(downloadReceiver)
         } catch (_: Exception) {}
@@ -1126,21 +1370,24 @@ fun BrowserApp(
 
 /**
  * Safely opens a completed downloaded file with the appropriate application using ACTION_VIEW.
- * Handles DownloadManager content URIs, FileProvider content URIs, and mime-type detection.
+ * Uses DownloadManager.getUriForDownloadedFile(downloadId) as single source of truth,
+ * with audio/mpeg MIME type for MP3 files and FLAG_GRANT_READ_URI_PERMISSION.
  */
 private fun openDownloadedFile(context: Context, entry: DownloadEntry) {
     try {
         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
         var uri: Uri? = null
 
-        // 1. Try DownloadManager content URI
-        if (entry.downloadId != -1L) {
+        // 1. Retrieve the actual downloaded URI using DownloadManager.getUriForDownloadedFile(downloadId)
+        if (entry.downloadId > 0L) {
             try {
                 uri = dm?.getUriForDownloadedFile(entry.downloadId)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.w("DownloadManager", "Could not get URI from DownloadManager for ${entry.downloadId}", e)
+            }
         }
 
-        // 2. Try parsing localUri
+        // 2. Fallback to saved localUri if available
         if (uri == null && !entry.localUri.isNullOrBlank()) {
             val rawUri = Uri.parse(entry.localUri)
             uri = if (rawUri.scheme == "file") {
@@ -1157,7 +1404,7 @@ private fun openDownloadedFile(context: Context, entry: DownloadEntry) {
             }
         }
 
-        // 3. Try finding in Public Downloads directory
+        // 3. Fallback to Public Downloads directory file
         if (uri == null) {
             val publicFile = java.io.File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -1173,11 +1420,17 @@ private fun openDownloadedFile(context: Context, entry: DownloadEntry) {
         }
 
         if (uri == null) {
-            Toast.makeText(context, "File not found.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Downloaded file not found.", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val effectiveMime = if (entry.mimeType.isNotBlank() && entry.mimeType != "*/*") {
+        val isMp3 = entry.fileName.endsWith(".mp3", ignoreCase = true) ||
+                entry.mimeType.equals("audio/mpeg", ignoreCase = true) ||
+                entry.mimeType.equals("audio/mp3", ignoreCase = true)
+
+        val effectiveMime = if (isMp3) {
+            "audio/mpeg"
+        } else if (entry.mimeType.isNotBlank() && entry.mimeType != "*/*") {
             entry.mimeType
         } else {
             val ext = entry.fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -1191,7 +1444,12 @@ private fun openDownloadedFile(context: Context, entry: DownloadEntry) {
         }
         context.startActivity(intent)
     } catch (e: ActivityNotFoundException) {
-        Toast.makeText(context, "No app available to open ${entry.fileName}", Toast.LENGTH_SHORT).show()
+        val isMp3 = entry.fileName.endsWith(".mp3", ignoreCase = true) || entry.mimeType.contains("audio")
+        if (isMp3) {
+            Toast.makeText(context, "No compatible app found to open this MP3.", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "No compatible app found to open ${entry.fileName}", Toast.LENGTH_SHORT).show()
+        }
     } catch (e: Exception) {
         Toast.makeText(context, "Could not open file: ${e.message}", Toast.LENGTH_SHORT).show()
     }

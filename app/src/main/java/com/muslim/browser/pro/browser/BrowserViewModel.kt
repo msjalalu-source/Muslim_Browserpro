@@ -779,13 +779,38 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
     }
 
+    fun updateDownloadProgress(
+        downloadId: Long,
+        status: DownloadStatus,
+        downloadedBytes: Long,
+        totalBytes: Long,
+        localUri: String? = null
+    ) {
+        repository.updateDownloadProgress(
+            downloadId = downloadId,
+            status = status,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes,
+            localUri = localUri,
+            persistToDisk = false
+        )
+        _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
+    }
+
     fun updateDownloadStatus(
         downloadId: Long,
         status: DownloadStatus,
         localUri: String? = null,
+        downloadedBytes: Long = -1L,
         totalBytes: Long = -1L
     ) {
-        repository.updateDownloadStatus(downloadId, status, localUri, totalBytes)
+        repository.updateDownloadStatus(
+            downloadId = downloadId,
+            status = status,
+            localUri = localUri,
+            downloadedBytes = downloadedBytes,
+            totalBytes = totalBytes
+        )
         _uiState.update { it.copy(downloadHistory = repository.getDownloadHistory()) }
     }
 
