@@ -313,6 +313,8 @@ class SettingsRepository(context: Context) {
             return try {
                 TranslationEngine.valueOf(name)
             } catch (_: Exception) {
+                // Safely migrate legacy LINGVA or invalid engine preference to default without crashing
+                prefs.edit().putString(KEY_SELECTED_TRANSLATION_ENGINE, TranslationEngine.LIBRE_TRANSLATE.name).commit()
                 TranslationEngine.LIBRE_TRANSLATE
             }
         }

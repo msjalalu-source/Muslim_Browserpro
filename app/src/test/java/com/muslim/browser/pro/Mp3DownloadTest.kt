@@ -214,6 +214,56 @@ class Mp3DownloadTest {
     }
 
     @Test
+    fun `leaving and returning to screen preserves intact download state`() {
+        val entry = DownloadEntry(
+            id = "mp3-preserve-1",
+            downloadId = 321L,
+            fileName = "audio_sample.mp3",
+            url = "https://example.com/audio_sample.mp3",
+            mimeType = "audio/mpeg",
+            status = DownloadStatus.DOWNLOADING,
+            downloadedBytes = 1_500_000L,
+            totalBytes = 3_000_000L
+        )
+        repository.addDownloadEntry(entry)
+
+        // Simulate navigating away and back (re-reading download history)
+        val read1 = repository.getDownloadHistory()
+        assertEquals(1, read1.size)
+        assertEquals(1_500_000L, read1[0].downloadedBytes)
+
+        val read2 = repository.getDownloadHistory()
+        assertEquals(read1, read2)
+    }
+
+    @Test
+    fun `reopening app restores real download state from persistent storage`() {
+        val entry = DownloadEntry(
+            id = "mp3-restore-1",
+            downloadId = 654L,
+            fileName = "restored_recitation.mp3",
+            url = "https://example.com/recitation.mp3",
+            mimeType = "audio/mpeg",
+            status = DownloadStatus.COMPLETED,
+            downloadedBytes = 8_200_000L,
+            totalBytes = 8_200_000L,
+            localUri = "content://downloads/all_downloads/654"
+        )
+        repository.addDownloadEntry(entry)
+
+        // Instantiate brand new repository simulating fresh process start
+        val freshRepo = SettingsRepository(context)
+        val restored = freshRepo.getDownloadHistory()
+        assertEquals(1, restored.size)
+        assertEquals("mp3-restore-1", restored[0].id)
+        assertEquals(654L, restored[0].downloadId)
+        assertEquals(DownloadStatus.COMPLETED, restored[0].status)
+        assertEquals(8_200_000L, restored[0].downloadedBytes)
+        assertEquals(8_200_000L, restored[0].totalBytes)
+        assertEquals("content://downloads/all_downloads/654", restored[0].localUri)
+    }
+
+    @Test
     fun `direct audio URLs are correctly identified`() {
         val mp3Url = "https://server.org/files/audio.mp3?download=1"
         val cleanMp3 = mp3Url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)

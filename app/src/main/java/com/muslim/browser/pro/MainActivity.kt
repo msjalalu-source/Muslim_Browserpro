@@ -12,8 +12,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.ViewGroup
+import android.net.http.SslError
 import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
+import android.webkit.SslErrorHandler
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -53,12 +55,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -79,16 +85,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.DownloadEntry
 import com.muslim.browser.pro.browser.DownloadPolicy
 import com.muslim.browser.pro.browser.DownloadStatus
 import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
+import com.muslim.browser.pro.browser.SslSecurityPolicy
 import com.muslim.browser.pro.browser.ui.BlockedScreen
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
@@ -99,6 +108,7 @@ import com.muslim.browser.pro.browser.ui.HistoryScreen
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
+import java.util.Collections
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -106,6 +116,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: BrowserViewModel by viewModels()
     private var webViewInstance: WebView? = null
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private val pendingSslHandlers = Collections.synchronizedMap(mutableMapOf<String, MutableList<SslErrorHandler>>())
 
     private val fileChooserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -388,12 +399,14 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
+                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     viewModel.onPageCommitVisible()
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     url?.let {
@@ -412,6 +425,7 @@ class MainActivity : ComponentActivity() {
                     error: WebResourceError?
                 ) {
                     super.onReceivedError(view, request, error)
+                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.e("DIAGNOSTIC", "onReceivedError: URL=${request?.url}, errorCode=${error?.errorCode}, description=${error?.description}, isMainFrame=${request?.isForMainFrame}")
                     if (request?.isForMainFrame == true) {
                         viewModel.onPageCommitVisible()
@@ -424,9 +438,100 @@ class MainActivity : ComponentActivity() {
                     errorResponse: WebResourceResponse?
                 ) {
                     super.onReceivedHttpError(view, request, errorResponse)
+                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.e("DIAGNOSTIC", "onReceivedHttpError: URL=${request?.url}, statusCode=${errorResponse?.statusCode}, reason=${errorResponse?.reasonPhrase}")
                     if (request?.isForMainFrame == true) {
                         viewModel.onPageCommitVisible()
+                    }
+                }
+
+                override fun onReceivedSslError(
+                    view: WebView?,
+                    handler: SslErrorHandler?,
+                    error: SslError?
+                ) {
+                    if (handler == null || error == null) {
+                        handler?.cancel()
+                        return
+                    }
+
+                    val currentHost = view?.url?.let { SslSecurityPolicy.extractHostFromUrl(it) }
+                    val prelimDecision = SslSecurityPolicy.preliminaryCheck(error, currentHost)
+
+                    when (prelimDecision) {
+                        is SslSecurityPolicy.Decision.Reject -> {
+                            android.util.Log.e("SSL", "Preliminary reject: ${prelimDecision.reason} for URL=${error.url}")
+                            handler.cancel()
+                            viewModel.showToast("Connection blocked: Certificate untrusted (${prelimDecision.reason})")
+                            viewModel.onPageCommitVisible()
+                            return
+                        }
+                        is SslSecurityPolicy.Decision.ProceedSessionApproved -> {
+                            android.util.Log.d("SSL", "Proceeding with session-approved host for URL=${error.url}")
+                            handler.proceed()
+                            return
+                        }
+                        else -> {
+                            // Proceed to asynchronous cryptographic AIA validation
+                        }
+                    }
+
+                    val host = (currentHost ?: SslSecurityPolicy.extractHostFromUrl(error.url ?: ""))?.let {
+                        SslSecurityPolicy.normalizeHost(it)
+                    } ?: ""
+
+                    if (host.isBlank()) {
+                        handler.cancel()
+                        viewModel.onPageCommitVisible()
+                        return
+                    }
+
+                    // Synchronize on pendingSslHandlers to prevent duplicate parallel AIA fetches for the same host
+                    val isFirstRequest = synchronized(pendingSslHandlers) {
+                        val existing = pendingSslHandlers[host]
+                        if (existing != null) {
+                            existing.add(handler)
+                            false
+                        } else {
+                            pendingSslHandlers[host] = mutableListOf(handler)
+                            true
+                        }
+                    }
+
+                    if (!isFirstRequest) {
+                        return
+                    }
+
+                    lifecycleScope.launch {
+                        val decision = withContext(Dispatchers.IO) {
+                            SslSecurityPolicy.validateIncompleteChain(error, host)
+                        }
+
+                        when (decision) {
+                            is SslSecurityPolicy.Decision.PromptUser -> {
+                                android.util.Log.w("SSL", "AIA validated for host: ${decision.host}. Showing user warning.")
+                                viewModel.showSslWarning(decision.host, decision.url, decision.certDetails)
+                            }
+                            is SslSecurityPolicy.Decision.Reject -> {
+                                android.util.Log.e("SSL", "AIA validation rejected: ${decision.reason} for host: $host")
+                                val handlers = synchronized(pendingSslHandlers) {
+                                    pendingSslHandlers.remove(host) ?: emptyList()
+                                }
+                                handlers.forEach {
+                                    try { it?.cancel() } catch (_: Exception) {}
+                                }
+                                viewModel.showToast("Connection blocked: Certificate untrusted (${decision.reason})")
+                                viewModel.onPageCommitVisible()
+                            }
+                            is SslSecurityPolicy.Decision.ProceedSessionApproved -> {
+                                val handlers = synchronized(pendingSslHandlers) {
+                                    pendingSslHandlers.remove(host) ?: emptyList()
+                                }
+                                handlers.forEach {
+                                    try { it?.proceed() } catch (_: Exception) {}
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -523,10 +628,49 @@ class MainActivity : ComponentActivity() {
                     webView = webView,
                     onClearAllData = { clearAllData() },
                     onClearCacheAndCookies = { clearCacheAndCookies() },
-                    onToggleDesktopMode = { enabled -> setDesktopMode(enabled) }
+                    onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
+                    onSslProceed = { host -> onSslPromptProceed(host) },
+                    onSslCancel = { host -> onSslPromptCancel(host) }
                 )
             }
         }
+    }
+
+    private fun onSslPromptProceed(host: String) {
+        SslSecurityPolicy.approveHostForSession(host)
+        viewModel.dismissSslWarning()
+        val handlers = synchronized(pendingSslHandlers) {
+            pendingSslHandlers.remove(host) ?: emptyList()
+        }
+        handlers.forEach {
+            try {
+                it?.proceed()
+            } catch (e: Exception) {
+                android.util.Log.e("SSL", "Error executing handler.proceed()", e)
+            }
+        }
+        webViewInstance?.reload()
+    }
+
+    private fun onSslPromptCancel(host: String) {
+        viewModel.dismissSslWarning()
+        val handlers = synchronized(pendingSslHandlers) {
+            pendingSslHandlers.remove(host) ?: emptyList()
+        }
+        handlers.forEach {
+            try {
+                it?.cancel()
+            } catch (e: Exception) {
+                android.util.Log.e("SSL", "Error executing handler.cancel()", e)
+            }
+        }
+        viewModel.onPageCommitVisible()
+        if (webViewInstance?.canGoBack() == true) {
+            webViewInstance?.goBack()
+        } else {
+            viewModel.goHome()
+        }
+        viewModel.showToast("Connection cancelled.")
     }
 
     /**
@@ -605,7 +749,11 @@ class MainActivity : ComponentActivity() {
                 if (!effectiveUserAgent.isNullOrBlank()) {
                     addRequestHeader("User-Agent", effectiveUserAgent)
                 }
-                val cookie = CookieManager.getInstance().getCookie(url)
+                val cookie = try {
+                    CookieManager.getInstance().getCookie(url)
+                } catch (_: Exception) {
+                    null
+                }
                 if (!cookie.isNullOrBlank()) {
                     addRequestHeader("Cookie", cookie)
                 }
@@ -774,10 +922,28 @@ class MainActivity : ComponentActivity() {
     private fun setDesktopMode(enabled: Boolean) {
         viewModel.toggleDesktopMode(enabled)
         val webView = webViewInstance ?: return
-        applyDesktopModeToWebView(webView, enabled, viewModel.uiState.value.currentUrl)
-        if (!viewModel.uiState.value.isHomePage && viewModel.uiState.value.currentUrl.isNotEmpty()) {
-            webView.reload()
+
+        // 1. Authoritative current URL: read directly from the active WebView instance
+        val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
+            ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
+
+        // If on browser home page with no web page open, configure setting for future navigation
+        if (currentUrl == null || viewModel.uiState.value.isHomePage) {
+            applyDesktopModeToWebView(webView, enabled, null)
+            return
         }
+
+        // 2. Apply the desktop User-Agent to the active WebView settings
+        applyDesktopModeToWebView(webView, enabled, currentUrl)
+
+        // 3. Synchronize ViewModel state with the authoritative active URL
+        viewModel.onPageStarted(currentUrl)
+
+        // 4. Temporarily bypass HTTP cache so server re-evaluates the new User-Agent instead of returning 304 Not Modified
+        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+
+        // 5. Reload the exact same current URL
+        webView.reload()
     }
 
     override fun onPause() {
@@ -797,6 +963,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        SslSecurityPolicy.clearSessionApprovals()
+        synchronized(pendingSslHandlers) {
+            pendingSslHandlers.values.forEach { list ->
+                list.forEach { try { it.cancel() } catch (_: Exception) {} }
+            }
+            pendingSslHandlers.clear()
+        }
         progressPollingJob?.cancel()
         progressPollingJob = null
         try {
@@ -821,6 +994,9 @@ class MainActivity : ComponentActivity() {
 
         @Volatile
         var isDarkThemeActive: Boolean = true
+
+        @Volatile
+        var defaultMobileUserAgent: String? = null
 
         /**
          * Checks whether a given URL targets Google account authentication endpoints.
@@ -894,22 +1070,25 @@ class MainActivity : ComponentActivity() {
             url: String? = null
         ) {
             try {
+                if (defaultMobileUserAgent == null) {
+                    defaultMobileUserAgent = try {
+                        WebSettings.getDefaultUserAgent(webView.context)
+                    } catch (_: Exception) {
+                        webView.settings.userAgentString
+                    }
+                }
+
                 val isGoogleAuth = enabled && isGoogleAuthUrl(url)
                 val targetUserAgent = if (enabled && !isGoogleAuth) {
                     DESKTOP_USER_AGENT
                 } else {
-                    null
+                    defaultMobileUserAgent ?: webView.settings.userAgentString
                 }
 
-                if (targetUserAgent == null) {
-                    if (webView.settings.userAgentString == DESKTOP_USER_AGENT) {
-                        webView.settings.userAgentString = null
-                    }
-                } else {
-                    if (webView.settings.userAgentString != targetUserAgent) {
-                        webView.settings.userAgentString = targetUserAgent
-                    }
+                if (webView.settings.userAgentString != targetUserAgent) {
+                    webView.settings.userAgentString = targetUserAgent
                 }
+
                 webView.settings.useWideViewPort = true
                 webView.settings.loadWithOverviewMode = true
             } catch (_: Exception) {}
@@ -1111,7 +1290,9 @@ fun BrowserApp(
     webView: WebView,
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
-    onToggleDesktopMode: (Boolean) -> Unit
+    onToggleDesktopMode: (Boolean) -> Unit,
+    onSslProceed: (String) -> Unit = {},
+    onSslCancel: (String) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1130,6 +1311,7 @@ fun BrowserApp(
     // Handle Hardware/Gesture Back
     BackHandler(enabled = true) {
         when {
+            uiState.sslWarningState != null -> onSslCancel(uiState.sslWarningState!!.host)
             uiState.isDownloadsOpen -> viewModel.closeDownloads()
             uiState.isHistoryOpen -> viewModel.closeHistory()
             uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
@@ -1362,6 +1544,71 @@ fun BrowserApp(
                     onClearAll = { viewModel.clearAllDownloadHistory() },
                     onDismiss = { viewModel.closeDownloads() },
                     modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // SSL Certificate Warning Dialog
+            uiState.sslWarningState?.let { sslState ->
+                AlertDialog(
+                    onDismissRequest = { onSslCancel(sslState.host) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    },
+                    title = {
+                        Text(
+                            text = "Security Certificate Warning",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "The security certificate for \"${sslState.host}\" cannot be fully verified because the server did not provide its intermediate certificate chain.",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Host: ${sslState.host}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (sslState.details.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = sslState.details,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Do you want to proceed to this website anyway?",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { onSslProceed(sslState.host) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Proceed")
+                        }
+                    },
+                    dismissButton = {
+                        OutlinedButton(
+                            onClick = { onSslCancel(sslState.host) }
+                        ) {
+                            Text("Cancel / Go Back")
+                        }
+                    }
                 )
             }
         }

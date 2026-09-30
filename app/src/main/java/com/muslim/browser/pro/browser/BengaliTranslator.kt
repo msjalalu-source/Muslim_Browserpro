@@ -22,10 +22,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Ultra-lightweight Online Bengali Live Translator for Muslim Browser Pro.
- * Supports three distinct, independent translation engines:
+ * Supports two distinct, independent translation engines:
  * 1. LibreTranslate (Default)
- * 2. Lingva Translate
- * 3. MyMemory Translate
+ * 2. MyMemory Translate
  *
  * Strict Architectural Rule:
  * Only the currently selected engine performs network requests.
@@ -39,9 +38,6 @@ object BengaliTranslator {
 
     // Engine endpoint configurations (easily configurable constants)
     const val LIBRE_TRANSLATE_URL = "https://translate.disroot.org/translate"
-
-    @Volatile
-    var lingvaBaseUrl: String = "https://lingva.ml"
 
     @Volatile
     var myMemoryBaseUrl: String = "https://api.mymemory.translated.net"
@@ -281,7 +277,7 @@ object BengaliTranslator {
             return@withContext Result.success(mapFinalResults())
         }
 
-        // For Lingva and MyMemory, translate with controlled concurrency (MAX_CONCURRENT_REQUESTS = 3)
+        // For MyMemory, translate with controlled concurrency (MAX_CONCURRENT_REQUESTS = 3)
         val semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
         var successCount = 0
         var lastError: Throwable? = null
@@ -334,7 +330,6 @@ object BengaliTranslator {
 
         val result = when (engine) {
             TranslationEngine.LIBRE_TRANSLATE -> translateWithLibreTranslate(trimmed)
-            TranslationEngine.LINGVA -> translateWithLingva(trimmed)
             TranslationEngine.MYMEMORY -> translateWithMyMemory(trimmed)
         }
 
@@ -517,55 +512,7 @@ object BengaliTranslator {
     }
 
     /**
-     * Provider 2: Lingva Translate
-     * Direct GET request to REST API v1 endpoint (/api/v1/auto/bn/:query).
-     * No fallback to other engines.
-     */
-    internal fun translateWithLingva(text: String): Result<String> {
-        var connection: HttpURLConnection? = null
-        try {
-            val encodedQuery = URLEncoder.encode(text, "UTF-8")
-            val endpointUrl = "$lingvaBaseUrl/api/v1/auto/$TARGET_LANGUAGE/$encodedQuery"
-            val url = URL(endpointUrl)
-
-            connection = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
-                connectTimeout = CONNECT_TIMEOUT_MS
-                readTimeout = READ_TIMEOUT_MS
-                doInput = true
-            }
-
-            val statusCode = connection.responseCode
-            if (statusCode == HttpURLConnection.HTTP_OK) {
-                val responseStr = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                if (!responseStr.trimStart().startsWith("{")) {
-                    return Result.failure(IllegalStateException("Non-JSON response from Lingva"))
-                }
-                val jsonObj = JSONObject(responseStr)
-                val translated = jsonObj.optString("translation", "").trim()
-                if (translated.isNotEmpty()) {
-                    return Result.success(translated)
-                } else {
-                    return Result.failure(IllegalStateException("Empty translation received from Lingva"))
-                }
-            } else if (statusCode == 429) {
-                TranslationStats.http429Count++
-                return Result.failure(IllegalStateException("Lingva Translate rate limit (HTTP 429)"))
-            } else {
-                val errorBody = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                return Result.failure(IllegalStateException("Lingva Translate HTTP $statusCode: $errorBody"))
-            }
-        } catch (e: Exception) {
-            return Result.failure(e)
-        } finally {
-            connection?.disconnect()
-        }
-    }
-
-    /**
-     * Provider 3: MyMemory Translate
+     * Provider 2: MyMemory Translate
      * Direct GET request (/get?q=...&langpair=autodetect|bn).
      * Unescapes HTML entities and checks quota errors.
      * No fallback to other engines.

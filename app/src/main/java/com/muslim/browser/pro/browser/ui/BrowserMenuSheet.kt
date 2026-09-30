@@ -458,38 +458,7 @@ fun BrowserMenuSheet(
                             )
                         }
 
-                        // 2. Lingva Translate Switch
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 1.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Lingva Translate",
-                                color = colors.textPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.LINGVA) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Switch(
-                                checked = uiState.selectedTranslationEngine == TranslationEngine.LINGVA,
-                                onCheckedChange = { checked ->
-                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.LINGVA) {
-                                        onSelectTranslationEngine(TranslationEngine.LINGVA)
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = colors.buttonText,
-                                    checkedTrackColor = colors.accent,
-                                    uncheckedThumbColor = colors.textSecondary,
-                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier.testTag("switch_engine_lingva")
-                            )
-                        }
-
-                        // 3. MyMemory Translate Switch
+                        // 2. MyMemory Translate Switch
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

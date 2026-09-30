@@ -45,6 +45,12 @@ data class BrowserTab(
     val bundle: android.os.Bundle? = null
 )
 
+data class SslWarningState(
+    val host: String,
+    val url: String,
+    val details: String
+)
+
 data class BrowserUiState(
     val tabs: List<BrowserTab> = listOf(BrowserTab(id = "default_tab")),
     val currentTabId: String = "default_tab",
@@ -73,7 +79,8 @@ data class BrowserUiState(
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.WHITE,
-    val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE
+    val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
+    val sslWarningState: SslWarningState? = null
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -831,5 +838,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearToast() {
         _uiState.update { it.copy(toastMessage = null) }
+    }
+
+    fun showSslWarning(host: String, url: String, details: String) {
+        _uiState.update {
+            it.copy(sslWarningState = SslWarningState(host = host, url = url, details = details))
+        }
+    }
+
+    fun dismissSslWarning() {
+        _uiState.update { it.copy(sslWarningState = null) }
     }
 }

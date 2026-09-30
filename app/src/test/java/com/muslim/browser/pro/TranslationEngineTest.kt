@@ -42,41 +42,60 @@ class TranslationEngineTest {
     }
 
     @Test
+    fun `verify Lingva is completely removed from available translation engines`() {
+        val availableNames = TranslationEngine.values().map { it.name }
+        assertFalse("LINGVA must not exist in TranslationEngine enum", availableNames.contains("LINGVA"))
+        assertEquals("Exactly two engines must remain", 2, TranslationEngine.values().size)
+        assertTrue("LibreTranslate must remain", availableNames.contains("LIBRE_TRANSLATE"))
+        assertTrue("MyMemory must remain", availableNames.contains("MYMEMORY"))
+    }
+
+    @Test
     fun `verify default translation engine is LibreTranslate`() {
         assertEquals(TranslationEngine.LIBRE_TRANSLATE, repository.selectedTranslationEngine)
     }
 
     @Test
-    fun `verify translation engine persistence across app restart`() {
-        // Initially default
-        assertEquals(TranslationEngine.LIBRE_TRANSLATE, repository.selectedTranslationEngine)
+    fun `verify legacy Lingva preference safely migrates to LibreTranslate without crashing`() {
+        // Simulate a device that had LINGVA saved in SharedPreferences in a prior app version
+        val prefs = app.getSharedPreferences("focus_shield_prefs", Application.MODE_PRIVATE)
+        prefs.edit().putString("key_selected_translation_engine", "LINGVA").commit()
 
-        // Switch to Lingva
-        repository.selectedTranslationEngine = TranslationEngine.LINGVA
-        assertEquals(TranslationEngine.LINGVA, repository.selectedTranslationEngine)
+        val freshRepo = SettingsRepository(app)
+        // Must not throw IllegalArgumentException and must return LIBRE_TRANSLATE
+        val loadedEngine = freshRepo.selectedTranslationEngine
+        assertEquals(TranslationEngine.LIBRE_TRANSLATE, loadedEngine)
 
-        // Simulate app restart with a fresh repository instance
-        val restartedRepo = SettingsRepository(app)
-        assertEquals(TranslationEngine.LINGVA, restartedRepo.selectedTranslationEngine)
-
-        // Switch to MyMemory
-        restartedRepo.selectedTranslationEngine = TranslationEngine.MYMEMORY
-        assertEquals(TranslationEngine.MYMEMORY, restartedRepo.selectedTranslationEngine)
-
-        // Simulate second restart
-        val secondRestartedRepo = SettingsRepository(app)
-        assertEquals(TranslationEngine.MYMEMORY, secondRestartedRepo.selectedTranslationEngine)
+        // Verify the preference was migrated to prevent repeated exceptions
+        assertEquals("LIBRE_TRANSLATE", prefs.getString("key_selected_translation_engine", null))
     }
 
     @Test
-    fun `verify ViewModel single selection behavior for three translation engines`() {
+    fun `verify translation engine persistence across app restart for remaining engines`() {
+        // Initially default
+        assertEquals(TranslationEngine.LIBRE_TRANSLATE, repository.selectedTranslationEngine)
+
+        // Switch to MyMemory
+        repository.selectedTranslationEngine = TranslationEngine.MYMEMORY
+        assertEquals(TranslationEngine.MYMEMORY, repository.selectedTranslationEngine)
+
+        // Simulate app restart with a fresh repository instance
+        val restartedRepo = SettingsRepository(app)
+        assertEquals(TranslationEngine.MYMEMORY, restartedRepo.selectedTranslationEngine)
+
+        // Switch back to LibreTranslate
+        restartedRepo.selectedTranslationEngine = TranslationEngine.LIBRE_TRANSLATE
+        assertEquals(TranslationEngine.LIBRE_TRANSLATE, restartedRepo.selectedTranslationEngine)
+
+        // Simulate second restart
+        val secondRestartedRepo = SettingsRepository(app)
+        assertEquals(TranslationEngine.LIBRE_TRANSLATE, secondRestartedRepo.selectedTranslationEngine)
+    }
+
+    @Test
+    fun `verify ViewModel single selection behavior for remaining translation engines`() {
         val viewModel = BrowserViewModel(app)
         assertEquals(TranslationEngine.LIBRE_TRANSLATE, viewModel.uiState.value.selectedTranslationEngine)
-
-        // Select Lingva -> only Lingva active
-        viewModel.selectTranslationEngine(TranslationEngine.LINGVA)
-        assertEquals(TranslationEngine.LINGVA, viewModel.uiState.value.selectedTranslationEngine)
-        assertEquals(TranslationEngine.LINGVA, repository.selectedTranslationEngine)
 
         // Select MyMemory -> only MyMemory active
         viewModel.selectTranslationEngine(TranslationEngine.MYMEMORY)
@@ -93,15 +112,10 @@ class TranslationEngineTest {
     fun `verify isolated cache keys per translation engine`() {
         val text = "Welcome to the site"
         val libreKey = BengaliTranslator.cacheKey(TranslationEngine.LIBRE_TRANSLATE, text)
-        val lingvaKey = BengaliTranslator.cacheKey(TranslationEngine.LINGVA, text)
         val myMemoryKey = BengaliTranslator.cacheKey(TranslationEngine.MYMEMORY, text)
 
-        assertNotEquals(libreKey, lingvaKey)
-        assertNotEquals(lingvaKey, myMemoryKey)
         assertNotEquals(libreKey, myMemoryKey)
-
         assertTrue(libreKey.startsWith("LIBRE_TRANSLATE:auto:bn:"))
-        assertTrue(lingvaKey.startsWith("LINGVA:auto:bn:"))
         assertTrue(myMemoryKey.startsWith("MYMEMORY:auto:bn:"))
     }
 
@@ -121,12 +135,12 @@ class TranslationEngineTest {
         assertTrue(cachedLibre.isSuccess)
         assertEquals("বাংলা:Hello", cachedLibre.getOrThrow())
 
-        // But Lingva cache for "Hello" should NOT exist (cache isolation)
-        // With test override null and dummy endpoint, Lingva should not hit Libre's cache
-        BengaliTranslator.lingvaBaseUrl = "http://127.0.0.1:9999"
-        val lingvaRes = BengaliTranslator.translate("Hello", TranslationEngine.LINGVA)
-        // Lingva failed or did not return Libre's cached value
-        assertNotEquals("বাংলা:Hello", lingvaRes.getOrNull())
+        // But MyMemory cache for "Hello" should NOT exist (cache isolation)
+        // With test override null and dummy endpoint, MyMemory should not hit Libre's cache
+        BengaliTranslator.myMemoryBaseUrl = "http://127.0.0.1:9999"
+        val myMemoryRes = BengaliTranslator.translate("Hello", TranslationEngine.MYMEMORY)
+        // MyMemory failed or did not return Libre's cached value
+        assertNotEquals("বাংলা:Hello", myMemoryRes.getOrNull())
     }
 
     @Test
@@ -145,11 +159,11 @@ class TranslationEngineTest {
     @Test
     fun `verify no fallback across providers on failure`() = runBlocking {
         BengaliTranslator.clearCache()
-        BengaliTranslator.lingvaBaseUrl = "http://127.0.0.1:9999"
+        BengaliTranslator.myMemoryBaseUrl = "http://127.0.0.1:9999"
         BengaliTranslator.testTranslatorOverride = null
 
-        // Calling Lingva on invalid URL must fail and NOT fallback to LibreTranslate or MyMemory
-        val result = BengaliTranslator.translate("Test single failure", TranslationEngine.LINGVA)
+        // Calling MyMemory on invalid URL must fail and NOT fallback to LibreTranslate
+        val result = BengaliTranslator.translate("Test single failure", TranslationEngine.MYMEMORY)
         // Should be failure or original text returned safely without crashing
         assertTrue(result.isSuccess || result.isFailure)
         // Verify LibreTranslate was NOT called
