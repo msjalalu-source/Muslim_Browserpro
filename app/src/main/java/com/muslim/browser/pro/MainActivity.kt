@@ -400,6 +400,7 @@ class MainActivity : ComponentActivity() {
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                    applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     viewModel.onPageCommitVisible()
                 }
@@ -408,6 +409,7 @@ class MainActivity : ComponentActivity() {
                     super.onPageFinished(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
+                    applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     url?.let {
                         viewModel.onPageFinished(
