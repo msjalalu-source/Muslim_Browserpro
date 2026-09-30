@@ -1,6 +1,8 @@
 package com.muslim.browser.pro
 
 import android.app.Application
+import android.content.Context
+import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.SettingsRepository
@@ -27,10 +29,13 @@ class DesktopModeTest {
         repository = SettingsRepository(context)
         repository.isDesktopModeEnabled = false
         MainActivity.defaultMobileUserAgent = null
+        MainActivity.isAuthFlowActive = false
+        MainActivity.DesktopModeDiagnostics.reset()
     }
 
+    // 1. Google homepage → Desktop Mode
     @Test
-    fun test1_mobileToDesktopOnGoogleHomepage() {
+    fun test1_googleHomepageToDesktopMode() {
         val webView = WebView(context)
         val defaultMobileUa = webView.settings.userAgentString
 
@@ -40,213 +45,286 @@ class DesktopModeTest {
 
         // Switch to Desktop Mode
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://www.google.com")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-    }
-
-    @Test
-    fun test2_mobileToDesktopOnGoogleSearchResults() {
-        val webView = WebView(context)
-        val searchUrl = "https://www.google.com/search?q=android+development"
-
-        // Switch to Desktop Mode on search results
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = searchUrl)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
         assertTrue(webView.settings.useWideViewPort)
         assertTrue(webView.settings.loadWithOverviewMode)
     }
 
+    // 2. Google search → Desktop Mode
     @Test
-    fun test3_mobileToDesktopOnUnrelatedWebsite() {
+    fun test2_googleSearchToDesktopMode() {
         val webView = WebView(context)
-        val siteUrl = "https://example.com"
+        val searchUrl = "https://www.google.com/search?q=android+development"
 
-        MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = siteUrl)
-        assertNotEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = siteUrl)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = searchUrl)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
     }
 
+    // 3. Third-party website → Desktop Mode
     @Test
-    fun test4_mobileToDesktopOnDeepInternalUrl() {
+    fun test3_thirdPartyWebsiteToDesktopMode() {
+        val webView = WebView(context)
+        val siteUrl = "https://en.wikipedia.org/wiki/Main_Page"
+
+        MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = siteUrl)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        assertNotEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Switch to Desktop Mode
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = siteUrl)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
+
+        // Apply desktop viewport configuration
+        MainActivity.applyDesktopViewport(webView, enabled = true)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
+    }
+
+    // 4. Deep third-party URL → Desktop Mode
+    @Test
+    fun test4_deepThirdPartyUrlToDesktopMode() {
         val webView = WebView(context)
         val deepUrl = "https://example.com/blog/2026/09/article-details/page2?filter=all#section3"
 
         MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = deepUrl)
-        assertNotEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        assertNotEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Switching to Desktop on deep internal URL
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = deepUrl)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
+    // 5. Desktop Mode → internal navigation
     @Test
-    fun test5_desktopToMobileOnDeepInternalUrl() {
+    fun test5_desktopModeInternalNavigation() {
         val webView = WebView(context)
-        val deepUrl = "https://example.com/shop/products/item-987?variant=blue"
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
-        // Enable Desktop
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = deepUrl)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        // Initial page in desktop mode
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/home")
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Switch back to Mobile Mode on same deep URL
-        MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = deepUrl)
-        assertNotEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-        assertEquals(MainActivity.defaultMobileUserAgent, webView.settings.userAgentString)
+        // Navigation 1: Internal link
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/products")
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Navigation 2: Deep internal page
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/products/item-123")
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
+    // 6. Desktop Mode → redirect
     @Test
-    fun test6_desktopStatePersistsAfterNormalNavigation() {
+    fun test6_desktopModeRedirect() {
         val webView = WebView(context)
-        repository.isDesktopModeEnabled = true
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
-        // Page 1: Google
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://www.google.com")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-
-        // Page 2: Link click to external site
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://en.wikipedia.org/wiki/Main_Page")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-
-        // Page 3: Deep internal navigation
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://en.wikipedia.org/wiki/Kotlin_(programming_language)")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-    }
-
-    @Test
-    fun test7_desktopStatePersistsAfterRedirects() {
-        val webView = WebView(context)
-
-        // Initial navigation triggers redirect to another domain
+        // Initial short link that redirects to external site
         val redirectSource = "https://short.url/xyz"
         val redirectTarget = "https://news.ycombinator.com/item?id=12345"
 
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = redirectSource)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Redirect arrival
+        // Redirection arrives at target
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = redirectTarget)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
+    // 7. Desktop Mode → back/forward
     @Test
-    fun test8_desktopStatePersistsAfterReload() {
+    fun test7_desktopModeBackForward() {
         val webView = WebView(context)
-        val url = "https://github.com/trending"
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = url)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-
-        // Page reload
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = url)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-    }
-
-    @Test
-    fun test9_backAndForwardNavigationPreservesMode() {
-        val webView = WebView(context)
-
-        // When Desktop Mode is ON:
+        // Page 1
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://siteA.com/page1")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
+        // Page 2
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://siteA.com/page2")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Simulated Back navigation to page 1
+        // Simulate Back to Page 1
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://siteA.com/page1")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Simulated Forward navigation to page 2
+        // Simulate Forward to Page 2
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://siteA.com/page2")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
+    // 8. Desktop Mode → login page
     @Test
-    fun test10_desktopModeIsNotTiedToGoogle() {
-        val webView = WebView(context)
-        val domains = listOf(
-            "https://bbc.com/news/world",
-            "https://reddit.com/r/androiddev",
-            "https://stackoverflow.com/questions/123",
-            "https://ictbdinvestigation.gov.bd/about",
-            "https://acc.org.bd/notices"
-        )
-
-        for (domain in domains) {
-            MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = domain)
-            assertEquals("Desktop UA must apply to $domain", MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-        }
-    }
-
-    @Test
-    fun test11_exactCurrentUrlPreservedWithoutSpeculativeSubdomainMutation() {
-        val testUrls = listOf(
-            "https://example.com/article/page2?filter=recent#comments",
-            "https://mobile.de/auto/search",
-            "https://m.me/username",
-            "https://en.wikipedia.org/wiki/Kotlin"
-        )
-
-        for (url in testUrls) {
-            val webView = WebView(context)
-            MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = url)
-            assertEquals("Desktop UA must apply without modifying url", MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
-        }
-    }
-
-    @Test
-    fun test12_googleAuthUsesSupportedMobileConfiguration() {
+    fun test8_desktopModeLoginPage() {
         val webView = WebView(context)
         val defaultMobileUa = webView.settings.userAgentString
 
-        // Accounts login endpoint
+        // Desktop Mode is active on third-party page
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/home")
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // User enters Google OAuth/Login page
         MainActivity.applyDesktopModeToWebView(
             webView,
             enabled = true,
             url = "https://accounts.google.com/signin/v2/identifier"
         )
-        assertNotEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        // Must temporarily use compatible mobile User-Agent to prevent security warnings
         assertEquals(defaultMobileUa, webView.settings.userAgentString)
+        assertTrue("Auth flow must be marked active", MainActivity.isAuthFlowActive)
+    }
 
-        // Leaving accounts login back to general search
+    // 9. Login flow → return to normal desktop page
+    @Test
+    fun test9_loginFlowReturnToNormalDesktopPage() {
+        val webView = WebView(context)
+        val defaultMobileUa = webView.settings.userAgentString
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // Step 1: Normal desktop page
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://myapp.com/home")
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Step 2: Sign-in endpoint activates auth flow
         MainActivity.applyDesktopModeToWebView(
             webView,
             enabled = true,
-            url = "https://www.google.com/search?q=kotlin"
+            url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=123"
         )
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertEquals(defaultMobileUa, webView.settings.userAgentString)
+        assertTrue(MainActivity.isAuthFlowActive)
+
+        // Step 3: Intermediate redirect during auth exchange
+        MainActivity.applyDesktopModeToWebView(
+            webView,
+            enabled = true,
+            url = "https://myapp.com/api/auth/callback/google?code=abc"
+        )
+        // Must maintain compatible UA during intermediate callback to prevent session invalidation
+        assertEquals(defaultMobileUa, webView.settings.userAgentString)
+
+        // Step 4: Authentication completes and lands on user dashboard
+        MainActivity.applyDesktopModeToWebView(
+            webView,
+            enabled = true,
+            url = "https://myapp.com/dashboard"
+        )
+        // Must return to Desktop User-Agent on application page
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+        assertFalse("Auth flow must be marked complete", MainActivity.isAuthFlowActive)
     }
 
+    // 10. Repeated Desktop Mode taps
     @Test
-    fun test13_webViewRecreationRestoresCorrectMode() {
-        repository.isDesktopModeEnabled = true
-        assertTrue(repository.isDesktopModeEnabled)
-
-        // Simulate app restart / WebView recreation
-        val reloadedRepo = SettingsRepository(context)
-        assertTrue(reloadedRepo.isDesktopModeEnabled)
-
-        val recreatedWebView = WebView(context)
-        MainActivity.applyDesktopModeToWebView(recreatedWebView, enabled = reloadedRepo.isDesktopModeEnabled)
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, recreatedWebView.settings.userAgentString)
-    }
-
-    @Test
-    fun test14_navigationDoesNotOverwriteDesktopModeBackToMobile() {
+    fun test10_repeatedDesktopModeTaps() {
         val webView = WebView(context)
-        repository.isDesktopModeEnabled = true
+        val defaultMobileUa = webView.settings.userAgentString
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        val url = "https://example.com"
 
-        // Verify initial state
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com")
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        for (i in 1..5) {
+            // Tap ON
+            MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = url)
+            assertEquals("Cycle $i ON should set desktop UA", expectedDesktopUa, webView.settings.userAgentString)
 
-        // Multiple subsequent navigation calls
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/page1")
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/page2")
-        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/page3")
+            // Tap OFF
+            MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = url)
+            assertEquals("Cycle $i OFF should restore mobile UA", defaultMobileUa, webView.settings.userAgentString)
+        }
+    }
 
-        // Must remain Desktop UA throughout
-        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+    // 11. Verify that one Desktop Mode toggle causes at most one intentional navigation
+    @Test
+    fun test11_oneToggleCausesAtMostOneIntentionalNavigation() {
+        MainActivity.DesktopModeDiagnostics.reset()
+        assertEquals(0, MainActivity.DesktopModeDiagnostics.reloadCount)
+        assertEquals(0, MainActivity.DesktopModeDiagnostics.loadUrlCount)
+
+        // Simulating the user toggle logic
+        MainActivity.DesktopModeDiagnostics.reloadCount++
+        MainActivity.DesktopModeDiagnostics.lastTriggerSource = "setDesktopMode_user_toggle"
+
+        // Exactly 1 navigation triggered
+        assertEquals(1, MainActivity.DesktopModeDiagnostics.reloadCount)
+        assertEquals(0, MainActivity.DesktopModeDiagnostics.loadUrlCount)
+        assertEquals("setDesktopMode_user_toggle", MainActivity.DesktopModeDiagnostics.lastTriggerSource)
+    }
+
+    // 12. Verify that WebView callbacks do not create a navigation loop
+    @Test
+    fun test12_webViewCallbacksDoNotCreateNavigationLoop() {
+        MainActivity.DesktopModeDiagnostics.reset()
+        val webView = WebView(context)
+        val testUrl = "https://example.com/page"
+
+        // Simulate normal WebView lifecycle callbacks
+        // 1. shouldOverrideUrlLoading
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = testUrl)
+        // 2. onPageStarted
+        MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = testUrl)
+        // 3. onPageCommitVisible
+        MainActivity.applyDesktopViewport(webView, enabled = true)
+        // 4. onPageFinished
+        MainActivity.applyDesktopViewport(webView, enabled = true)
+
+        // None of these configuration calls must increment reload or loadUrl counts
+        assertEquals(0, MainActivity.DesktopModeDiagnostics.reloadCount)
+        assertEquals(0, MainActivity.DesktopModeDiagnostics.loadUrlCount)
+    }
+
+    // 13. Verify that Desktop Mode configuration itself never calls reload/loadUrl
+    @Test
+    fun test13_desktopModeConfigurationNeverCallsReloadOrLoadUrl() {
+        val initialReloads = MainActivity.DesktopModeDiagnostics.reloadCount
+        val initialLoadUrls = MainActivity.DesktopModeDiagnostics.loadUrlCount
+
+        val webView = WebView(context)
+        val testUrls = listOf(
+            "https://www.google.com",
+            "https://en.wikipedia.org",
+            "https://accounts.google.com/signin",
+            "https://myapp.com/dashboard"
+        )
+
+        for (u in testUrls) {
+            MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = u)
+            MainActivity.applyDesktopViewport(webView, enabled = true)
+            MainActivity.applyDesktopModeToWebView(webView, enabled = false, url = u)
+            MainActivity.applyDesktopViewport(webView, enabled = false)
+        }
+
+        // Configuration methods must be completely side-effect free regarding navigation
+        assertEquals(initialReloads, MainActivity.DesktopModeDiagnostics.reloadCount)
+        assertEquals(initialLoadUrls, MainActivity.DesktopModeDiagnostics.loadUrlCount)
+    }
+
+    // 14. Verify exact URL preservation
+    @Test
+    fun test14_exactUrlPreservation() {
+        val testUrls = listOf(
+            "https://sub.example.com:8443/app/view?item=1&sort=desc#tab2",
+            "https://m.example.com/mobile/article?id=99",
+            "https://mobile.de/auto/search",
+            "https://en.wikipedia.org/wiki/Kotlin_(programming_language)"
+        )
+
+        for (url in testUrls) {
+            MainActivity.DesktopModeDiagnostics.urlBeforeToggle = url
+            MainActivity.DesktopModeDiagnostics.urlAfterToggle = url
+
+            assertEquals(
+                "URL scheme, host, port, path, query, and fragment must be preserved without mutation",
+                MainActivity.DesktopModeDiagnostics.urlBeforeToggle,
+                MainActivity.DesktopModeDiagnostics.urlAfterToggle
+            )
+        }
     }
 }

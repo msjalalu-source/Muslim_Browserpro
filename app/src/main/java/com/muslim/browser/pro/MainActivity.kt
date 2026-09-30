@@ -102,6 +102,7 @@ import com.muslim.browser.pro.browser.ui.BlockedScreen
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
+import com.muslim.browser.pro.browser.ui.DiagnosticScreen
 import com.muslim.browser.pro.browser.ui.DownloadHistoryScreen
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.HistoryScreen
@@ -345,25 +346,32 @@ class MainActivity : ComponentActivity() {
                 saveFormData = false
             }
             applyDesktopModeToWebView(this, viewModel.uiState.value.isDesktopModeEnabled)
+            DesktopModeDiagnostics.webViewRecreationCount++
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     val url = request?.url?.toString() ?: return false
                     android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading: URL=$url")
+                    DesktopModeDiagnostics.redirectChain.add(url)
                     if (view != null) {
                         applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, url)
                     }
-                    return handleUrlNavigation(view, url)
+                    val handled = handleUrlNavigation(view, url)
+                    DesktopModeDiagnostics.lastShouldOverrideResult = handled
+                    return handled
                 }
 
                 @Deprecated("Deprecated in Java", ReplaceWith("shouldOverrideUrlLoading(view, request)"))
                 override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                     if (url == null) return false
                     android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading(String): URL=$url")
+                    DesktopModeDiagnostics.redirectChain.add(url)
                     if (view != null) {
                         applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, url)
                     }
-                    return handleUrlNavigation(view, url)
+                    val handled = handleUrlNavigation(view, url)
+                    DesktopModeDiagnostics.lastShouldOverrideResult = handled
+                    return handled
                 }
 
                 override fun shouldInterceptRequest(
@@ -400,6 +408,7 @@ class MainActivity : ComponentActivity() {
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                    DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_DEFAULT
                     applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
                     applyWebPageDarkTheme(view, isDarkThemeActive)
                     viewModel.onPageCommitVisible()
@@ -408,6 +417,7 @@ class MainActivity : ComponentActivity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                    DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
                     applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
                     applyWebPageDarkTheme(view, isDarkThemeActive)
@@ -922,6 +932,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setDesktopMode(enabled: Boolean) {
+        DesktopModeDiagnostics.urlBeforeToggle = webViewInstance?.url
+        DesktopModeDiagnostics.userAgentBeforeToggle = webViewInstance?.settings?.userAgentString
+
         viewModel.toggleDesktopMode(enabled)
         val webView = webViewInstance ?: return
 
@@ -932,19 +945,34 @@ class MainActivity : ComponentActivity() {
         // If on browser home page with no web page open, configure setting for future navigation
         if (currentUrl == null || viewModel.uiState.value.isHomePage) {
             applyDesktopModeToWebView(webView, enabled, null)
+            DesktopModeDiagnostics.urlAfterToggle = currentUrl
+            DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
             return
         }
 
-        // 2. Apply the desktop User-Agent to the active WebView settings
+        // 2. Apply the desktop User-Agent to the active WebView settings and adjust viewport
         applyDesktopModeToWebView(webView, enabled, currentUrl)
+        applyDesktopViewport(webView, enabled)
 
         // 3. Synchronize ViewModel state with the authoritative active URL
         viewModel.onPageStarted(currentUrl)
 
-        // 4. Temporarily bypass HTTP cache so server re-evaluates the new User-Agent instead of returning 304 Not Modified
-        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        // 4. Record diagnostics
+        DesktopModeDiagnostics.urlAfterToggle = currentUrl
+        DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
+        DesktopModeDiagnostics.reloadCount++
+        DesktopModeDiagnostics.lastTriggerSource = "setDesktopMode_user_toggle"
 
-        // 5. Reload the exact same current URL
+        android.util.Log.d(
+            "DESKTOP_DIAG",
+            "setDesktopMode toggle: enabled=$enabled, url=$currentUrl, UA=${webView.settings.userAgentString}"
+        )
+
+        // 5. Temporarily bypass HTTP cache so server re-evaluates the new User-Agent instead of returning 304 Not Modified
+        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_NO_CACHE
+
+        // 6. Reload exactly ONE time
         webView.reload()
     }
 
@@ -990,9 +1018,41 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    object DesktopModeDiagnostics {
+        var urlBeforeToggle: String? = null
+        var urlAfterToggle: String? = null
+        var userAgentBeforeToggle: String? = null
+        var userAgentAfterToggle: String? = null
+        var reloadCount: Int = 0
+        var loadUrlCount: Int = 0
+        var lastTriggerSource: String? = null
+        val redirectChain: MutableList<String> = mutableListOf()
+        var lastShouldOverrideResult: Boolean = false
+        var currentDesktopMode: Boolean = false
+        var currentCacheMode: Int = WebSettings.LOAD_DEFAULT
+        var webViewRecreationCount: Int = 0
+        var isAuthFlowActive: Boolean = false
+
+        fun reset() {
+            urlBeforeToggle = null
+            urlAfterToggle = null
+            userAgentBeforeToggle = null
+            userAgentAfterToggle = null
+            reloadCount = 0
+            loadUrlCount = 0
+            lastTriggerSource = null
+            redirectChain.clear()
+            lastShouldOverrideResult = false
+            currentDesktopMode = false
+            currentCacheMode = WebSettings.LOAD_DEFAULT
+            webViewRecreationCount = 0
+            isAuthFlowActive = false
+        }
+    }
+
     companion object {
         const val DESKTOP_USER_AGENT =
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 
         @Volatile
         var isDarkThemeActive: Boolean = true
@@ -1000,49 +1060,67 @@ class MainActivity : ComponentActivity() {
         @Volatile
         var defaultMobileUserAgent: String? = null
 
+        @Volatile
+        var isAuthFlowActive: Boolean = false
+
         /**
-         * Checks whether a given URL targets Google account authentication endpoints.
-         * Used to ensure standards-compliant authentication without user-agent spoofing.
+         * Resolves the desktop User-Agent string, dynamically incorporating the actual Chrome
+         * version installed on the device for optimal compatibility and bot-detection avoidance.
          */
-        fun isGoogleAuthUrl(url: String?): Boolean {
+        fun resolveDesktopUserAgent(context: Context): String {
+            val baseMobile = defaultMobileUserAgent ?: try {
+                WebSettings.getDefaultUserAgent(context)
+            } catch (_: Exception) {
+                null
+            }
+            return if (!baseMobile.isNullOrBlank()) {
+                val chromeVersionRegex = Regex("Chrome/([0-9.]+)")
+                val match = chromeVersionRegex.find(baseMobile)
+                val chromeVer = match?.value ?: "Chrome/134.0.0.0"
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $chromeVer Safari/537.36"
+            } else {
+                DESKTOP_USER_AGENT
+            }
+        }
+
+        /**
+         * Detects whether a URL represents an authentication, login, or OAuth identity provider endpoint.
+         * Used to temporarily supply compatible mobile configuration during authentication exchanges.
+         */
+        fun isAuthenticationEndpoint(url: String?): Boolean {
             if (url.isNullOrBlank()) return false
             return try {
                 val uri = Uri.parse(url)
                 val host = uri.host?.lowercase(Locale.ROOT) ?: return false
                 val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
-                // 1. Dedicated Google auth and account management hosts
+                // 1. Google Account & OAuth hosts
                 if (host == "accounts.google.com" ||
                     host.endsWith(".accounts.google.com") ||
-                    host == "accounts.youtube.com" ||
-                    host == "myaccount.google.com" ||
                     host == "oauth2.googleapis.com"
                 ) {
                     return true
                 }
 
-                // 2. Google / YouTube / Gmail login and authentication endpoints
-                val isGoogleDomain = host == "google.com" || host.endsWith(".google.com") ||
-                        host == "youtube.com" || host.endsWith(".youtube.com") ||
-                        host == "gmail.com" || host.endsWith(".gmail.com")
-
-                if (isGoogleDomain) {
-                    if (path.startsWith("/servicelogin") ||
-                        path.startsWith("/signin") ||
-                        path.startsWith("/signup") ||
-                        path.startsWith("/o/oauth2") ||
-                        path.contains("/signin/") ||
-                        (uri.getQueryParameter("service") != null && path.contains("login"))
-                    ) {
-                        return true
-                    }
+                // 2. Apple ID Auth
+                if (host == "appleid.apple.com") {
+                    return true
                 }
 
-                // 3. Direct Gmail entry points that redirect into Google authentication
-                if (host == "mail.google.com" || host == "gmail.com") {
-                    if (path.isEmpty() || path == "/" || path.contains("signin") || path.contains("login")) {
-                        return true
-                    }
+                // 3. Generic OAuth authorization endpoints
+                if (path.contains("/oauth2/v2/auth") ||
+                    path.contains("/o/oauth2/auth") ||
+                    path.contains("/oauth/authorize") ||
+                    path.contains("/login/oauth/authorize")
+                ) {
+                    return true
+                }
+
+                // 4. Google services sign-in / service login
+                val isGoogle = host == "google.com" || host.endsWith(".google.com")
+                if (isGoogle && (path.startsWith("/servicelogin") || path.startsWith("/signin") ||
+                    (uri.getQueryParameter("service") != null && path.contains("login")))) {
+                    return true
                 }
 
                 false
@@ -1052,19 +1130,13 @@ class MainActivity : ComponentActivity() {
         }
 
         /**
-         * Centralized function to configure Desktop Mode on any WebView instance.
-         * Enforces browser-level Desktop Mode preference across all creations, navigations,
-         * tab restorations, and window transfers.
-         *
-         * When Desktop Mode is ON:
-         * - Applies DESKTOP_USER_AGENT to all standard browsing and search pages.
-         * - Uses standard supported mobile configuration on Google account authentication
-         *   endpoints (accounts.google.com) to comply with Google security policies and prevent
-         *   unsupported browser / insecure app security warnings.
-         * - Sets useWideViewPort = true and loadWithOverviewMode = true.
-         *
-         * When Desktop Mode is OFF:
-         * - Reverts userAgentString to null (system default mobile UA).
+         * Backward-compatible alias for authentication endpoint detection.
+         */
+        fun isGoogleAuthUrl(url: String?): Boolean = isAuthenticationEndpoint(url)
+
+        /**
+         * Pure configuration function to apply Desktop or Mobile User-Agent and viewport settings.
+         * CRITICAL: Must NEVER trigger reload() or loadUrl().
          */
         fun applyDesktopModeToWebView(
             webView: WebView,
@@ -1080,48 +1152,102 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val isGoogleAuth = enabled && isGoogleAuthUrl(url)
-                val targetUserAgent = if (enabled && !isGoogleAuth) {
-                    DESKTOP_USER_AGENT
-                } else {
+                if (enabled && url != null) {
+                    if (isAuthenticationEndpoint(url)) {
+                        isAuthFlowActive = true
+                        DesktopModeDiagnostics.isAuthFlowActive = true
+                        android.util.Log.d("DESKTOP_DIAG", "Auth flow activated for URL: $url")
+                    } else if (isAuthFlowActive) {
+                        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+                        val host = uri?.host?.lowercase(Locale.ROOT) ?: ""
+                        val path = uri?.path?.lowercase(Locale.ROOT) ?: ""
+                        val isIntermediate = path.contains("/callback") ||
+                                path.contains("/redirect") ||
+                                path.contains("/signin") ||
+                                host.contains("accounts.") ||
+                                host.contains("login.")
+                        if (!isIntermediate) {
+                            isAuthFlowActive = false
+                            DesktopModeDiagnostics.isAuthFlowActive = false
+                            android.util.Log.d("DESKTOP_DIAG", "Auth flow completed on URL: $url")
+                        }
+                    }
+                } else if (!enabled) {
+                    isAuthFlowActive = false
+                    DesktopModeDiagnostics.isAuthFlowActive = false
+                }
+
+                val shouldUseMobile = !enabled || isAuthFlowActive
+                val targetUserAgent = if (shouldUseMobile) {
                     defaultMobileUserAgent ?: webView.settings.userAgentString
+                } else {
+                    resolveDesktopUserAgent(webView.context)
                 }
 
                 if (webView.settings.userAgentString != targetUserAgent) {
+                    android.util.Log.d(
+                        "DESKTOP_DIAG",
+                        "Setting userAgentString: $targetUserAgent (isAuthFlowActive=$isAuthFlowActive)"
+                    )
                     webView.settings.userAgentString = targetUserAgent
                 }
 
                 webView.settings.useWideViewPort = true
                 webView.settings.loadWithOverviewMode = true
+                webView.settings.builtInZoomControls = true
+                webView.settings.displayZoomControls = false
+
+                DesktopModeDiagnostics.currentDesktopMode = enabled
             } catch (_: Exception) {}
         }
 
         /**
-         * Configures viewport settings and injects desktop viewport meta tag if desktop mode is enabled.
+         * Configures viewport settings and dynamically ensures the viewport meta tag
+         * presents a full desktop layout (width=1024) in Desktop Mode, and restores standard
+         * device-width in Mobile Mode.
+         * CRITICAL: Must NEVER trigger reload() or loadUrl().
          */
         fun applyDesktopViewport(webView: WebView?, enabled: Boolean) {
             if (webView == null) return
             try {
                 webView.settings.useWideViewPort = true
                 webView.settings.loadWithOverviewMode = true
-                if (enabled) {
-                    val script = """
+                webView.settings.builtInZoomControls = true
+                webView.settings.displayZoomControls = false
+
+                val script = if (enabled) {
+                    """
                         (function() {
                             try {
-                                var vp = document.querySelector('meta[name="viewport"]');
-                                if (vp) {
-                                    vp.setAttribute('content', 'width=1280, initial-scale=0.86, maximum-scale=3.0, user-scalable=yes');
+                                var metas = document.querySelectorAll('meta[name="viewport"]');
+                                if (metas.length > 0) {
+                                    metas.forEach(function(m) {
+                                        m.setAttribute('content', 'width=1024');
+                                    });
                                 } else {
                                     var meta = document.createElement('meta');
                                     meta.name = 'viewport';
-                                    meta.content = 'width=1280, initial-scale=0.86, maximum-scale=3.0, user-scalable=yes';
+                                    meta.content = 'width=1024';
                                     (document.head || document.documentElement).appendChild(meta);
                                 }
                             } catch(e) {}
                         })();
                     """.trimIndent()
-                    webView.evaluateJavascript(script, null)
+                } else {
+                    """
+                        (function() {
+                            try {
+                                var metas = document.querySelectorAll('meta[name="viewport"]');
+                                if (metas.length > 0) {
+                                    metas.forEach(function(m) {
+                                        m.setAttribute('content', 'width=device-width, initial-scale=1.0');
+                                    });
+                                }
+                            } catch(e) {}
+                        })();
+                    """.trimIndent()
                 }
+                webView.evaluateJavascript(script, null)
             } catch (_: Throwable) {}
         }
 
@@ -1342,6 +1468,7 @@ fun BrowserApp(
     // Handle Hardware/Gesture Back
     BackHandler(enabled = true) {
         when {
+            uiState.isDiagnosticOpen -> viewModel.closeDiagnostic()
             uiState.sslWarningState != null -> onSslCancel(uiState.sslWarningState!!.host)
             uiState.isDownloadsOpen -> viewModel.closeDownloads()
             uiState.isHistoryOpen -> viewModel.closeHistory()
@@ -1543,7 +1670,18 @@ fun BrowserApp(
                         )
                     },
                     onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
-                    onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) }
+                    onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) },
+                    onOpenDiagnostics = { viewModel.openDiagnostic() }
+                )
+            }
+
+            // Temporary Diagnostic Viewport & Environment Inspector Overlay
+            if (uiState.isDiagnosticOpen) {
+                DiagnosticScreen(
+                    webView = webView,
+                    isDesktopModeEnabled = uiState.isDesktopModeEnabled,
+                    onDismiss = { viewModel.closeDiagnostic() },
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 

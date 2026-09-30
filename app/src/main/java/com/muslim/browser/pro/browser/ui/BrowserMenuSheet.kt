@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CleaningServices
@@ -87,6 +88,7 @@ fun BrowserMenuSheet(
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
@@ -722,6 +724,68 @@ fun BrowserMenuSheet(
                             ),
                             modifier = Modifier.testTag("desktop_mode_switch")
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // TEMPORARY DEBUG / DIAGNOSTIC: Viewport & Environment Inspector
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("section_debug_diagnostics"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFEF5350).copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Color(0xFFEF5350).copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BugReport,
+                                contentDescription = "Debug Diagnostics",
+                                tint = Color(0xFFEF5350),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Inspect WebView Viewport",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "TEMPORARY DEBUG / DIAGNOSTIC",
+                                    color = Color(0xFFEF5350),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = onOpenDiagnostics,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEF5350),
+                                contentColor = Color.White
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(30.dp)
+                                .testTag("debug_diagnostics_button")
+                        ) {
+                            Text("Inspect", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 

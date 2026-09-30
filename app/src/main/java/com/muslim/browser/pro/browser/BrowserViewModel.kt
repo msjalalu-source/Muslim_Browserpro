@@ -80,7 +80,8 @@ data class BrowserUiState(
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.WHITE,
     val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
-    val sslWarningState: SslWarningState? = null
+    val sslWarningState: SslWarningState? = null,
+    val isDiagnosticOpen: Boolean = false
 )
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -848,5 +849,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun dismissSslWarning() {
         _uiState.update { it.copy(sslWarningState = null) }
+    }
+
+    fun openDiagnostic() {
+        _uiState.update { it.copy(isDiagnosticOpen = true, isMenuOpen = false) }
+    }
+
+    fun closeDiagnostic() {
+        _uiState.update { it.copy(isDiagnosticOpen = false) }
     }
 }
