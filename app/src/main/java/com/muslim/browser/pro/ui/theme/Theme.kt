@@ -71,7 +71,7 @@ val BlackWhiteColors = AppColors(
     isMonochrome = true
 )
 
-val LocalAppColors = staticCompositionLocalOf { WhiteColors }
+val LocalAppColors = staticCompositionLocalOf { BlackWhiteColors }
 
 private val LightM3Scheme = lightColorScheme(
     primary = Color(0xFF0284C7),
@@ -89,7 +89,7 @@ private val MonochromeM3Scheme = darkColorScheme(
 
 @Composable
 fun MyApplicationTheme(
-    appTheme: AppTheme = AppTheme.WHITE,
+    appTheme: AppTheme = AppTheme.BLACK_WHITE,
     content: @Composable () -> Unit
 ) {
     val appColors = when (appTheme) {

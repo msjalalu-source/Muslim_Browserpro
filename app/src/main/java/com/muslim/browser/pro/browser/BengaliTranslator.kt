@@ -42,20 +42,57 @@ object BengaliTranslator {
     @Volatile
     var myMemoryBaseUrl: String = "https://api.mymemory.translated.net"
 
-    private const val CONNECT_TIMEOUT_MS = 7000
-    private const val READ_TIMEOUT_MS = 9000
+    private const val CONNECT_TIMEOUT_MS = 5000
+    private const val READ_TIMEOUT_MS = 7000
 
-    private const val MAX_CONCURRENT_REQUESTS = 3
+    private const val MAX_CONCURRENT_REQUESTS = 4
     private const val MAX_BATCH_CHARS = 2500
     private const val MAX_BATCH_ITEMS = 25
 
-    // Request pacing to prevent rapid bursting
+    // Request pacing to prevent rapid bursting on rate-limited engines (LibreTranslate)
     private const val MIN_DISPATCH_INTERVAL_MS = 600L
     private val dispatchMutex = Mutex()
     private var lastDispatchTimeMs = 0L
 
-    // In-memory engine-specific session cache: key is "${engine.name}:auto:bn:$text"
-    private val memoryCache = ConcurrentHashMap<String, String>()
+    /**
+     * Bounded, thread-safe LRU cache for recently translated text entries.
+     * Prevents unbounded memory growth while offering instant 0ms retrieval for repeated translations.
+     */
+    class TranslationLruCache(private val maxSize: Int = 500) {
+        private val map = object : LinkedHashMap<String, String>(maxSize, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+                return size > maxSize
+            }
+        }
+
+        @Synchronized
+        fun get(key: String): String? = map[key]
+
+        @Synchronized
+        fun put(key: String, value: String) {
+            map[key] = value
+        }
+
+        @Synchronized
+        fun clear() {
+            map.clear()
+        }
+
+        @Synchronized
+        fun size(): Int = map.size
+    }
+
+    private val lruCache = TranslationLruCache(500)
+
+    // In-flight request deduplication map: coalesces concurrent identical translations into a single network call
+    private val inFlightRequests = ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Result<String>>>()
+
+    init {
+        try {
+            System.setProperty("http.keepAlive", "true")
+            System.setProperty("http.maxConnections", "10")
+        } catch (_: Exception) {}
+    }
 
     // Testing override for offline unit testing without network dependency
     internal var testTranslatorOverride: ((String) -> String)? = null
@@ -79,28 +116,117 @@ object BengaliTranslator {
     }
 
     fun clearCache() {
-        memoryCache.clear()
+        lruCache.clear()
+        inFlightRequests.clear()
         TranslationStats.reset()
     }
 
-    private fun putInCache(key: String, value: String) {
-        if (memoryCache.size > 1000) {
-            val iterator = memoryCache.keys().iterator()
-            var count = 0
-            while (iterator.hasNext() && count < 200) {
-                memoryCache.remove(iterator.next())
-                count++
-            }
-        }
-        memoryCache[key] = value
+    fun getCacheSize(): Int = lruCache.size()
+
+    fun putInCache(key: String, value: String) {
+        lruCache.put(key, value)
     }
 
-    fun cacheKey(engine: TranslationEngine, text: String): String {
-        return "${engine.name}:auto:$TARGET_LANGUAGE:$text"
+    fun getFromCache(key: String): String? = lruCache.get(key)
+
+    fun cacheKey(
+        engine: TranslationEngine,
+        text: String,
+        sourceLang: String = "auto",
+        targetLang: String = TARGET_LANGUAGE
+    ): String {
+        val normalized = text.trim()
+        return "${engine.name}:$sourceLang:$targetLang:$normalized"
+    }
+
+    // Common English indicator words (stopwords and high-frequency UI/web terms)
+    private val ENGLISH_INDICATORS = hashSetOf(
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "it", "for", "not", "on", "with",
+        "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her",
+        "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up",
+        "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time",
+        "no", "just", "him", "know", "take", "people", "into", "year", "your", "good", "some", "could",
+        "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", "over", "think",
+        "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way", "even",
+        "new", "want", "because", "any", "these", "give", "day", "most", "us", "is", "are", "was",
+        "were", "been", "has", "had", "am", "welcome", "news", "read", "more", "share", "home",
+        "search", "settings", "menu", "page", "next", "previous", "view", "click", "here", "today",
+        "world", "privacy", "terms", "policy", "login", "sign", "in", "up", "download", "save", "cancel",
+        "ok", "yes", "close", "open", "help", "about", "contact", "article", "post", "comment"
+    )
+
+    /**
+     * Determines with high confidence whether text is English.
+     * Disqualifies non-ASCII (Bengali, Arabic, Hindi, CJK, accented European text),
+     * code/syntax artifacts, URLs, and unaccented non-English phrases.
+     * Falls back to server-side autodetection when uncertain.
+     */
+    internal fun isLikelyEnglish(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.length < 2) return false
+
+        // 1. Any non-ASCII character immediately disqualifies (Bengali, Arabic, Hindi, CJK, accented chars)
+        var hasLetter = false
+        for (ch in trimmed) {
+            if (ch.code >= 128) return false
+            if (ch in 'a'..'z' || ch in 'A'..'Z') hasLetter = true
+        }
+        if (!hasLetter) return false
+
+        // 2. Reject URLs and code/markup indicators
+        if (trimmed.startsWith("http://", ignoreCase = true) ||
+            trimmed.startsWith("https://", ignoreCase = true) ||
+            trimmed.startsWith("www.", ignoreCase = true) ||
+            trimmed.contains("://") ||
+            trimmed.contains("{") || trimmed.contains("}") ||
+            trimmed.contains("();") || trimmed.contains("</") ||
+            trimmed.contains("var ") || trimmed.contains("function(")
+        ) {
+            return false
+        }
+
+        // 3. Extract word tokens
+        val words = trimmed.split(Regex("[^a-zA-Z]+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return false
+
+        // 4. Check if at least one token is a known English word/indicator
+        for (w in words) {
+            if (ENGLISH_INDICATORS.contains(w.lowercase())) {
+                return true
+            }
+        }
+
+        // 5. Check typical English grammar contractions ('s, 't, 're, 've, 'll, 'd)
+        if (trimmed.contains("'s", ignoreCase = true) ||
+            trimmed.contains("'t", ignoreCase = true) ||
+            trimmed.contains("'re", ignoreCase = true) ||
+            trimmed.contains("'ve", ignoreCase = true) ||
+            trimmed.contains("'ll", ignoreCase = true)
+        ) {
+            return true
+        }
+
+        return false
     }
 
     /**
-     * Ensures new HTTP requests respect minimum pacing interval.
+     * Fast check to detect ASCII English phrases, kept for backward compatibility.
+     */
+    internal fun isAsciiEnglish(text: String): Boolean = isLikelyEnglish(text)
+
+    /**
+     * Resolves the language pair for MyMemory requests.
+     * Uses "en|bn" for confident English text for lowest server latency; defaults to "autodetect|bn" otherwise.
+     */
+    internal fun resolveLanguagePair(text: String, sourceLang: String? = null): String {
+        if (!sourceLang.isNullOrBlank() && sourceLang != "auto") {
+            return "$sourceLang|$TARGET_LANGUAGE"
+        }
+        return if (isLikelyEnglish(text)) "en|$TARGET_LANGUAGE" else "autodetect|$TARGET_LANGUAGE"
+    }
+
+    /**
+     * Ensures new HTTP requests respect minimum pacing interval for rate-limited engines.
      */
     private suspend fun awaitDispatchSlot() {
         dispatchMutex.withLock {
@@ -164,21 +290,71 @@ object BengaliTranslator {
 
     /**
      * Translates a single text string to Bengali using the specified translation engine.
+     * Takes advantage of in-memory LRU cache and in-flight request deduplication.
      */
     suspend fun translate(
         text: String,
-        engine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE
+        engine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
+        sourceLang: String = "auto"
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || shouldSkipText(trimmed)) return@withContext Result.success(text)
-        translateBatch(listOf(trimmed), engine).map { it.firstOrNull() ?: trimmed }
+        translateSingleTextCoalesced(trimmed, engine, sourceLang)
+    }
+
+    /**
+     * Translates a single text using bounded LRU cache and concurrent in-flight request deduplication.
+     * If the identical translation is already executing, concurrent callers share the single network response.
+     */
+    suspend fun translateSingleTextCoalesced(
+        text: String,
+        engine: TranslationEngine,
+        sourceLang: String = "auto"
+    ): Result<String> {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || shouldSkipText(trimmed)) return Result.success(text)
+
+        val key = cacheKey(engine, trimmed, sourceLang)
+        // 1. Fast path: return immediately from LRU cache if already translated
+        lruCache.get(key)?.let { return Result.success(it) }
+
+        // 2. Coalesce concurrent identical requests lock-free
+        val newDeferred = kotlinx.coroutines.CompletableDeferred<Result<String>>()
+        val existing = inFlightRequests.putIfAbsent(key, newDeferred)
+        if (existing != null) {
+            // Re-check cache in case the existing request completed just before putIfAbsent
+            lruCache.get(key)?.let { return Result.success(it) }
+            return existing.await()
+        }
+
+        // We are the initiator of this in-flight request
+        try {
+            val result = translateSingleText(trimmed, engine, sourceLang)
+            if (result.isSuccess) {
+                val translated = result.getOrThrow()
+                if (translated.isNotBlank()) {
+                    lruCache.put(key, translated)
+                }
+            }
+            newDeferred.complete(result)
+            return result
+        } catch (e: Throwable) {
+            val failure = Result.failure<String>(e)
+            newDeferred.complete(failure)
+            if (e is kotlinx.coroutines.CancellationException) {
+                throw e
+            }
+            return failure
+        } finally {
+            inFlightRequests.remove(key, newDeferred)
+        }
     }
 
     /**
      * Unified translation pipeline:
      * 1. Filters non-translatable texts (numbers, punctuation, URLs, emails, existing Bengali).
      * 2. Deduplicates texts.
-     * 3. Checks engine-specific session cache.
+     * 3. Checks engine-specific LRU session cache.
      * 4. Dispatches untranslated phrases using ONLY the selected engine with controlled concurrency.
      * 5. No fallback across providers: if the selected engine fails, it returns failure.
      * 6. Maps results back to corresponding original DOM nodes.
@@ -196,7 +372,7 @@ object BengaliTranslator {
             val trimmed = text.trim()
             if (shouldSkipText(trimmed)) continue
             val key = cacheKey(engine, trimmed)
-            val cached = memoryCache[key]
+            val cached = lruCache.get(key)
             if (cached != null) {
                 translationMap[trimmed] = cached
             } else {
@@ -220,7 +396,7 @@ object BengaliTranslator {
                 for (needed in neededTexts) {
                     val res = override(needed)
                     val key = cacheKey(engine, needed)
-                    memoryCache[key] = res
+                    lruCache.put(key, res)
                     translationMap[needed] = res
                 }
                 Result.success(mapFinalResults())
@@ -230,7 +406,6 @@ object BengaliTranslator {
         }
 
         // For LibreTranslate, utilize native array batch translation (up to MAX_BATCH_ITEMS per HTTP request)
-        // This drops network requests from ~50 individual calls to 2-3 batch calls, eliminating HTTP 429 rate limits.
         if (engine == TranslationEngine.LIBRE_TRANSLATE) {
             val batches = chunkIntoBatches(neededTexts.toList())
             var batchSuccessCount = 0
@@ -253,9 +428,9 @@ object BengaliTranslator {
                 } else {
                     lastBatchError = batchResult.exceptionOrNull()
                     Log.w(TAG, "LibreTranslate batch error: ${lastBatchError?.message}")
-                    // Gracefully fallback to translating individual items within this batch using LibreTranslate only (no cross-engine fallback)
+                    // Gracefully fallback to translating individual items within this batch using LibreTranslate only
                     for (item in batch) {
-                        val singleRes = translateSingleText(item, TranslationEngine.LIBRE_TRANSLATE)
+                        val singleRes = translateSingleTextCoalesced(item, TranslationEngine.LIBRE_TRANSLATE)
                         if (singleRes.isSuccess) {
                             val translated = singleRes.getOrThrow()
                             if (translated.isNotBlank()) {
@@ -277,7 +452,7 @@ object BengaliTranslator {
             return@withContext Result.success(mapFinalResults())
         }
 
-        // For MyMemory, translate with controlled concurrency (MAX_CONCURRENT_REQUESTS = 3)
+        // For MyMemory, translate with controlled concurrency (MAX_CONCURRENT_REQUESTS = 4)
         val semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
         var successCount = 0
         var lastError: Throwable? = null
@@ -286,12 +461,10 @@ object BengaliTranslator {
             val jobs = neededTexts.map { needed ->
                 async {
                     semaphore.withPermit {
-                        val singleRes = translateSingleText(needed, engine)
+                        val singleRes = translateSingleTextCoalesced(needed, engine)
                         if (singleRes.isSuccess) {
                             val translated = singleRes.getOrThrow()
                             if (translated.isNotBlank()) {
-                                val key = cacheKey(engine, needed)
-                                putInCache(key, translated)
                                 translationMap[needed] = translated
                                 synchronized(neededTexts) { successCount++ }
                             }
@@ -320,17 +493,32 @@ object BengaliTranslator {
     /**
      * Dispatches text to the selected provider only. No automatic fallback between engines.
      */
-    private suspend fun translateSingleText(text: String, engine: TranslationEngine): Result<String> {
+    private suspend fun translateSingleText(
+        text: String,
+        engine: TranslationEngine,
+        sourceLang: String = "auto"
+    ): Result<String> {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || shouldSkipText(trimmed)) return Result.success(text)
 
-        awaitDispatchSlot()
+        testTranslatorOverride?.let { override ->
+            return try {
+                Result.success(override(trimmed))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+        // Only rate-limited engines (LibreTranslate) require artificial pacing
+        if (engine == TranslationEngine.LIBRE_TRANSLATE) {
+            awaitDispatchSlot()
+        }
         val startMs = System.currentTimeMillis()
         TranslationStats.totalRequests++
 
         val result = when (engine) {
             TranslationEngine.LIBRE_TRANSLATE -> translateWithLibreTranslate(trimmed)
-            TranslationEngine.MYMEMORY -> translateWithMyMemory(trimmed)
+            TranslationEngine.MYMEMORY -> translateWithMyMemory(trimmed, sourceLang)
         }
 
         val dur = System.currentTimeMillis() - startMs
@@ -513,29 +701,34 @@ object BengaliTranslator {
 
     /**
      * Provider 2: MyMemory Translate
-     * Direct GET request (/get?q=...&langpair=autodetect|bn).
-     * Unescapes HTML entities and checks quota errors.
+     * Direct GET request (/get?q=...&langpair=...).
+     * Employs HTTP Keep-Alive connection reuse, language pair optimization, and lightweight parsing.
      * No fallback to other engines.
      */
-    internal fun translateWithMyMemory(text: String): Result<String> {
+    internal fun translateWithMyMemory(text: String, sourceLang: String? = null): Result<String> {
         var connection: HttpURLConnection? = null
         try {
             val encodedQuery = URLEncoder.encode(text, "UTF-8")
-            val endpointUrl = "$myMemoryBaseUrl/get?q=$encodedQuery&langpair=autodetect|$TARGET_LANGUAGE"
+            val langPair = resolveLanguagePair(text, sourceLang)
+            val endpointUrl = "$myMemoryBaseUrl/get?q=$encodedQuery&langpair=$langPair"
             val url = URL(endpointUrl)
 
             connection = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
+                setRequestProperty("Connection", "keep-alive")
                 connectTimeout = CONNECT_TIMEOUT_MS
                 readTimeout = READ_TIMEOUT_MS
                 doInput = true
             }
 
             val statusCode = connection.responseCode
-            if (statusCode == HttpURLConnection.HTTP_OK) {
-                val responseStr = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val isSuccess = statusCode == HttpURLConnection.HTTP_OK
+            val stream = if (isSuccess) connection.inputStream else connection.errorStream
+            val responseStr = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+
+            if (isSuccess) {
                 if (!responseStr.trimStart().startsWith("{")) {
                     return Result.failure(IllegalStateException("Non-JSON response from MyMemory"))
                 }
@@ -554,6 +747,7 @@ object BengaliTranslator {
 
                 // Check for MyMemory quota warning or error strings
                 if (rawText.startsWith("MYMEMORY WARNING:", ignoreCase = true)) {
+                    connection.disconnect()
                     return Result.failure(IllegalStateException("MyMemory quota limit exceeded"))
                 }
 
@@ -565,22 +759,25 @@ object BengaliTranslator {
                 }
             } else if (statusCode == 429) {
                 TranslationStats.http429Count++
+                connection.disconnect()
                 return Result.failure(IllegalStateException("MyMemory Translate rate limit (HTTP 429)"))
             } else {
-                val errorBody = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
-                return Result.failure(IllegalStateException("MyMemory Translate HTTP $statusCode: $errorBody"))
+                connection.disconnect()
+                return Result.failure(IllegalStateException("MyMemory Translate HTTP $statusCode: $responseStr"))
             }
         } catch (e: Exception) {
-            return Result.failure(e)
-        } finally {
             connection?.disconnect()
+            return Result.failure(e)
         }
+        // Connection is left open for HTTP Keep-Alive connection pooling on subsequent requests
     }
 
     /**
      * Decodes basic HTML entities commonly returned by MyMemory API.
+     * Skips processing if no '&' entity marker exists to eliminate allocations.
      */
     fun decodeHtmlEntities(input: String): String {
+        if (!input.contains('&')) return input
         return input.replace("&quot;", "\"")
             .replace("&#39;", "'")
             .replace("&apos;", "'")

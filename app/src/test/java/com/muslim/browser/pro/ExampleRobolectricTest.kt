@@ -48,13 +48,35 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify app starts correctly with no theme preference defaulting to WHITE`() {
+  fun `verify app starts correctly with no theme preference defaulting to BLACK_WHITE`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     // Clear any previous settings
     context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
 
     val repo = SettingsRepository(context)
+    assertEquals(AppTheme.BLACK_WHITE, repo.appTheme)
+  }
+
+  @Test
+  fun `verify saved White preference remains White and is not overwritten`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    prefs.edit().putString(keyAppTheme, AppTheme.WHITE.name).commit()
+
+    val repo = SettingsRepository(context)
     assertEquals(AppTheme.WHITE, repo.appTheme)
+    assertEquals(AppTheme.WHITE.name, prefs.getString(keyAppTheme, null))
+  }
+
+  @Test
+  fun `verify saved Black & White preference remains Black & White and is not overwritten`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+    prefs.edit().putString(keyAppTheme, AppTheme.BLACK_WHITE.name).commit()
+
+    val repo = SettingsRepository(context)
+    assertEquals(AppTheme.BLACK_WHITE, repo.appTheme)
+    assertEquals(AppTheme.BLACK_WHITE.name, prefs.getString(keyAppTheme, null))
   }
 
   @Test
@@ -63,26 +85,26 @@ class ExampleRobolectricTest {
     context.getSharedPreferences(prefsName, Context.MODE_PRIVATE).edit().clear().commit()
 
     val repo1 = SettingsRepository(context)
-    assertEquals(AppTheme.WHITE, repo1.appTheme)
-
-    // Switch to BLACK_WHITE
-    repo1.appTheme = AppTheme.BLACK_WHITE
     assertEquals(AppTheme.BLACK_WHITE, repo1.appTheme)
+
+    // Switch to WHITE
+    repo1.appTheme = AppTheme.WHITE
+    assertEquals(AppTheme.WHITE, repo1.appTheme)
 
     // Restart app (simulate new instance with same context)
     val repo2 = SettingsRepository(context)
-    assertEquals(AppTheme.BLACK_WHITE, repo2.appTheme)
-
-    // Switch back to WHITE
-    repo2.appTheme = AppTheme.WHITE
     assertEquals(AppTheme.WHITE, repo2.appTheme)
 
+    // Switch back to BLACK_WHITE
+    repo2.appTheme = AppTheme.BLACK_WHITE
+    assertEquals(AppTheme.BLACK_WHITE, repo2.appTheme)
+
     val repo3 = SettingsRepository(context)
-    assertEquals(AppTheme.WHITE, repo3.appTheme)
+    assertEquals(AppTheme.BLACK_WHITE, repo3.appTheme)
   }
 
   @Test
-  fun `verify old stored Black preference migrates safely to White without crash`() {
+  fun `verify old stored Black preference migrates safely to default Black & White without crash`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
@@ -93,23 +115,23 @@ class ExampleRobolectricTest {
     val repo = SettingsRepository(context)
     val migratedTheme = repo.appTheme
 
-    // Must safely migrate to WHITE
-    assertEquals(AppTheme.WHITE, migratedTheme)
+    // Must safely migrate to default BLACK_WHITE
+    assertEquals(AppTheme.BLACK_WHITE, migratedTheme)
 
-    // SharedPreferences must now store WHITE instead of BLACK
-    assertEquals(AppTheme.WHITE.name, prefs.getString(keyAppTheme, null))
+    // SharedPreferences must now store BLACK_WHITE instead of BLACK
+    assertEquals(AppTheme.BLACK_WHITE.name, prefs.getString(keyAppTheme, null))
   }
 
   @Test
-  fun `verify invalid or corrupted stored theme string migrates safely to White`() {
+  fun `verify invalid or corrupted stored theme string migrates safely to default Black & White`() {
     val context = ApplicationProvider.getApplicationContext<Context>()
     val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     prefs.edit().putString(keyAppTheme, "NON_EXISTENT_THEME").commit()
 
     val repo = SettingsRepository(context)
-    assertEquals(AppTheme.WHITE, repo.appTheme)
-    assertEquals(AppTheme.WHITE.name, prefs.getString(keyAppTheme, null))
+    assertEquals(AppTheme.BLACK_WHITE, repo.appTheme)
+    assertEquals(AppTheme.BLACK_WHITE.name, prefs.getString(keyAppTheme, null))
   }
 
   @Test

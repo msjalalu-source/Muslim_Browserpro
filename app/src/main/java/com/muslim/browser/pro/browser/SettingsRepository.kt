@@ -293,13 +293,13 @@ class SettingsRepository(context: Context) {
     var appTheme: com.muslim.browser.pro.ui.theme.AppTheme
         get() {
             val rawName = prefs.getString(KEY_APP_THEME, null)
-                ?: return com.muslim.browser.pro.ui.theme.AppTheme.WHITE
+                ?: return com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE
             return try {
                 com.muslim.browser.pro.ui.theme.AppTheme.valueOf(rawName)
             } catch (_: Exception) {
-                // Automatically migrate legacy "BLACK" or invalid theme preference to WHITE
-                prefs.edit().putString(KEY_APP_THEME, com.muslim.browser.pro.ui.theme.AppTheme.WHITE.name).commit()
-                com.muslim.browser.pro.ui.theme.AppTheme.WHITE
+                // Automatically migrate legacy "BLACK" or invalid theme preference to default (BLACK_WHITE)
+                prefs.edit().putString(KEY_APP_THEME, com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE.name).commit()
+                com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE
             }
         }
         set(value) {

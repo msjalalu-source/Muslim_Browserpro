@@ -376,4 +376,48 @@ object DownloadPolicy {
         val ext = lastSegment.substringAfterLast('.', "")
         return ext.lowercase(Locale.ROOT)
     }
+
+    val AUDIO_EXTS = hashSetOf(
+        "mp3", "wav", "ogg", "m4a", "aac", "flac"
+    )
+
+    val DOWNLOADABLE_EXTS = hashSetOf(
+        // APK / Android packages
+        "apk", "xapk", "apks",
+        // Archives & disk images
+        "zip", "tar", "gz", "gzip", "tgz", "bz2", "xz", "rar", "7z", "iso", "dmg",
+        // Documents & ebooks
+        "pdf", "epub", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "rtf", "odt", "ods", "odp"
+    )
+
+    /**
+     * Checks if a URL targets an audio file.
+     */
+    fun isAudio(url: String): Boolean {
+        if (url.isBlank()) return false
+        val clean = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        val lastSegment = clean.substringAfterLast('/', "")
+        if (!lastSegment.contains('.')) return false
+        val ext = lastSegment.substringAfterLast('.', "")
+        return AUDIO_EXTS.contains(ext)
+    }
+
+    /**
+     * Unified downloadable-file URL detector.
+     * Recognizes common downloadable file extensions (apk, zip, pdf, doc, archives, documents, audio).
+     * Strictly rejects video URLs so they are never classified as downloadable/allowed.
+     * Rejects normal web pages (html, htm, php, auth pages, etc.) to prevent over-interception.
+     */
+    fun isDownloadableFileUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        // Video files must NEVER be classified as downloadable/allowed
+        if (isVideo(url)) return false
+
+        val clean = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
+        val lastSegment = clean.substringAfterLast('/', "")
+        if (!lastSegment.contains('.')) return false
+        val ext = lastSegment.substringAfterLast('.', "")
+
+        return DOWNLOADABLE_EXTS.contains(ext) || AUDIO_EXTS.contains(ext)
+    }
 }

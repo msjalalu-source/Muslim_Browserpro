@@ -78,7 +78,7 @@ data class BrowserUiState(
     val isDesktopModeEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
-    val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.WHITE,
+    val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE,
     val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
     val sslWarningState: SslWarningState? = null,
     val isDiagnosticOpen: Boolean = false

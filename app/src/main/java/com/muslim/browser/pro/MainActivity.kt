@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.DownloadEntry
 import com.muslim.browser.pro.browser.DownloadPolicy
+import com.muslim.browser.pro.browser.DownloadProgressPoller
 import com.muslim.browser.pro.browser.DownloadStatus
 import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.ProtectionEngine
@@ -146,7 +147,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun queryActiveDownloads(): Boolean {
+    internal suspend fun queryActiveDownloads(): Boolean {
         val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return false
         val currentDownloads = viewModel.uiState.value.downloadHistory
         val activeEntries = currentDownloads.filter {
@@ -157,74 +158,30 @@ class MainActivity : ComponentActivity() {
             return false
         }
 
-        var stillActive = false
+        // Run cursor query and reading strictly off the main thread on Dispatchers.IO
+        val (updates, stillActive) = DownloadProgressPoller.queryActiveDownloadsProgress(dm, activeEntries)
 
-        for (entry in activeEntries) {
-            val query = DownloadManager.Query().setFilterById(entry.downloadId)
-            try {
-                dm.query(query)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                        val status = if (statusIndex != -1) cursor.getInt(statusIndex) else -1
-                        val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                        val downloadedBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else 0L
-                        val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                        val totalBytes = if (totalBytesIndex != -1) cursor.getLong(totalBytesIndex) else -1L
-                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                        val localUri = if (localUriIndex != -1) cursor.getString(localUriIndex) else null
-
-                        when (status) {
-                            DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PENDING -> {
-                                stillActive = true
-                                viewModel.updateDownloadProgress(
-                                    downloadId = entry.downloadId,
-                                    status = DownloadStatus.DOWNLOADING,
-                                    downloadedBytes = downloadedBytes,
-                                    totalBytes = totalBytes,
-                                    localUri = localUri
-                                )
-                            }
-                            DownloadManager.STATUS_PAUSED -> {
-                                stillActive = true
-                                viewModel.updateDownloadProgress(
-                                    downloadId = entry.downloadId,
-                                    status = DownloadStatus.PAUSED,
-                                    downloadedBytes = downloadedBytes,
-                                    totalBytes = totalBytes,
-                                    localUri = localUri
-                                )
-                            }
-                            DownloadManager.STATUS_SUCCESSFUL -> {
-                                viewModel.updateDownloadStatus(
-                                    downloadId = entry.downloadId,
-                                    status = DownloadStatus.COMPLETED,
-                                    localUri = localUri,
-                                    downloadedBytes = downloadedBytes,
-                                    totalBytes = totalBytes
-                                )
-                            }
-                            DownloadManager.STATUS_FAILED -> {
-                                val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                                val reason = if (reasonIndex != -1) cursor.getInt(reasonIndex) else -1
-                                android.util.Log.d("DownloadManager", "Download ${entry.downloadId} failed: reason=$reason")
-                                viewModel.updateDownloadStatus(
-                                    downloadId = entry.downloadId,
-                                    status = DownloadStatus.FAILED,
-                                    localUri = localUri,
-                                    downloadedBytes = downloadedBytes,
-                                    totalBytes = totalBytes
-                                )
-                            }
-                        }
-                    } else {
-                        viewModel.updateDownloadStatus(
-                            downloadId = entry.downloadId,
-                            status = DownloadStatus.FAILED
-                        )
-                    }
+        // Return the resulting lightweight progress data to the existing UI state update path on Main context
+        for (update in updates) {
+            when (update.status) {
+                DownloadStatus.DOWNLOADING, DownloadStatus.PAUSED -> {
+                    viewModel.updateDownloadProgress(
+                        downloadId = update.downloadId,
+                        status = update.status,
+                        downloadedBytes = update.downloadedBytes,
+                        totalBytes = update.totalBytes,
+                        localUri = update.localUri
+                    )
                 }
-            } catch (e: Exception) {
-                android.util.Log.e("DownloadManager", "Error querying downloadId ${entry.downloadId}", e)
+                DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
+                    viewModel.updateDownloadStatus(
+                        downloadId = update.downloadId,
+                        status = update.status,
+                        localUri = update.localUri,
+                        downloadedBytes = update.downloadedBytes,
+                        totalBytes = update.totalBytes
+                    )
+                }
             }
         }
 
@@ -242,59 +199,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkDownloadStatus(downloadId: Long) {
-        val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return
-        val query = DownloadManager.Query().setFilterById(downloadId)
-        try {
-            dm.query(query)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                    val status = if (statusIndex != -1) cursor.getInt(statusIndex) else -1
-                    val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                    val localUri = if (localUriIndex != -1) cursor.getString(localUriIndex) else null
-                    val bytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                    val downloadedBytes = if (bytesIndex != -1) cursor.getLong(bytesIndex) else 0L
-                    val totalBytesIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                    val totalBytes = if (totalBytesIndex != -1) cursor.getLong(totalBytesIndex) else -1L
-
-                    when (status) {
-                        DownloadManager.STATUS_SUCCESSFUL -> {
+    internal fun checkDownloadStatus(downloadId: Long) {
+        lifecycleScope.launch {
+            val dm = getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            if (dm != null) {
+                val update = DownloadProgressPoller.querySingleDownloadProgress(dm, downloadId)
+                if (update != null) {
+                    when (update.status) {
+                        DownloadStatus.COMPLETED, DownloadStatus.FAILED, DownloadStatus.CANCELLED -> {
                             viewModel.updateDownloadStatus(
-                                downloadId = downloadId,
-                                status = DownloadStatus.COMPLETED,
-                                localUri = localUri,
-                                downloadedBytes = downloadedBytes,
-                                totalBytes = totalBytes
+                                downloadId = update.downloadId,
+                                status = update.status,
+                                localUri = update.localUri,
+                                downloadedBytes = update.downloadedBytes,
+                                totalBytes = update.totalBytes
                             )
                         }
-                        DownloadManager.STATUS_FAILED -> {
-                            viewModel.updateDownloadStatus(
-                                downloadId = downloadId,
-                                status = DownloadStatus.FAILED,
-                                localUri = localUri,
-                                downloadedBytes = downloadedBytes,
-                                totalBytes = totalBytes
-                            )
-                        }
-                        DownloadManager.STATUS_PAUSED -> {
+                        DownloadStatus.PAUSED, DownloadStatus.DOWNLOADING -> {
                             viewModel.updateDownloadProgress(
-                                downloadId = downloadId,
-                                status = DownloadStatus.PAUSED,
-                                downloadedBytes = downloadedBytes,
-                                totalBytes = totalBytes,
-                                localUri = localUri
+                                downloadId = update.downloadId,
+                                status = update.status,
+                                downloadedBytes = update.downloadedBytes,
+                                totalBytes = update.totalBytes,
+                                localUri = update.localUri
                             )
                         }
                     }
                 }
             }
-        } catch (e: Exception) {
-            android.util.Log.e("DownloadManager", "Error checking download status for $downloadId", e)
-        }
-        val hasActive = queryActiveDownloads()
-        if (!hasActive) {
-            progressPollingJob?.cancel()
-            progressPollingJob = null
+            val hasActive = queryActiveDownloads()
+            if (!hasActive) {
+                progressPollingJob?.cancel()
+                progressPollingJob = null
+            }
         }
     }
 
@@ -688,7 +625,8 @@ class MainActivity : ComponentActivity() {
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
-                    onSslCancel = { host -> onSslPromptCancel(host) }
+                    onSslCancel = { host -> onSslPromptCancel(host) },
+                    onHandleUrlNavigation = { url -> handleUrlNavigation(webView, url) }
                 )
             }
         }
@@ -804,6 +742,8 @@ class MainActivity : ComponentActivity() {
         try {
             val request = DownloadManager.Request(parsedUri).apply {
                 setMimeType(effectiveMime)
+                setAllowedOverMetered(true)
+                setAllowedOverRoaming(true)
                 if (!effectiveUserAgent.isNullOrBlank()) {
                     addRequestHeader("User-Agent", effectiveUserAgent)
                 }
@@ -864,13 +804,11 @@ class MainActivity : ComponentActivity() {
         startProgressPolling()
     }
 
-    private fun isDirectAudioUrl(url: String): Boolean {
-        val clean = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        return clean.endsWith(".mp3") || clean.endsWith(".wav") || clean.endsWith(".ogg") ||
-                clean.endsWith(".m4a") || clean.endsWith(".aac") || clean.endsWith(".flac")
+    internal fun isDirectAudioUrl(url: String): Boolean {
+        return DownloadPolicy.isAudio(url)
     }
 
-    private fun handleUrlNavigation(view: WebView?, url: String): Boolean {
+    internal fun handleUrlNavigation(view: WebView?, url: String): Boolean {
         android.util.Log.d("DIAGNOSTIC", "handleUrlNavigation: URL=$url")
         // 1. Detect if this is a search engine request
         val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(url)
@@ -904,7 +842,7 @@ class MainActivity : ComponentActivity() {
             return true // Intercepted and redirected
         }
 
-        // 2. Direct audio / MP3 link check
+        // 2. Direct audio / MP3 link check (preserve existing special handling)
         if (isDirectAudioUrl(url)) {
             startDownload(
                 url = url,
@@ -915,7 +853,24 @@ class MainActivity : ComponentActivity() {
             return true
         }
 
-        // 3. Direct URL navigation check
+        // 3. Early download interception for unified downloadable files (documents, archives, APKs)
+        if (DownloadPolicy.isDownloadableFileUrl(url)) {
+            val decision = DownloadPolicy.evaluate(url)
+            if (decision is DownloadPolicy.Result.Allowed) {
+                startDownload(
+                    url = url,
+                    userAgent = view?.settings?.userAgentString,
+                    contentDisposition = null,
+                    mimetype = null
+                )
+            } else if (decision is DownloadPolicy.Result.Blocked) {
+                viewModel.showToast(decision.reason)
+                viewModel.onPageCommitVisible()
+            }
+            return true // Stop normal WebView navigation
+        }
+
+        // 4. Direct URL navigation check
         val isBlocked = viewModel.checkAndFilterUrl(url)
         if (isBlocked) {
             return true // Block navigation
@@ -1542,7 +1497,8 @@ fun BrowserApp(
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onSslProceed: (String) -> Unit = {},
-    onSslCancel: (String) -> Unit = {}
+    onSslCancel: (String) -> Unit = {},
+    onHandleUrlNavigation: (String) -> Boolean = { false }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -1629,10 +1585,15 @@ fun BrowserApp(
                 uiState = uiState,
                 webView = webView,
                 onUrlSubmit = { url ->
-                    val success = viewModel.submitQueryOrUrl(url)
-                    if (success) {
-                        MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                        webView.loadUrl(viewModel.uiState.value.currentUrl)
+                    val trimmed = url.trim()
+                    if (DownloadPolicy.isAudio(trimmed) || DownloadPolicy.isDownloadableFileUrl(trimmed)) {
+                        onHandleUrlNavigation(trimmed)
+                    } else {
+                        val success = viewModel.submitQueryOrUrl(url)
+                        if (success) {
+                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                            webView.loadUrl(viewModel.uiState.value.currentUrl)
+                        }
                     }
                 },
                 onReload = {
@@ -1649,10 +1610,15 @@ fun BrowserApp(
                     favoriteSites = uiState.favoriteSites,
                     onQueryChange = { viewModel.onSearchInputChange(it) },
                     onSubmitQuery = { query ->
-                        val success = viewModel.submitQueryOrUrl(query)
-                        if (success) {
-                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                            webView.loadUrl(viewModel.uiState.value.currentUrl)
+                        val trimmed = query.trim()
+                        if (DownloadPolicy.isAudio(trimmed) || DownloadPolicy.isDownloadableFileUrl(trimmed)) {
+                            onHandleUrlNavigation(trimmed)
+                        } else {
+                            val success = viewModel.submitQueryOrUrl(query)
+                            if (success) {
+                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                                webView.loadUrl(viewModel.uiState.value.currentUrl)
+                            }
                         }
                     },
                     onAddFavorite = { name, url -> viewModel.addFavoriteSite(name, url) },
