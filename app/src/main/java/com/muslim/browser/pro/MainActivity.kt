@@ -1097,6 +1097,35 @@ class MainActivity : ComponentActivity() {
         }
 
         /**
+         * Configures viewport settings and injects desktop viewport meta tag if desktop mode is enabled.
+         */
+        fun applyDesktopViewport(webView: WebView?, enabled: Boolean) {
+            if (webView == null) return
+            try {
+                webView.settings.useWideViewPort = true
+                webView.settings.loadWithOverviewMode = true
+                if (enabled) {
+                    val script = """
+                        (function() {
+                            try {
+                                var vp = document.querySelector('meta[name="viewport"]');
+                                if (vp) {
+                                    vp.setAttribute('content', 'width=1280, initial-scale=0.86, maximum-scale=3.0, user-scalable=yes');
+                                } else {
+                                    var meta = document.createElement('meta');
+                                    meta.name = 'viewport';
+                                    meta.content = 'width=1280, initial-scale=0.86, maximum-scale=3.0, user-scalable=yes';
+                                    (document.head || document.documentElement).appendChild(meta);
+                                }
+                            } catch(e) {}
+                        })();
+                    """.trimIndent()
+                    webView.evaluateJavascript(script, null)
+                }
+            } catch (_: Throwable) {}
+        }
+
+        /**
          * Applies the native dark or light theme settings to the WebView.
          * Leverages native Android WebView algorithmic darkening and force dark capabilities,
          * and applies clean, lightweight dark theme rendering to web page content.
