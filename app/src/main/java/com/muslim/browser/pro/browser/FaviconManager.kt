@@ -33,6 +33,8 @@ object FaviconManager {
 
     // In-memory LRU cache for 64 icons to prevent disk reads and network requests on recomposition
     private val memoryCache = LruCache<String, Bitmap>(64)
+    // Bounded negative cache to prevent repeated network attempts for missing/failed domain icons
+    private val failedDomains = LruCache<String, Boolean>(64)
 
     /**
      * Extracts a clean base domain from a URL (e.g., "https://www.google.com/search" -> "google.com").
@@ -74,6 +76,7 @@ object FaviconManager {
      */
     suspend fun loadFavicon(context: Context, domain: String): Bitmap? = withContext(Dispatchers.IO) {
         if (domain.isBlank()) return@withContext null
+        if (failedDomains.get(domain) == true) return@withContext null
 
         // 1. Check memory cache
         val memBitmap = memoryCache.get(domain)
@@ -134,6 +137,7 @@ object FaviconManager {
             // Network failure or offline: gracefully fallback to null
         }
 
+        failedDomains.put(domain, true)
         null
     }
 
@@ -142,6 +146,7 @@ object FaviconManager {
      */
     fun clearCache(context: Context) {
         memoryCache.evictAll()
+        failedDomains.evictAll()
         try {
             val cacheDir = File(context.cacheDir, CACHE_DIR_NAME)
             if (cacheDir.exists()) {

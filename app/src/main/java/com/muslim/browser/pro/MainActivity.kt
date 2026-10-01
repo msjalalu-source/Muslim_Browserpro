@@ -241,11 +241,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val downloadFilter = android.content.IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(downloadReceiver, downloadFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(downloadReceiver, downloadFilter)
-        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            downloadReceiver,
+            downloadFilter,
+            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+        )
 
         // Check if any ongoing downloads need active progress polling
         startProgressPolling()
@@ -328,9 +329,8 @@ class MainActivity : ComponentActivity() {
                     request: WebResourceRequest?
                 ): WebResourceResponse? {
                     val uri = request?.url ?: return null
-                    val reqUrl = uri.toString()
-                    val host = uri.host?.lowercase(Locale.ROOT)
                     if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isAdRequest(uri)) {
+                        val reqUrl = uri.toString()
                         val resType = request.requestHeaders?.get("Accept") ?: "subresource"
                         android.util.Log.e("DIAGNOSTIC", "INTERCEPT_BLOCK=shouldInterceptRequest")
                         android.util.Log.e("DIAGNOSTIC", "REQUEST_URL=$reqUrl")
@@ -339,7 +339,7 @@ class MainActivity : ComponentActivity() {
                         return WebResourceResponse(
                             "text/plain",
                             "UTF-8",
-                            ByteArrayInputStream(ByteArray(0))
+                            ByteArrayInputStream(EMPTY_BLOCKED_BYTES)
                         )
                     }
                     return super.shouldInterceptRequest(view, request)
@@ -804,10 +804,6 @@ class MainActivity : ComponentActivity() {
         startProgressPolling()
     }
 
-    internal fun isDirectAudioUrl(url: String): Boolean {
-        return DownloadPolicy.isAudio(url)
-    }
-
     internal fun handleUrlNavigation(view: WebView?, url: String): Boolean {
         android.util.Log.d("DIAGNOSTIC", "handleUrlNavigation: URL=$url")
         // 1. Detect if this is a search engine request
@@ -843,7 +839,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // 2. Direct audio / MP3 link check (preserve existing special handling)
-        if (isDirectAudioUrl(url)) {
+        if (DownloadPolicy.isAudio(url)) {
             startDownload(
                 url = url,
                 userAgent = view?.settings?.userAgentString,
@@ -1052,6 +1048,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private val EMPTY_BLOCKED_BYTES = ByteArray(0)
         const val DESKTOP_USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 
@@ -1149,11 +1146,6 @@ class MainActivity : ComponentActivity() {
                 false
             }
         }
-
-        /**
-         * Backward-compatible alias for authentication endpoint detection.
-         */
-        fun isGoogleAuthUrl(url: String?): Boolean = isAuthenticationEndpoint(url)
 
         /**
          * Pure configuration function to apply Desktop or Mobile User-Agent and viewport settings.
@@ -1270,7 +1262,9 @@ class MainActivity : ComponentActivity() {
                                 var metas = document.querySelectorAll('meta[name="viewport"]');
                                 if (metas.length > 0) {
                                     metas.forEach(function(m) {
-                                        m.setAttribute('content', 'width=1024');
+                                        if (m.getAttribute('content') !== 'width=1024') {
+                                            m.setAttribute('content', 'width=1024');
+                                        }
                                     });
                                 } else {
                                     var meta = document.createElement('meta');
@@ -1288,7 +1282,9 @@ class MainActivity : ComponentActivity() {
                                 var metas = document.querySelectorAll('meta[name="viewport"]');
                                 if (metas.length > 0) {
                                     metas.forEach(function(m) {
-                                        m.setAttribute('content', 'width=device-width, initial-scale=1.0');
+                                        if (m.getAttribute('content') !== 'width=device-width, initial-scale=1.0') {
+                                            m.setAttribute('content', 'width=device-width, initial-scale=1.0');
+                                        }
                                     });
                                 }
                             } catch(e) {}
@@ -1537,6 +1533,19 @@ fun BrowserApp(
         }
     }
 
+    val navigateToInput: (String) -> Unit = { input ->
+        val trimmed = input.trim()
+        if (DownloadPolicy.isAudio(trimmed) || DownloadPolicy.isDownloadableFileUrl(trimmed)) {
+            onHandleUrlNavigation(trimmed)
+        } else {
+            val success = viewModel.submitQueryOrUrl(input)
+            if (success) {
+                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                webView.loadUrl(viewModel.uiState.value.currentUrl)
+            }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -1584,18 +1593,7 @@ fun BrowserApp(
             BrowserWebView(
                 uiState = uiState,
                 webView = webView,
-                onUrlSubmit = { url ->
-                    val trimmed = url.trim()
-                    if (DownloadPolicy.isAudio(trimmed) || DownloadPolicy.isDownloadableFileUrl(trimmed)) {
-                        onHandleUrlNavigation(trimmed)
-                    } else {
-                        val success = viewModel.submitQueryOrUrl(url)
-                        if (success) {
-                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                            webView.loadUrl(viewModel.uiState.value.currentUrl)
-                        }
-                    }
-                },
+                onUrlSubmit = navigateToInput,
                 onReload = {
                     MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
                     webView.reload()
@@ -1609,18 +1607,7 @@ fun BrowserApp(
                     uiState = uiState,
                     favoriteSites = uiState.favoriteSites,
                     onQueryChange = { viewModel.onSearchInputChange(it) },
-                    onSubmitQuery = { query ->
-                        val trimmed = query.trim()
-                        if (DownloadPolicy.isAudio(trimmed) || DownloadPolicy.isDownloadableFileUrl(trimmed)) {
-                            onHandleUrlNavigation(trimmed)
-                        } else {
-                            val success = viewModel.submitQueryOrUrl(query)
-                            if (success) {
-                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                                webView.loadUrl(viewModel.uiState.value.currentUrl)
-                            }
-                        }
-                    },
+                    onSubmitQuery = navigateToInput,
                     onAddFavorite = { name, url -> viewModel.addFavoriteSite(name, url) },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -1750,11 +1737,7 @@ fun BrowserApp(
                     history = uiState.browsingHistory,
                     onSelectUrl = { url ->
                         viewModel.closeHistory()
-                        val success = viewModel.submitQueryOrUrl(url)
-                        if (success) {
-                            MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                            webView.loadUrl(viewModel.uiState.value.currentUrl)
-                        }
+                        navigateToInput(url)
                     },
                     onDeleteEntry = { id -> viewModel.deleteHistoryEntry(id) },
                     onClearAll = { viewModel.clearAllHistory() },

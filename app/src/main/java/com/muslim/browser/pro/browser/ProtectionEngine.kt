@@ -443,20 +443,9 @@ object ProtectionEngine {
 
     /**
      * Extracts extension from URL or Content-Disposition.
+     * Delegates to DownloadPolicy for centralized filename and extension resolution.
      */
     fun extractExtension(url: String, contentDisposition: String?): String {
-        if (contentDisposition != null && contentDisposition.contains("filename=", ignoreCase = true)) {
-            val filenamePart = contentDisposition.substringAfter("filename=", "")
-                .replace("\"", "").trim()
-            val ext = filenamePart.substringAfterLast('.', "")
-            if (ext.isNotEmpty()) {
-                return ext.lowercase(Locale.ROOT)
-            }
-        }
-
-        val cleanUrl = url.substringBefore('?').substringBefore('#')
-        val lastSegment = cleanUrl.substringAfterLast('/', "")
-        val ext = lastSegment.substringAfterLast('.', "")
-        return ext.lowercase(Locale.ROOT)
+        return DownloadPolicy.extractExtension(url, contentDisposition)
     }
 }

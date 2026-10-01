@@ -214,7 +214,10 @@ fun BrowserWebView(
             AndroidView(
                 factory = { webView },
                 update = { view ->
-                    MainActivity.applyWebViewTheme(view, !colors.isLight)
+                    val isDark = !colors.isLight
+                    if (MainActivity.isDarkThemeActive != isDark) {
+                        MainActivity.applyWebViewTheme(view, isDark)
+                    }
                 },
                 modifier = Modifier.fillMaxSize()
             )

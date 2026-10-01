@@ -520,6 +520,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun onPageFinished(url: String, title: String?, canBack: Boolean, canForward: Boolean) {
         if (url.isBlank() || url == "about:blank") return
         val effectiveTitle = if (!title.isNullOrBlank()) title else url
+
+        // Record successful navigation into history (skip about:blank and blocked sites)
+        val updatedHistory = if (url.isNotBlank() && url != "about:blank" && !url.startsWith("about:") && _uiState.value.blockedInfo == null) {
+            repository.addHistoryEntry(effectiveTitle, url)
+            repository.getHistory()
+        } else {
+            null
+        }
+
         _uiState.update { state ->
             val updatedTabs = state.tabs.map { tab ->
                 if (tab.id == state.currentTabId) {
@@ -543,16 +552,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 pageTitle = effectiveTitle,
                 canGoBack = canBack,
                 canGoForward = canForward,
-                isPageContentVisible = true
+                isPageContentVisible = true,
+                browsingHistory = updatedHistory ?: state.browsingHistory
             )
         }
         persistTabs()
-
-        // Record successful navigation into history (skip about:blank and blocked sites)
-        if (url.isNotBlank() && url != "about:blank" && !url.startsWith("about:") && _uiState.value.blockedInfo == null) {
-            repository.addHistoryEntry(effectiveTitle, url)
-            _uiState.update { it.copy(browsingHistory = repository.getHistory()) }
-        }
     }
 
     fun onProgressChanged(progress: Int) {
