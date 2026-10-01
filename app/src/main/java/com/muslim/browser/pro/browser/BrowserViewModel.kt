@@ -184,6 +184,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun saveTabState(tabId: String, bundle: android.os.Bundle?) {
+        _uiState.update { state ->
+            val updatedTabs = state.tabs.map { tab ->
+                if (tab.id == tabId) {
+                    tab.copy(bundle = bundle)
+                } else tab
+            }
+            state.copy(tabs = updatedTabs)
+        }
+    }
+
+
     fun openNewTab(url: String = "") {
         val newTab = BrowserTab(
             url = url,

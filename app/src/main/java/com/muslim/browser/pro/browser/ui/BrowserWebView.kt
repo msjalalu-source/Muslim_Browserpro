@@ -212,11 +212,29 @@ fun BrowserWebView(
                 .background(canvasBg)
         ) {
             AndroidView(
-                factory = { webView },
-                update = { view ->
+                factory = { context ->
+                    android.widget.FrameLayout(context).apply {
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                update = { container ->
                     val isDark = !colors.isLight
                     if (MainActivity.isDarkThemeActive != isDark) {
-                        MainActivity.applyWebViewTheme(view, isDark)
+                        MainActivity.applyWebViewTheme(webView, isDark)
+                    }
+                    if (container.childCount != 1 || container.getChildAt(0) !== webView) {
+                        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+                        container.removeAllViews()
+                        container.addView(
+                            webView,
+                            android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                        )
                     }
                 },
                 modifier = Modifier.fillMaxSize()

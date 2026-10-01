@@ -107,6 +107,7 @@ import com.muslim.browser.pro.browser.ui.DiagnosticScreen
 import com.muslim.browser.pro.browser.ui.DownloadHistoryScreen
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.HistoryScreen
+import com.muslim.browser.pro.browser.TabWebViewManager
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
@@ -117,6 +118,8 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: BrowserViewModel by viewModels()
     private var webViewInstance: WebView? = null
+    lateinit var tabWebViewManager: TabWebViewManager
+        internal set
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val pendingSslHandlers = Collections.synchronizedMap(mutableMapOf<String, MutableList<SslErrorHandler>>())
 
@@ -251,9 +254,56 @@ class MainActivity : ComponentActivity() {
         // Check if any ongoing downloads need active progress polling
         startProgressPolling()
 
-        val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        tabWebViewManager = TabWebViewManager(
+            context = this,
+            maxLiveWebViews = TabWebViewManager.MAX_LIVE_WEBVIEWS,
+            webViewFactory = { id -> createConfiguredWebView(id) },
+            onSaveTabBundle = { id, bundle -> viewModel.saveTabState(id, bundle) }
+        )
 
-        // Create single WebView instance with optimized memory settings
+        val activeTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
+        val (initialWebView, _) = tabWebViewManager.getOrCreateWebView(
+            tabId = viewModel.uiState.value.currentTabId,
+            url = if (activeTab?.isHomePage == false) activeTab.url else null,
+            bundle = activeTab?.bundle,
+            isDesktopMode = viewModel.uiState.value.isDesktopModeEnabled,
+            onRestored = {
+                DesktopModeDiagnostics.restorationCount++
+            }
+        )
+        webViewInstance = initialWebView
+
+        setContent {
+            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+            LaunchedEffect(uiState.appTheme) {
+                webViewInstance?.let {
+                    applyWebViewTheme(it, isDarkTheme = uiState.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE)
+                }
+            }
+
+            MyApplicationTheme(appTheme = uiState.appTheme) {
+                BrowserApp(
+                    viewModel = viewModel,
+                    tabWebViewManager = tabWebViewManager,
+                    onClearAllData = { clearAllData() },
+                    onClearCacheAndCookies = { clearCacheAndCookies() },
+                    onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
+                    onSslProceed = { host -> onSslPromptProceed(host) },
+                    onSslCancel = { host -> onSslPromptCancel(host) },
+                    onHandleUrlNavigation = { url ->
+                        webViewInstance?.let { handleUrlNavigation(it, url) } ?: false
+                    },
+                    onActiveWebViewChanged = { newWv ->
+                        webViewInstance = newWv
+                    }
+                )
+            }
+        }
+    }
+
+    internal fun createConfiguredWebView(tabId: String): WebView {
+        val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -602,34 +652,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        webViewInstance = webView
-
-        // Restore active tab webpage on cold start / process recreation if not on home page
-        val activeTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
-        if (activeTab != null && !activeTab.isHomePage && activeTab.url.isNotEmpty()) {
-            webView.loadUrl(activeTab.url)
-        }
-
-        setContent {
-            val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-            LaunchedEffect(uiState.appTheme) {
-                applyWebViewTheme(webView, isDarkTheme = uiState.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE)
-            }
-
-            MyApplicationTheme(appTheme = uiState.appTheme) {
-                BrowserApp(
-                    viewModel = viewModel,
-                    webView = webView,
-                    onClearAllData = { clearAllData() },
-                    onClearCacheAndCookies = { clearCacheAndCookies() },
-                    onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
-                    onSslProceed = { host -> onSslPromptProceed(host) },
-                    onSslCancel = { host -> onSslPromptCancel(host) },
-                    onHandleUrlNavigation = { url -> handleUrlNavigation(webView, url) }
-                )
-            }
-        }
+        return webView
     }
 
     private fun onSslPromptProceed(host: String) {
@@ -876,30 +899,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearAllData() {
-        val webView = webViewInstance ?: return
         try {
-            // 1. Clear browsing history from WebView, ViewModel, and persistent storage
-            webView.clearHistory()
+            try {
+                tabWebViewManager.clearAllData()
+            } catch (_: Exception) {}
             viewModel.clearAllHistory()
             viewModel.onHistoryCleared()
 
-            // 2. Clear cache
-            webView.clearCache(true)
             FaviconManager.clearCache(this)
 
-            // 3. Clear cookies
             val cookieManager = CookieManager.getInstance()
             cookieManager.removeAllCookies(null)
             cookieManager.flush()
 
-            // 4. Clear WebStorage (DOM storage / localStorage)
             WebStorage.getInstance().deleteAllData()
 
-            // 5. Clear Form data & SSL preferences
-            webView.clearFormData()
-            webView.clearSslPreferences()
-
-            // 6. Clear pending trusted download origins
             DownloadPolicy.clearTrustedOrigin()
 
             viewModel.showToast("All browsing data cleared.")
@@ -909,17 +923,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearCacheAndCookies() {
-        val webView = webViewInstance ?: return
         try {
-            // 1. Clear cache
-            webView.clearCache(true)
+            try {
+                tabWebViewManager.clearAllData()
+            } catch (_: Exception) {}
 
-            // 2. Clear cookies
             val cookieManager = CookieManager.getInstance()
             cookieManager.removeAllCookies(null)
             cookieManager.flush()
 
-            // 3. Clear WebStorage
             WebStorage.getInstance().deleteAllData()
 
             viewModel.showToast("Cache and cookies cleared.")
@@ -975,18 +987,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        webViewInstance?.apply {
-            onPause()
-            pauseTimers()
-        }
+        try {
+            tabWebViewManager.pauseAll()
+        } catch (_: Exception) {}
     }
 
     override fun onResume() {
         super.onResume()
-        webViewInstance?.apply {
-            onResume()
-            resumeTimers()
-        }
+        try {
+            tabWebViewManager.resumeTab(viewModel.uiState.value.currentTabId)
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -1004,13 +1014,9 @@ class MainActivity : ComponentActivity() {
         } catch (_: Exception) {}
         fileChooserCallback?.onReceiveValue(null)
         fileChooserCallback = null
-        webViewInstance?.apply {
-            stopLoading()
-            pauseTimers()
-            onPause()
-            removeAllViews()
-            destroy()
-        }
+        try {
+            tabWebViewManager.destroyAll()
+        } catch (_: Exception) {}
         webViewInstance = null
         super.onDestroy()
     }
@@ -1029,6 +1035,8 @@ class MainActivity : ComponentActivity() {
         var currentCacheMode: Int = WebSettings.LOAD_DEFAULT
         var webViewRecreationCount: Int = 0
         var isAuthFlowActive: Boolean = false
+        var restorationCount: Int = 0
+        var windowSwitchReloadCount: Int = 0
 
         fun reset() {
             urlBeforeToggle = null
@@ -1044,6 +1052,8 @@ class MainActivity : ComponentActivity() {
             currentCacheMode = WebSettings.LOAD_DEFAULT
             webViewRecreationCount = 0
             isAuthFlowActive = false
+            restorationCount = 0
+            windowSwitchReloadCount = 0
         }
     }
 
@@ -1488,18 +1498,38 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BrowserApp(
     viewModel: BrowserViewModel,
-    webView: WebView,
+    tabWebViewManager: TabWebViewManager,
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onSslProceed: (String) -> Unit = {},
     onSslCancel: (String) -> Unit = {},
-    onHandleUrlNavigation: (String) -> Boolean = { false }
+    onHandleUrlNavigation: (String) -> Boolean = { false },
+    onActiveWebViewChanged: (WebView) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val colors = com.muslim.browser.pro.ui.theme.LocalAppColors.current
+
+    val activeTab = uiState.tabs.find { it.id == uiState.currentTabId }
+    val (activeWebView, _) = remember(uiState.currentTabId) {
+        tabWebViewManager.getOrCreateWebView(
+            tabId = uiState.currentTabId,
+            url = if (activeTab?.isHomePage == false) activeTab.url else null,
+            bundle = activeTab?.bundle,
+            isDesktopMode = uiState.isDesktopModeEnabled,
+            onRestored = {
+                MainActivity.DesktopModeDiagnostics.restorationCount++
+            }
+        )
+    }
+
+    LaunchedEffect(activeWebView) {
+        onActiveWebViewChanged(activeWebView)
+        tabWebViewManager.pauseAll(exceptTabId = uiState.currentTabId)
+        tabWebViewManager.resumeTab(uiState.currentTabId)
+    }
 
     // Toast / Snackbar feedback
     LaunchedEffect(uiState.toastMessage) {
@@ -1521,8 +1551,8 @@ fun BrowserApp(
             uiState.isMenuOpen -> viewModel.closeMenu()
             uiState.blockedInfo != null -> viewModel.goHome()
             !uiState.isHomePage -> {
-                if (webView.canGoBack()) {
-                    webView.goBack()
+                if (activeWebView.canGoBack()) {
+                    activeWebView.goBack()
                 } else {
                     viewModel.goHome()
                 }
@@ -1540,8 +1570,8 @@ fun BrowserApp(
         } else {
             val success = viewModel.submitQueryOrUrl(input)
             if (success) {
-                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                webView.loadUrl(viewModel.uiState.value.currentUrl)
+                MainActivity.applyDesktopModeToWebView(activeWebView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                activeWebView.loadUrl(viewModel.uiState.value.currentUrl)
             }
         }
     }
@@ -1554,20 +1584,19 @@ fun BrowserApp(
                 canGoForward = uiState.canGoForward && !uiState.isHomePage,
                 isDesktopModeEnabled = uiState.isDesktopModeEnabled,
                 onGoBack = {
-                    if (webView.canGoBack()) webView.goBack() else viewModel.goHome()
+                    if (activeWebView.canGoBack()) activeWebView.goBack() else viewModel.goHome()
                 },
                 onGoForward = {
-                    if (webView.canGoForward()) webView.goForward()
+                    if (activeWebView.canGoForward()) activeWebView.goForward()
                 },
                 onNewTab = {
                     val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
                     if (currentTab != null && !currentTab.isHomePage) {
                         val bundle = Bundle()
-                        webView.saveState(bundle)
-                        viewModel.saveCurrentTabState(bundle)
+                        activeWebView.saveState(bundle)
+                        viewModel.saveTabState(currentTab.id, bundle)
                     }
                     viewModel.openNewTab()
-                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled)
                 },
                 onShowTabs = {
                     viewModel.openTabsDialog()
@@ -1588,15 +1617,15 @@ fun BrowserApp(
                 .padding(innerPadding)
                 .background(colors.background)
         ) {
-            // 1. BrowserWebView is persistently kept in the Box layout so the WebView instance
+            // 1. BrowserWebView is persistently kept in the Box layout so the active WebView instance
             // remains warm and attached to the window, preventing teardown, re-attaching, and blank flashes.
             BrowserWebView(
                 uiState = uiState,
-                webView = webView,
+                webView = activeWebView,
                 onUrlSubmit = navigateToInput,
                 onReload = {
-                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                    webView.reload()
+                    MainActivity.applyDesktopModeToWebView(activeWebView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                    activeWebView.reload()
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -1619,14 +1648,14 @@ fun BrowserApp(
                     blockedInfo = uiState.blockedInfo!!,
                     onGoHome = { viewModel.goHome() },
                     onGoBack = {
-                        if (webView.canGoBack()) {
-                            webView.goBack()
-                            viewModel.onPageStarted(webView.url ?: "")
+                        if (activeWebView.canGoBack()) {
+                            activeWebView.goBack()
+                            viewModel.onPageStarted(activeWebView.url ?: "")
                         } else {
                             viewModel.goHome()
                         }
                     },
-                    canGoBack = webView.canGoBack(),
+                    canGoBack = activeWebView.canGoBack(),
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -1640,51 +1669,26 @@ fun BrowserApp(
                             val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
                             if (currentTab != null && !currentTab.isHomePage) {
                                 val bundle = Bundle()
-                                webView.saveState(bundle)
-                                viewModel.saveCurrentTabState(bundle)
+                                activeWebView.saveState(bundle)
+                                viewModel.saveTabState(currentTab.id, bundle)
                             }
-                            val targetTab = viewModel.uiState.value.tabs.find { it.id == selectedTabId }
                             viewModel.selectTab(selectedTabId)
-                            if (targetTab != null) {
-                                if (targetTab.isHomePage) {
-                                    // Composable HomePage will be displayed
-                                } else {
-                                    MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, targetTab.url)
-                                    if (targetTab.bundle != null) {
-                                        webView.restoreState(targetTab.bundle)
-                                    } else if (targetTab.url.isNotEmpty()) {
-                                        webView.loadUrl(targetTab.url)
-                                    }
-                                }
-                            }
                         } else {
                             viewModel.closeTabsDialog()
                         }
                     },
                     onCloseTab = { tabId ->
-                        val wasActive = (tabId == viewModel.uiState.value.currentTabId)
+                        tabWebViewManager.destroyWebView(tabId)
                         viewModel.closeTab(tabId)
-                        if (wasActive) {
-                            val newActive = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
-                            if (newActive != null && !newActive.isHomePage) {
-                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, newActive.url)
-                                if (newActive.bundle != null) {
-                                    webView.restoreState(newActive.bundle)
-                                } else if (newActive.url.isNotEmpty()) {
-                                    webView.loadUrl(newActive.url)
-                                }
-                            }
-                        }
                     },
                     onNewTab = {
                         val currentTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
                         if (currentTab != null && !currentTab.isHomePage) {
                             val bundle = Bundle()
-                            webView.saveState(bundle)
-                            viewModel.saveCurrentTabState(bundle)
+                            activeWebView.saveState(bundle)
+                            viewModel.saveTabState(currentTab.id, bundle)
                         }
                         viewModel.openNewTab()
-                        MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled)
                     },
                     onDismiss = { viewModel.closeTabsDialog() }
                 )
@@ -1708,10 +1712,10 @@ fun BrowserApp(
                     onToggleDesktopMode = onToggleDesktopMode,
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
-                            evaluateJs = { script, cb -> webView.evaluateJavascript(script, cb) },
+                            evaluateJs = { script, cb -> activeWebView.evaluateJavascript(script, cb) },
                             reloadPage = {
-                                MainActivity.applyDesktopModeToWebView(webView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
-                                webView.reload()
+                                MainActivity.applyDesktopModeToWebView(activeWebView, viewModel.uiState.value.isDesktopModeEnabled, viewModel.uiState.value.currentUrl)
+                                activeWebView.reload()
                             }
                         )
                     },
@@ -1724,7 +1728,7 @@ fun BrowserApp(
             // Temporary Diagnostic Viewport & Environment Inspector Overlay
             if (uiState.isDiagnosticOpen) {
                 DiagnosticScreen(
-                    webView = webView,
+                    webView = activeWebView,
                     isDesktopModeEnabled = uiState.isDesktopModeEnabled,
                     onDismiss = { viewModel.closeDiagnostic() },
                     modifier = Modifier.fillMaxSize()
