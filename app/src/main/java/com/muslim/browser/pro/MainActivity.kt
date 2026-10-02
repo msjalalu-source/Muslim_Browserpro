@@ -315,37 +315,13 @@ class MainActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            applyWebViewTheme(this, isDarkTheme)
-
-            // Ensure cookies and third-party cookies are accepted for cross-origin assets
-            CookieManager.getInstance().setAcceptCookie(true)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-            settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                databaseEnabled = true
-                cacheMode = WebSettings.LOAD_DEFAULT
-                setSupportMultipleWindows(true)
-                loadWithOverviewMode = true
-                useWideViewPort = true
-                builtInZoomControls = true
-                displayZoomControls = false
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                // Keep offscreenPreRaster false to reduce RAM and GPU rasterization load
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    offscreenPreRaster = false
-                }
-                mediaPlaybackRequiresUserGesture = true
-                saveFormData = false
-            }
+            WebViewConfigurator.configureBaseSettings(this, isDarkTheme)
             syncWebViewDesktopMode(this, url = null, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
             DesktopModeDiagnostics.webViewRecreationCount++
 
             webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    val url = request?.url?.toString() ?: return false
-                    android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading: URL=$url")
+                private fun processUrlLoading(view: WebView?, url: String): Boolean {
+                    android.util.Log.d("DIAGNOSTIC", "processUrlLoading: URL=$url")
                     DesktopModeDiagnostics.redirectChain.add(url)
                     if (view != null) {
                         syncWebViewDesktopMode(view, url = url, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
@@ -353,19 +329,17 @@ class MainActivity : ComponentActivity() {
                     val handled = handleUrlNavigation(view, url)
                     DesktopModeDiagnostics.lastShouldOverrideResult = handled
                     return handled
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    return processUrlLoading(view, url)
                 }
 
                 @Deprecated("Deprecated in Java", ReplaceWith("shouldOverrideUrlLoading(view, request)"))
                 override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                     if (url == null) return false
-                    android.util.Log.d("DIAGNOSTIC", "shouldOverrideUrlLoading(String): URL=$url")
-                    DesktopModeDiagnostics.redirectChain.add(url)
-                    if (view != null) {
-                        syncWebViewDesktopMode(view, url = url, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
-                    }
-                    val handled = handleUrlNavigation(view, url)
-                    DesktopModeDiagnostics.lastShouldOverrideResult = handled
-                    return handled
+                    return processUrlLoading(view, url)
                 }
 
                 override fun shouldInterceptRequest(
@@ -409,11 +383,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
-                    DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_DEFAULT
                     android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
-                    applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
-                    applyWebPageDarkTheme(view, isDarkThemeActive)
                     url?.let {
                         viewModel.onPageFinished(
                             url = it,
@@ -822,73 +792,43 @@ class MainActivity : ComponentActivity() {
 
     internal fun handleUrlNavigation(view: WebView?, url: String): Boolean {
         android.util.Log.d("DIAGNOSTIC", "handleUrlNavigation: URL=$url")
-        // 1. Detect if this is a search engine request
-        val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(url)
-        if (searchEngineQuery != null) {
-            // Check custom keyword on the extracted search query
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(
-                searchEngineQuery,
-                viewModel.uiState.value.customKeywords,
-                viewModel.getNormalizedKeywords()
-            )
-            if (blockedKw != null) {
-                viewModel.setBlockedUrl(
-                    url = url,
-                    reason = "Custom Keyword Protection",
-                    detail = "Search query blocked due to protected keyword: \"$blockedKw\""
-                )
-                return true // Block navigation
+        val decision = NavigationController.evaluate(
+            url = url,
+            customKeywords = viewModel.uiState.value.customKeywords,
+            normalizedKeywords = viewModel.getNormalizedKeywords()
+        )
+        return when (decision) {
+            is NavigationDecision.Blocked -> {
+                if (decision.reason == "Download Blocked") {
+                    viewModel.showToast(decision.detail)
+                    viewModel.onPageCommitVisible()
+                } else {
+                    viewModel.setBlockedUrl(
+                        url = url,
+                        reason = decision.reason,
+                        detail = decision.detail
+                    )
+                }
+                true
             }
-
-            // If allowed, check if already Google SafeSearch
-            if (ProtectionEngine.isGoogleSafeSearchUrl(url)) {
-                return false // Let WebView proceed with Google SafeSearch
+            is NavigationDecision.Redirect -> {
+                if (view != null) {
+                    syncWebViewDesktopMode(view, decision.url, viewModel.uiState.value.isDesktopModeEnabled)
+                }
+                view?.loadUrl(decision.url)
+                true
             }
-
-            // Normalize to Google SafeSearch and load
-            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(searchEngineQuery)
-            if (view != null) {
-                applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, safeUrl)
-            }
-            view?.loadUrl(safeUrl)
-            return true // Intercepted and redirected
-        }
-
-        // 2. Direct audio / MP3 link check (preserve existing special handling)
-        if (DownloadPolicy.isAudio(url)) {
-            startDownload(
-                url = url,
-                userAgent = view?.settings?.userAgentString,
-                contentDisposition = null,
-                mimetype = "audio/mpeg"
-            )
-            return true
-        }
-
-        // 3. Early download interception for unified downloadable files (documents, archives, APKs)
-        if (DownloadPolicy.isDownloadableFileUrl(url)) {
-            val decision = DownloadPolicy.evaluate(url)
-            if (decision is DownloadPolicy.Result.Allowed) {
+            is NavigationDecision.Download -> {
                 startDownload(
-                    url = url,
+                    url = decision.url,
                     userAgent = view?.settings?.userAgentString,
                     contentDisposition = null,
-                    mimetype = null
+                    mimetype = decision.mimeType
                 )
-            } else if (decision is DownloadPolicy.Result.Blocked) {
-                viewModel.showToast(decision.reason)
-                viewModel.onPageCommitVisible()
+                true
             }
-            return true // Stop normal WebView navigation
+            is NavigationDecision.Allowed -> false
         }
-
-        // 4. Direct URL navigation check
-        val isBlocked = viewModel.checkAndFilterUrl(url)
-        if (isBlocked) {
-            return true // Block navigation
-        }
-
-        return false
     }
 
     private fun clearAllData() {
@@ -1055,343 +995,58 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private val EMPTY_BLOCKED_BYTES = ByteArray(0)
-        const val DESKTOP_USER_AGENT =
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        const val DESKTOP_USER_AGENT = WebViewConfigurator.DESKTOP_USER_AGENT
 
-        @Volatile
-        var isDarkThemeActive: Boolean = true
+        var isDarkThemeActive: Boolean
+            get() = WebViewConfigurator.isDarkThemeActive
+            set(value) { WebViewConfigurator.isDarkThemeActive = value }
 
-        @Volatile
-        var defaultMobileUserAgent: String? = null
+        var defaultMobileUserAgent: String?
+            get() = WebViewConfigurator.defaultMobileUserAgent
+            set(value) { WebViewConfigurator.defaultMobileUserAgent = value }
 
-        @Volatile
-        var isAuthFlowActive: Boolean = false
+        var isAuthFlowActive: Boolean
+            get() = WebViewConfigurator.isAuthFlowActive
+            set(value) { WebViewConfigurator.isAuthFlowActive = value }
 
-        /**
-         * Resolves the desktop User-Agent string, dynamically incorporating the actual Chrome
-         * version installed on the device for optimal compatibility and bot-detection avoidance.
-         */
-        fun resolveDesktopUserAgent(context: Context): String {
-            val baseMobile = defaultMobileUserAgent ?: try {
-                WebSettings.getDefaultUserAgent(context)
-            } catch (_: Exception) {
-                null
-            }
-            return if (!baseMobile.isNullOrBlank()) {
-                val chromeVersionRegex = Regex("Chrome/([0-9.]+)")
-                val match = chromeVersionRegex.find(baseMobile)
-                val chromeVer = match?.value ?: "Chrome/134.0.0.0"
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) $chromeVer Safari/537.36"
-            } else {
-                DESKTOP_USER_AGENT
-            }
-        }
+        fun resolveDesktopUserAgent(context: Context): String =
+            WebViewConfigurator.resolveDesktopUserAgent(context)
 
-        /**
-         * Detects whether a URL represents a strict identity provider authentication endpoint
-         * (specifically Google Accounts or Apple ID) that disallows desktop user-agents on embedded WebViews.
-         * Normal websites (including GitHub, Reddit, Wikipedia, news, etc.) are NOT identity provider endpoints
-         * and must NEVER trigger mobile User-Agent switching.
-         */
-        fun isAuthenticationEndpoint(url: String?): Boolean {
-            if (url.isNullOrBlank()) return false
-            return try {
-                val uri = Uri.parse(url)
-                val host = uri.host?.lowercase(Locale.ROOT) ?: return false
-                val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+        fun isAuthenticationEndpoint(url: String?): Boolean =
+            WebViewConfigurator.isAuthenticationEndpoint(url)
 
-                // 1. Google Account & OAuth hosts
-                if (host == "accounts.google.com" ||
-                    host.endsWith(".accounts.google.com") ||
-                    host == "oauth2.googleapis.com" ||
-                    host == "myaccount.google.com" ||
-                    host == "accounts.youtube.com"
-                ) {
-                    return true
-                }
-
-                // 2. Apple ID Auth
-                if (host == "appleid.apple.com") {
-                    return true
-                }
-
-                // 3. Google services sign-in, account addition, and sign-out endpoints
-                val isGoogle = host == "google.com" || host.endsWith(".google.com")
-                if (isGoogle && (
-                    path.startsWith("/servicelogin") ||
-                    path.startsWith("/signin") ||
-                    path.startsWith("/interactive_login") ||
-                    path.contains("/addsession") ||
-                    path.contains("/accountchooser") ||
-                    path.contains("/logout") ||
-                    path.contains("/signout") ||
-                    path.startsWith("/accounts/") ||
-                    (uri.getQueryParameter("service") != null && path.contains("login"))
-                )) {
-                    return true
-                }
-
-                false
-            } catch (_: Exception) {
-                false
-            }
-        }
-
-        /**
-         * Single authoritative synchronization function for WebView desktop mode.
-         * Enforces the invariant:
-         * Desktop Mode ON -> all normal web navigation uses Desktop configuration consistently.
-         * Desktop Mode OFF -> all normal web navigation uses Mobile configuration consistently.
-         *
-         * - Reads authoritative isDesktopModeEnabled state
-         * - Sets correct User-Agent without unnecessary writes
-         * - Configures required viewport and layout settings
-         * - Never calls loadUrl() or reload()
-         * - Never mutates global Desktop Mode state
-         * - Strictly isolates authentication (Google/Apple login) to active auth pages
-         */
         fun syncWebViewDesktopMode(
             webView: WebView?,
             url: String? = null,
             isDesktopEnabled: Boolean? = null,
             updateUserAgent: Boolean = true
-        ): Boolean {
-            if (webView == null) return false
-            var uaChanged = false
-            try {
-                if (defaultMobileUserAgent == null) {
-                    defaultMobileUserAgent = try {
-                        WebSettings.getDefaultUserAgent(webView.context)
-                    } catch (_: Exception) {
-                        webView.settings.userAgentString
-                    }
-                }
+        ): Boolean = WebViewConfigurator.syncDesktopMode(
+            webView = webView,
+            url = url,
+            isDesktopEnabled = isDesktopEnabled,
+            updateUserAgent = updateUserAgent
+        )
 
-                val enabled = isDesktopEnabled ?: DesktopModeDiagnostics.currentDesktopMode
-                val targetUrl = url ?: webView.url
-
-                // Update auth flow state strictly based on identity provider endpoint matching
-                if (enabled && !targetUrl.isNullOrBlank()) {
-                    if (isAuthenticationEndpoint(targetUrl)) {
-                        isAuthFlowActive = true
-                        DesktopModeDiagnostics.isAuthFlowActive = true
-                        android.util.Log.d("DESKTOP_DIAG", "Auth flow activated for endpoint: $targetUrl")
-                    } else if (isAuthFlowActive) {
-                        val uri = try { Uri.parse(targetUrl) } catch (_: Exception) { null }
-                        val host = uri?.host?.lowercase(Locale.ROOT) ?: ""
-                        val path = uri?.path?.lowercase(Locale.ROOT) ?: ""
-                        val isGoogleAuthHost = host == "accounts.google.com" ||
-                                host.endsWith(".accounts.google.com") ||
-                                host == "oauth2.googleapis.com" ||
-                                host == "myaccount.google.com" ||
-                                host == "appleid.apple.com"
-                        val isIntermediateAuth = isGoogleAuthHost ||
-                                path.contains("/callback/google") ||
-                                path.contains("/challenge/") ||
-                                path.contains("/checkcookie") ||
-                                path.contains("/setosid") ||
-                                path.contains("/consent") ||
-                                path.contains("/saml") ||
-                                path.contains("/federation") ||
-                                (host.endsWith("google.com") && (path.contains("/accounts/") || path.contains("/addsession") || path.contains("/accountchooser")))
-                        if (!isIntermediateAuth) {
-                            isAuthFlowActive = false
-                            DesktopModeDiagnostics.isAuthFlowActive = false
-                            android.util.Log.d("DESKTOP_DIAG", "Auth flow completed on URL: $targetUrl")
-                        }
-                    }
-                } else if (!enabled) {
-                    isAuthFlowActive = false
-                    DesktopModeDiagnostics.isAuthFlowActive = false
-                }
-
-                val shouldUseMobile = !enabled || isAuthFlowActive
-                val targetUserAgent = if (shouldUseMobile) {
-                    defaultMobileUserAgent ?: webView.settings.userAgentString
-                } else {
-                    resolveDesktopUserAgent(webView.context)
-                }
-
-                if (updateUserAgent && webView.settings.userAgentString != targetUserAgent) {
-                    android.util.Log.d(
-                        "DESKTOP_DIAG",
-                        "Setting userAgentString: $targetUserAgent (isAuthFlowActive=$isAuthFlowActive, enabled=$enabled)"
-                    )
-                    webView.settings.userAgentString = targetUserAgent
-                    uaChanged = true
-                }
-
-                webView.settings.useWideViewPort = true
-                webView.settings.loadWithOverviewMode = true
-                webView.settings.builtInZoomControls = true
-                webView.settings.displayZoomControls = false
-
-                DesktopModeDiagnostics.currentDesktopMode = enabled
-
-                // Diagnostic invariant assertion: if Desktop Mode is ON and not in auth flow, actual UA must be Desktop
-                if (enabled && !isAuthFlowActive) {
-                    val expectedDesktop = resolveDesktopUserAgent(webView.context)
-                    if (webView.settings.userAgentString != expectedDesktop) {
-                        android.util.Log.e(
-                            "DESKTOP_STATE_ERROR",
-                            "Desktop Mode invariant violated! URL=$targetUrl, expectedUA=$expectedDesktop, actualUA=${webView.settings.userAgentString}"
-                        )
-                    } else {
-                        android.util.Log.d(
-                            "DESKTOP_STATE",
-                            "url=$targetUrl mode=DESKTOP actualUA=DESKTOP expectedUA=DESKTOP"
-                        )
-                    }
-                } else {
-                    android.util.Log.d(
-                        "DESKTOP_STATE",
-                        "url=$targetUrl mode=${if (enabled) "AUTH_MOBILE" else "MOBILE"} actualUA=${if (shouldUseMobile) "MOBILE" else "DESKTOP"}"
-                    )
-                }
-            } catch (_: Exception) {}
-            return uaChanged
-        }
-
-        /**
-         * Backward-compatible delegation to [syncWebViewDesktopMode].
-         */
         fun applyDesktopModeToWebView(
             webView: WebView,
             enabled: Boolean,
             url: String? = null,
             updateUserAgent: Boolean = true
-        ): Boolean {
-            return syncWebViewDesktopMode(webView, url, isDesktopEnabled = enabled, updateUserAgent = updateUserAgent)
-        }
+        ): Boolean = syncWebViewDesktopMode(
+            webView = webView,
+            url = url,
+            isDesktopEnabled = enabled,
+            updateUserAgent = updateUserAgent
+        )
 
-        /**
-         * Configures viewport settings and dynamically ensures the viewport meta tag
-         * presents a full desktop layout (width=1024) in Desktop Mode, and restores standard
-         * device-width in Mobile Mode or during active authentication flows.
-         * CRITICAL: Must NEVER trigger reload() or loadUrl().
-         */
-        fun applyDesktopViewport(webView: WebView?, enabled: Boolean) {
-            if (webView == null) return
-            try {
-                webView.settings.useWideViewPort = true
-                webView.settings.loadWithOverviewMode = true
-                webView.settings.builtInZoomControls = true
-                webView.settings.displayZoomControls = false
+        fun applyDesktopViewport(webView: WebView?, enabled: Boolean) =
+            WebViewConfigurator.applyDesktopViewport(webView, enabled)
 
-                // In active authentication flows, maintain responsive mobile viewport for usability and bot-detection avoidance
-                val effectiveDesktopMode = enabled && !isAuthFlowActive
+        fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) =
+            WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme)
 
-                val script = if (effectiveDesktopMode) {
-                    """
-                        (function() {
-                            try {
-                                var metas = document.querySelectorAll('meta[name="viewport"]');
-                                if (metas.length > 0) {
-                                    metas.forEach(function(m) {
-                                        if (m.getAttribute('content') !== 'width=1024') {
-                                            m.setAttribute('content', 'width=1024');
-                                        }
-                                    });
-                                } else {
-                                    var meta = document.createElement('meta');
-                                    meta.name = 'viewport';
-                                    meta.content = 'width=1024';
-                                    (document.head || document.documentElement).appendChild(meta);
-                                }
-                            } catch(e) {}
-                        })();
-                    """.trimIndent()
-                } else {
-                    """
-                        (function() {
-                            try {
-                                var metas = document.querySelectorAll('meta[name="viewport"]');
-                                if (metas.length > 0) {
-                                    metas.forEach(function(m) {
-                                        if (m.getAttribute('content') !== 'width=device-width, initial-scale=1.0') {
-                                            m.setAttribute('content', 'width=device-width, initial-scale=1.0');
-                                        }
-                                    });
-                                }
-                            } catch(e) {}
-                        })();
-                    """.trimIndent()
-                }
-                webView.evaluateJavascript(script, null)
-            } catch (_: Throwable) {}
-        }
-
-        /**
-         * Applies the native dark or light theme settings to the WebView.
-         * Leverages native Android WebView algorithmic darkening and force dark capabilities,
-         * and applies clean, lightweight dark theme rendering to web page content.
-         */
-        fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
-            try {
-                isDarkThemeActive = isDarkTheme
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    webView.settings.isAlgorithmicDarkeningAllowed = isDarkTheme
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    @Suppress("DEPRECATION")
-                    webView.settings.forceDark = if (isDarkTheme) {
-                        WebSettings.FORCE_DARK_ON
-                    } else {
-                        WebSettings.FORCE_DARK_OFF
-                    }
-                }
-                val bgColor = if (isDarkTheme) android.graphics.Color.parseColor("#0F172A") else android.graphics.Color.WHITE
-                webView.setBackgroundColor(bgColor)
-                applyWebPageDarkTheme(webView, isDarkTheme)
-            } catch (_: Exception) {}
-        }
-
-        /**
-         * Applies or removes lightweight dark rendering on web content.
-         * Preserves true image, video, and media colors while darkening light backgrounds and text.
-         */
-        fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
-            if (webView == null) return
-            try {
-                if (isDarkTheme) {
-                    val script = """
-                        (function() {
-                            try {
-                                var id = '__mb_dark_theme__';
-                                if (document.getElementById(id)) return;
-                                var target = document.body || document.documentElement;
-                                if (!target) return;
-                                var bg = window.getComputedStyle(target).backgroundColor;
-                                var m = bg ? bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/) : null;
-                                if (m) {
-                                    var alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
-                                    if (alpha > 0.1) {
-                                        var r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
-                                        var lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                                        if (lum < 65) return;
-                                    }
-                                }
-                                var style = document.createElement('style');
-                                style.id = id;
-                                style.textContent = 'html { filter: invert(100%) hue-rotate(180deg) !important; background-color: #0F172A !important; } img, video, canvas, svg, picture, iframe, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                                (document.head || document.documentElement).appendChild(style);
-                            } catch(e) {}
-                        })();
-                    """.trimIndent()
-                    webView.evaluateJavascript(script, null)
-                } else {
-                    val script = """
-                        (function() {
-                            try {
-                                var el = document.getElementById('__mb_dark_theme__');
-                                if (el) el.remove();
-                            } catch(e) {}
-                        })();
-                    """.trimIndent()
-                    webView.evaluateJavascript(script, null)
-                }
-            } catch (_: Throwable) {}
-        }
+        fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) =
+            WebViewConfigurator.applyWebPageDarkTheme(webView, isDarkTheme)
 
         // Normalizes and sanitizes MIME types requested by websites via accept attributes.
         // Handles comma-separated values, extensions (.pdf, .png, etc.), and defaults to all types.
@@ -1591,7 +1246,7 @@ fun BrowserApp(
         } else {
             val success = viewModel.submitQueryOrUrl(input)
             if (success) {
-                MainActivity.syncWebViewDesktopMode(activeWebView, viewModel.uiState.value.currentUrl, viewModel.uiState.value.isDesktopModeEnabled)
+                MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
                 activeWebView.loadUrl(viewModel.uiState.value.currentUrl)
             }
         }
@@ -1645,7 +1300,7 @@ fun BrowserApp(
                 webView = activeWebView,
                 onUrlSubmit = navigateToInput,
                 onReload = {
-                    MainActivity.syncWebViewDesktopMode(activeWebView, viewModel.uiState.value.currentUrl, viewModel.uiState.value.isDesktopModeEnabled)
+                    MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
                     activeWebView.reload()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -1735,7 +1390,7 @@ fun BrowserApp(
                         viewModel.translateCurrentPage(
                             evaluateJs = { script, cb -> activeWebView.evaluateJavascript(script, cb) },
                             reloadPage = {
-                                MainActivity.syncWebViewDesktopMode(activeWebView, viewModel.uiState.value.currentUrl, viewModel.uiState.value.isDesktopModeEnabled)
+                                MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
                                 activeWebView.reload()
                             }
                         )

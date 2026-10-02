@@ -434,11 +434,11 @@ class FocusShieldProtectionTest {
     fun `test default favorite websites loaded`() {
         val sites = repository.getFavoriteSites()
         assertTrue("Default favorite sites should not be empty", sites.isNotEmpty())
-        assertEquals("Home Page must initially show exactly 7 website tiles", 7, sites.size)
+        assertEquals("Home Page must initially show exactly 8 website tiles", 8, sites.size)
         assertFalse("Legacy Google tile must be removed", sites.any { it.name == "Google" })
         assertFalse("Legacy Wikipedia tile must be removed", sites.any { it.name == "Wikipedia" })
 
-        // Verify the exact 7 websites requested by user
+        // Verify the exact 8 websites
         assertEquals("MoldovaLive", sites[0].name)
         assertEquals("https://moldovalive.md", sites[0].url)
 
@@ -459,6 +459,9 @@ class FocusShieldProtectionTest {
 
         assertEquals("Ittefaq", sites[6].name)
         assertEquals("https://www.ittefaq.com.bd", sites[6].url)
+
+        assertEquals("BangiNews", sites[7].name)
+        assertEquals("https://banginews.com", sites[7].url)
     }
 
     @Test
@@ -497,6 +500,49 @@ class FocusShieldProtectionTest {
         val addedItem = afterAddList.find { it.name == "Sunnah" }
         assertNotNull("Added item should be in uiState", addedItem)
         assertEquals("https://sunnah.com", addedItem?.url)
+    }
+
+    @Test
+    fun `test BangiNews is homepage card 8 and cards 1 to 7 remain unchanged`() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val defaultFavorites = com.muslim.browser.pro.browser.SettingsRepository.DEFAULT_FAVORITES
+
+        assertEquals("Default favorites must have exactly 8 items", 8, defaultFavorites.size)
+
+        // Cards 1-7 preserved in exact order
+        assertEquals("MoldovaLive", defaultFavorites[0].name)
+        assertEquals("https://moldovalive.md", defaultFavorites[0].url)
+
+        assertEquals("Moldova1", defaultFavorites[1].name)
+        assertEquals("https://moldova1.md/i/en", defaultFavorites[1].url)
+
+        assertEquals("Google AI Studio", defaultFavorites[2].name)
+        assertEquals("https://aistudio.google.com", defaultFavorites[2].url)
+
+        assertEquals("GitHub", defaultFavorites[3].name)
+        assertEquals("https://github.com/", defaultFavorites[3].url)
+
+        assertEquals("Prothom Alo ePaper", defaultFavorites[4].name)
+        assertEquals("https://epaper.prothomalo.com/Home", defaultFavorites[4].url)
+
+        assertEquals("The Daily Star Bangla", defaultFavorites[5].name)
+        assertEquals("https://bangla.thedailystar.net", defaultFavorites[5].url)
+
+        assertEquals("Ittefaq", defaultFavorites[6].name)
+        assertEquals("https://www.ittefaq.com.bd", defaultFavorites[6].url)
+
+        // Card #8 is BangiNews
+        val card8 = defaultFavorites[7]
+        assertEquals("BangiNews", card8.name)
+        assertEquals("https://banginews.com", card8.url)
+        assertEquals("BN", card8.iconLetter)
+
+        // ViewModel uiState verification
+        val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
+        val vmFavorites = viewModel.uiState.value.favoriteSites
+        assertTrue("Favorites must contain at least 8 items", vmFavorites.size >= 8)
+        assertEquals("BangiNews", vmFavorites[7].name)
+        assertEquals("https://banginews.com", vmFavorites[7].url)
     }
 
     @Test

@@ -96,13 +96,18 @@ class SettingsRepository(context: Context) {
                     )
                 )
             }
-            // Ensure the 7 required default sites are present in the list
-            for (featured in DEFAULT_FAVORITES.reversed()) {
+            // Ensure the required default sites are present in the list in their defined order
+            for (featured in DEFAULT_FAVORITES) {
                 val existingIndex = inMemoryFavorites.indexOfFirst {
                     it.url.equals(featured.url, ignoreCase = true) || it.name.equals(featured.name, ignoreCase = true)
                 }
                 if (existingIndex == -1) {
-                    inMemoryFavorites.add(0, featured)
+                    val defaultIndex = DEFAULT_FAVORITES.indexOf(featured)
+                    if (defaultIndex in 0..inMemoryFavorites.size) {
+                        inMemoryFavorites.add(defaultIndex, featured)
+                    } else {
+                        inMemoryFavorites.add(featured)
+                    }
                 }
             }
             if (inMemoryFavorites.isEmpty()) {
@@ -617,7 +622,8 @@ class SettingsRepository(context: Context) {
             FavoriteSite(id = "fav_github", name = "GitHub", url = "https://github.com/", iconLetter = "GH", badgeColor = 0xFF24292E),
             FavoriteSite(id = "fav_prothomalo", name = "Prothom Alo ePaper", url = "https://epaper.prothomalo.com/Home", iconLetter = "PA", badgeColor = 0xFFD32F2F),
             FavoriteSite(id = "fav_dailystar", name = "The Daily Star Bangla", url = "https://bangla.thedailystar.net", iconLetter = "DS", badgeColor = 0xFF283593),
-            FavoriteSite(id = "fav_ittefaq", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFE65100)
+            FavoriteSite(id = "fav_ittefaq", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFE65100),
+            FavoriteSite(id = "fav_banginews", name = "BangiNews", url = "https://banginews.com", iconLetter = "BN", badgeColor = 0xFF00838F)
         )
     }
 }
