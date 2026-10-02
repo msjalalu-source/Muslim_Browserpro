@@ -105,8 +105,11 @@ import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
 import com.muslim.browser.pro.browser.ui.DiagnosticScreen
 import com.muslim.browser.pro.browser.ui.DownloadHistoryScreen
-import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.HistoryScreen
+import com.muslim.browser.pro.browser.ui.HomePage
+import com.muslim.browser.pro.browser.NavigationController
+import com.muslim.browser.pro.browser.NavigationDecision
+import com.muslim.browser.pro.browser.WebViewConfigurator
 import com.muslim.browser.pro.browser.TabWebViewManager
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
