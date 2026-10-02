@@ -24,7 +24,8 @@ class TabWebViewManager(
     val context: Context,
     val maxLiveWebViews: Int = MAX_LIVE_WEBVIEWS,
     private val webViewFactory: (tabId: String) -> WebView,
-    private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> }
+    private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> },
+    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null
 ) {
     companion object {
         const val MAX_LIVE_WEBVIEWS = 4
@@ -53,7 +54,8 @@ class TabWebViewManager(
         val existing = liveWebViews[tabId]
         if (existing != null) {
             // Live instance already exists. Access-order updates it to most-recently used.
-            // DO NOT reload, DO NOT call loadUrl, DO NOT restoreState!
+            // Synchronize with current authoritative Desktop Mode state without reloading or resetting state
+            onSyncDesktopMode?.invoke(existing, isDesktopMode)
             return Pair(existing, false)
         }
 
@@ -72,8 +74,26 @@ class TabWebViewManager(
             newWebView.loadUrl(url)
         }
 
+        // CRITICAL INVARIANT: Every newly created or restored WebView must IMMEDIATELY
+        // receive the current Desktop Mode configuration before normal browsing proceeds!
+        onSyncDesktopMode?.invoke(newWebView, isDesktopMode)
+
         liveWebViews[tabId] = newWebView
         return Pair(newWebView, restored)
+    }
+
+    /**
+     * Synchronizes all currently retained live WebViews with the new Desktop Mode setting.
+     * Ensures that background tabs do not retain stale User-Agent/viewport configurations.
+     */
+    fun syncAllLiveWebViews(isDesktopMode: Boolean) {
+        synchronized(liveWebViews) {
+            for ((_, webView) in liveWebViews) {
+                try {
+                    onSyncDesktopMode?.invoke(webView, isDesktopMode)
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     /**

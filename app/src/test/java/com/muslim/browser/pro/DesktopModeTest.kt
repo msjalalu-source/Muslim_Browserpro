@@ -2,10 +2,12 @@ package com.muslim.browser.pro
 
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.SettingsRepository
+import com.muslim.browser.pro.browser.TabWebViewManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -426,5 +428,189 @@ class DesktopModeTest {
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://www.google.com/search?q=news")
         assertEquals("Post-auth destination must restore desktop UA", expectedDesktopUa, webView.settings.userAgentString)
         assertFalse("Auth flow must now be inactive", MainActivity.isAuthFlowActive)
+    }
+
+    // 19. GitHub Navigation Preserves Desktop Mode Across All Pages
+    @Test
+    fun test19_githubNavigationPreservesDesktopModeAcrossPages() {
+        val webView = WebView(context)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        val githubPages = listOf(
+            "https://github.com",
+            "https://github.com/login",
+            "https://github.com/torvalds/linux",
+            "https://github.com/torvalds/linux/blob/master/Makefile",
+            "https://github.com/torvalds/linux/pulls",
+            "https://github.com/torvalds/linux/issues",
+            "https://github.com/settings/profile",
+            "https://github.com/login/oauth/authorize?client_id=xyz"
+        )
+
+        for (pageUrl in githubPages) {
+            // Must NOT be classified as a Google/Apple identity provider endpoint that overrides Desktop Mode
+            assertFalse(
+                "GitHub URL ($pageUrl) must NEVER be classified as identity provider endpoint",
+                MainActivity.isAuthenticationEndpoint(pageUrl)
+            )
+
+            MainActivity.syncWebViewDesktopMode(webView, url = pageUrl, isDesktopEnabled = true)
+
+            assertEquals(
+                "Page $pageUrl must strictly use Desktop User-Agent",
+                expectedDesktopUa,
+                webView.settings.userAgentString
+            )
+            assertTrue("Page $pageUrl must retain wide viewport", webView.settings.useWideViewPort)
+            assertTrue("Page $pageUrl must retain overview mode", webView.settings.loadWithOverviewMode)
+            assertFalse("Page $pageUrl must not activate auth flow flag", MainActivity.isAuthFlowActive)
+        }
+    }
+
+    // 20. GitHub SPA / Client-Side Navigation Preserves Desktop Configuration
+    @Test
+    fun test20_githubSpaNavigationPreservesDesktopConfiguration() {
+        val webView = WebView(context)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // Initial page load in Desktop Mode
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://github.com/torvalds/linux", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // SPA (Turbo/PJAX/History API) transitions where client-side JavaScript navigates without full page reload
+        val spaTransitions = listOf(
+            "https://github.com/torvalds/linux/issues",
+            "https://github.com/torvalds/linux/issues/123",
+            "https://github.com/torvalds/linux/pulls",
+            "https://github.com/torvalds/linux/commits/master"
+        )
+
+        for (spaUrl in spaTransitions) {
+            MainActivity.syncWebViewDesktopMode(webView, url = spaUrl, isDesktopEnabled = true)
+            assertEquals("SPA transition to $spaUrl must maintain desktop UA", expectedDesktopUa, webView.settings.userAgentString)
+            assertTrue("SPA transition to $spaUrl must maintain wide viewport", webView.settings.useWideViewPort)
+        }
+    }
+
+    // 21. Desktop state persists across Tab switching, creation, and restoration
+    @Test
+    fun test21_desktopStatePersistsAcrossTabSwitchingAndRestoration() {
+        val savedBundles = mutableMapOf<String, Bundle>()
+        val manager = TabWebViewManager(
+            context = context,
+            maxLiveWebViews = 2,
+            webViewFactory = { _ -> WebView(context) },
+            onSaveTabBundle = { id, bundle -> savedBundles[id] = bundle },
+            onSyncDesktopMode = { wv, enabled ->
+                MainActivity.syncWebViewDesktopMode(wv, url = wv.url, isDesktopEnabled = enabled)
+            }
+        )
+
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // 1. Create Tab A in Desktop Mode
+        val (tabA, _) = manager.getOrCreateWebView("tab_A", url = "https://github.com/repoA", isDesktopMode = true)
+        assertEquals(expectedDesktopUa, tabA.settings.userAgentString)
+
+        // 2. Create Tab B in Desktop Mode
+        val (tabB, _) = manager.getOrCreateWebView("tab_B", url = "https://github.com/repoB", isDesktopMode = true)
+        assertEquals(expectedDesktopUa, tabB.settings.userAgentString)
+
+        // 3. Switch back to Tab A
+        val (tabA2, _) = manager.getOrCreateWebView("tab_A", url = "https://github.com/repoA", isDesktopMode = true)
+        assertEquals("Live Tab A must retain Desktop UA after switching", expectedDesktopUa, tabA2.settings.userAgentString)
+
+        // 4. Create Tab C (exceeds capacity of 2, causes Tab B to be evicted and saved)
+        val (tabC, _) = manager.getOrCreateWebView("tab_C", url = "https://github.com/repoC", isDesktopMode = true)
+        assertEquals(expectedDesktopUa, tabC.settings.userAgentString)
+        assertFalse(manager.hasLiveWebView("tab_B"))
+
+        // 5. Restore Tab B from bundle
+        val (restoredB, wasRestored) = manager.getOrCreateWebView(
+            tabId = "tab_B",
+            url = "https://github.com/repoB",
+            bundle = savedBundles["tab_B"],
+            isDesktopMode = true
+        )
+        assertTrue(wasRestored)
+        assertEquals("Restored tab must immediately be synchronized to Desktop UA", expectedDesktopUa, restoredB.settings.userAgentString)
+    }
+
+    // 22. Authentication detection cannot permanently switch browser to Mobile Mode
+    @Test
+    fun test22_authDetectionDoesNotPermanentlySwitchBrowserToMobileMode() {
+        val webView = WebView(context)
+        val defaultMobileUa = webView.settings.userAgentString
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // 1. User browsing GitHub in Desktop Mode
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://github.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // 2. User logs in via Google Identity provider
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://accounts.google.com/o/oauth2/v2/auth", isDesktopEnabled = true)
+        assertEquals("Google auth endpoint must temporarily use mobile UA", defaultMobileUa, webView.settings.userAgentString)
+        assertTrue(MainActivity.isAuthFlowActive)
+
+        // 3. OAuth callback
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://myapp.com/api/auth/callback/google?code=123", isDesktopEnabled = true)
+        assertEquals("OAuth callback maintains mobile UA", defaultMobileUa, webView.settings.userAgentString)
+
+        // 4. Return to GitHub after authentication
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://github.com/dashboard", isDesktopEnabled = true)
+        assertEquals("Return to GitHub must immediately restore Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
+        assertFalse("Auth flow must be marked inactive", MainActivity.isAuthFlowActive)
+    }
+
+    // 23. Toggling Desktop -> Mobile -> Desktop cycles correctly
+    @Test
+    fun test23_desktopModeToggleMobileDesktopCycle() {
+        val webView = WebView(context)
+        val defaultMobileUa = webView.settings.userAgentString
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // Desktop ON
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://example.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Toggle to Mobile (OFF)
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://example.com", isDesktopEnabled = false)
+        assertEquals(defaultMobileUa, webView.settings.userAgentString)
+
+        // Toggle back to Desktop (ON)
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://example.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+    }
+
+    // 24. Repeated navigation does not cause repeated loadUrl() loops
+    @Test
+    fun test24_repeatedNavigationDoesNotTriggerLoadUrlLoops() {
+        var loadUrlCount = 0
+        val webView = object : WebView(context) {
+            override fun loadUrl(url: String) {
+                loadUrlCount++
+                super.loadUrl(url)
+            }
+        }
+
+        // Configure desktop mode once
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://github.com/home", isDesktopEnabled = true)
+        webView.loadUrl("https://github.com/home")
+        assertEquals(1, loadUrlCount)
+
+        // Multiple subsequent shouldOverrideUrlLoading / navigation calls
+        val navUrls = listOf(
+            "https://github.com/torvalds/linux",
+            "https://github.com/torvalds/linux/pulls",
+            "https://github.com/torvalds/linux/issues"
+        )
+
+        for (url in navUrls) {
+            // syncWebViewDesktopMode must NOT invoke loadUrl()
+            MainActivity.syncWebViewDesktopMode(webView, url = url, isDesktopEnabled = true)
+        }
+
+        // loadUrlCount must still be exactly 1!
+        assertEquals("syncWebViewDesktopMode must NEVER invoke loadUrl", 1, loadUrlCount)
     }
 }
