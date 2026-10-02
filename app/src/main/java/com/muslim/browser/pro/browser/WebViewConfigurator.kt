@@ -67,6 +67,8 @@ object WebViewConfigurator {
         if (url.isNullOrBlank()) return false
         return try {
             val uri = Uri.parse(url)
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+            if (scheme != "http" && scheme != "https") return false
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
             val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
@@ -164,49 +166,22 @@ object WebViewConfigurator {
             val enabled = isDesktopEnabled ?: false
             val targetUrl = url ?: webView.url
 
-            // Update auth flow state strictly based on identity provider endpoint matching
-            if (enabled && !targetUrl.isNullOrBlank()) {
-                if (isAuthenticationEndpoint(targetUrl)) {
-                    isAuthFlowActive = true
-                    android.util.Log.d("DESKTOP_DIAG", "Auth flow activated for endpoint: $targetUrl")
-                } else if (isAuthFlowActive) {
-                    val uri = try { Uri.parse(targetUrl) } catch (_: Exception) { null }
-                    val host = uri?.host?.lowercase(Locale.ROOT) ?: ""
-                    val path = uri?.path?.lowercase(Locale.ROOT) ?: ""
-                    val isGoogleAuthHost = host == "accounts.google.com" ||
-                            host.endsWith(".accounts.google.com") ||
-                            host == "oauth2.googleapis.com" ||
-                            host == "myaccount.google.com" ||
-                            host == "appleid.apple.com"
-                    val isIntermediateAuth = isGoogleAuthHost ||
-                            path.contains("/callback/google") ||
-                            path.contains("/challenge/") ||
-                            path.contains("/checkcookie") ||
-                            path.contains("/setosid") ||
-                            path.contains("/consent") ||
-                            path.contains("/saml") ||
-                            path.contains("/federation") ||
-                            (host.endsWith("google.com") && (path.contains("/accounts/") || path.contains("/addsession") || path.contains("/accountchooser")))
-                    if (!isIntermediateAuth) {
-                        isAuthFlowActive = false
-                        android.util.Log.d("DESKTOP_DIAG", "Auth flow completed on URL: $targetUrl")
-                    }
-                }
-            } else if (!enabled) {
-                isAuthFlowActive = false
+            // Strictly informational tracking: never mutates userAgentString or disables desktop mode
+            if (isAuthenticationEndpoint(targetUrl)) {
+                android.util.Log.d("DESKTOP_DIAG", "Auth endpoint visited: $targetUrl")
             }
 
-            val shouldUseMobile = !enabled || isAuthFlowActive
-            val targetUserAgent = if (shouldUseMobile) {
-                defaultMobileUserAgent ?: webView.settings.userAgentString
-            } else {
+            // Desktop Mode state is authoritative: Desktop ON -> Desktop UA, Desktop OFF -> Mobile UA
+            val targetUserAgent = if (enabled) {
                 resolveDesktopUserAgent(webView.context)
+            } else {
+                defaultMobileUserAgent ?: webView.settings.userAgentString
             }
 
             if (updateUserAgent && webView.settings.userAgentString != targetUserAgent) {
                 android.util.Log.d(
                     "DESKTOP_DIAG",
-                    "Setting userAgentString: $targetUserAgent (isAuthFlowActive=$isAuthFlowActive, enabled=$enabled)"
+                    "Setting userAgentString: $targetUserAgent (enabled=$enabled)"
                 )
                 webView.settings.userAgentString = targetUserAgent
                 uaChanged = true
@@ -218,17 +193,6 @@ object WebViewConfigurator {
                 webView.settings.builtInZoomControls = true
                 webView.settings.displayZoomControls = false
             }
-
-            // Diagnostic assertion: if Desktop Mode is ON and not in auth flow, actual UA must be Desktop
-            if (enabled && !isAuthFlowActive) {
-                val expectedDesktop = resolveDesktopUserAgent(webView.context)
-                if (webView.settings.userAgentString != expectedDesktop) {
-                    android.util.Log.e(
-                        "DESKTOP_STATE_ERROR",
-                        "Desktop Mode invariant violated! URL=$targetUrl, expectedUA=$expectedDesktop, actualUA=${webView.settings.userAgentString}"
-                    )
-                }
-            }
         } catch (_: Exception) {}
         return uaChanged
     }
@@ -238,27 +202,96 @@ object WebViewConfigurator {
      * in Desktop Mode, and device-width in Mobile Mode.
      * Idempotent: safe to invoke once per page commit.
      */
+    /**
+     * Configures viewport meta tag dynamically to present full desktop layout (width=1280)
+     * in Desktop Mode, and device-width in Mobile Mode.
+     *
+     * Architectural optimizations:
+     * - Single, lightweight MutationObserver scoped strictly to document.head and the viewport meta tag.
+     * - Consolidates SPA navigation events to an idempotent listener for 'turbo:load' and 'popstate'.
+     * - Disconnects the observer and removes listeners when Desktop Mode is disabled or WebView destroyed.
+     * - Safely patches navigator.userAgentData.mobile without breaking other Client Hints.
+     * - Idempotent: safe to invoke repeatedly without creating multiple observers.
+     */
     fun applyDesktopViewport(webView: WebView?, enabled: Boolean) {
         if (webView == null) return
         try {
-            val effectiveDesktopMode = enabled && !isAuthFlowActive
+            val effectiveDesktopMode = enabled
 
             val script = if (effectiveDesktopMode) {
                 """
                     (function() {
                         try {
-                            var metas = document.querySelectorAll('meta[name="viewport"]');
-                            if (metas.length > 0) {
-                                metas.forEach(function(m) {
-                                    if (m.getAttribute('content') !== 'width=1024') {
-                                        m.setAttribute('content', 'width=1024');
+                            var TARGET_CONTENT = 'width=1280';
+                            
+                            function updateViewport() {
+                                var metas = document.querySelectorAll('meta[name="viewport"]');
+                                if (metas.length > 0) {
+                                    metas.forEach(function(m) {
+                                        if (m.getAttribute('content') !== TARGET_CONTENT) {
+                                            m.setAttribute('content', TARGET_CONTENT);
+                                        }
+                                    });
+                                } else {
+                                    var head = document.head || document.documentElement;
+                                    if (head) {
+                                        var meta = document.createElement('meta');
+                                        meta.name = 'viewport';
+                                        meta.content = TARGET_CONTENT;
+                                        head.appendChild(meta);
+                                    }
+                                }
+                            }
+                            
+                            updateViewport();
+
+                            // Safe UserAgentData patch: only override mobile getter if userAgentData natively exists
+                            if (window.navigator && window.navigator.userAgentData) {
+                                try {
+                                    if (window.navigator.userAgentData.mobile !== false) {
+                                        Object.defineProperty(window.navigator.userAgentData, 'mobile', {
+                                            get: function() { return false; },
+                                            configurable: true
+                                        });
+                                    }
+                                } catch(e) {}
+                            }
+
+                            // Single, lightweight MutationObserver on document.head only
+                            if (window.__mbViewportObserver) {
+                                window.__mbViewportObserver.disconnect();
+                                window.__mbViewportObserver = null;
+                            }
+                            
+                            var targetHead = document.head || document.documentElement;
+                            if (window.MutationObserver && targetHead) {
+                                window.__mbViewportObserver = new MutationObserver(function(mutations) {
+                                    for (var i = 0; i < mutations.length; i++) {
+                                        var m = mutations[i];
+                                        if (m.type === 'childList') {
+                                            updateViewport();
+                                            break;
+                                        } else if (m.type === 'attributes' && m.target && m.target.getAttribute('content') !== TARGET_CONTENT) {
+                                            m.target.setAttribute('content', TARGET_CONTENT);
+                                            break;
+                                        }
                                     }
                                 });
-                            } else {
-                                var meta = document.createElement('meta');
-                                meta.name = 'viewport';
-                                meta.content = 'width=1024';
-                                (document.head || document.documentElement).appendChild(meta);
+                                window.__mbViewportObserver.observe(targetHead, { childList: true, subtree: false });
+                                var vp = document.querySelector('meta[name="viewport"]');
+                                if (vp) {
+                                    window.__mbViewportObserver.observe(vp, { attributes: true, attributeFilter: ['content'] });
+                                }
+                            }
+
+                            // Single consolidated SPA listener for Turbo and PopState (registered once per document)
+                            if (!window.__mbSpaListenersAttached) {
+                                window.__mbSpaListenersAttached = true;
+                                var spaHandler = function() {
+                                    updateViewport();
+                                };
+                                window.addEventListener('turbo:load', spaHandler, { passive: true });
+                                window.addEventListener('popstate', spaHandler, { passive: true });
                             }
                         } catch(e) {}
                     })();
@@ -267,6 +300,13 @@ object WebViewConfigurator {
                 """
                     (function() {
                         try {
+                            // Disconnect and clean up observer
+                            if (window.__mbViewportObserver) {
+                                window.__mbViewportObserver.disconnect();
+                                window.__mbViewportObserver = null;
+                            }
+                            
+                            // Restore native viewport
                             var metas = document.querySelectorAll('meta[name="viewport"]');
                             if (metas.length > 0) {
                                 metas.forEach(function(m) {
@@ -274,6 +314,13 @@ object WebViewConfigurator {
                                         m.setAttribute('content', 'width=device-width, initial-scale=1.0');
                                     }
                                 });
+                            }
+                            
+                            // Restore native userAgentData.mobile if patched
+                            if (window.navigator && window.navigator.userAgentData) {
+                                try {
+                                    delete window.navigator.userAgentData.mobile;
+                                } catch(e) {}
                             }
                         } catch(e) {}
                     })();

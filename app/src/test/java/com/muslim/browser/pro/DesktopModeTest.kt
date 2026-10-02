@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.test.core.app.ApplicationProvider
+import com.muslim.browser.pro.browser.NavigationController
+import com.muslim.browser.pro.browser.NavigationDecision
 import com.muslim.browser.pro.browser.SettingsRepository
 import com.muslim.browser.pro.browser.TabWebViewManager
 import org.junit.Assert.assertEquals
@@ -166,11 +168,10 @@ class DesktopModeTest {
     @Test
     fun test8_desktopModeLoginPage() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Desktop Mode is active on third-party page
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://example.com/home")
-        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
         assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
         // User enters Google OAuth/Login page
@@ -179,30 +180,27 @@ class DesktopModeTest {
             enabled = true,
             url = "https://accounts.google.com/signin/v2/identifier"
         )
-        // Must temporarily use compatible mobile User-Agent to prevent security warnings
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
-        assertTrue("Auth flow must be marked active", MainActivity.isAuthFlowActive)
+        // Must maintain Desktop User-Agent to prevent navigation cancellation regressions
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
     // 9. Login flow → return to normal desktop page
     @Test
     fun test9_loginFlowReturnToNormalDesktopPage() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Step 1: Normal desktop page
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://myapp.com/home")
         assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
-        // Step 2: Sign-in endpoint activates auth flow
+        // Step 2: Sign-in endpoint maintains desktop UA
         MainActivity.applyDesktopModeToWebView(
             webView,
             enabled = true,
             url = "https://accounts.google.com/o/oauth2/v2/auth?client_id=123"
         )
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
-        assertTrue(MainActivity.isAuthFlowActive)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
         // Step 3: Intermediate redirect during auth exchange
         MainActivity.applyDesktopModeToWebView(
@@ -210,8 +208,7 @@ class DesktopModeTest {
             enabled = true,
             url = "https://myapp.com/api/auth/callback/google?code=abc"
         )
-        // Must maintain compatible UA during intermediate callback to prevent session invalidation
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
         // Step 4: Authentication completes and lands on user dashboard
         MainActivity.applyDesktopModeToWebView(
@@ -219,9 +216,8 @@ class DesktopModeTest {
             enabled = true,
             url = "https://myapp.com/dashboard"
         )
-        // Must return to Desktop User-Agent on application page
+        // Must maintain Desktop User-Agent on application page
         assertEquals(expectedDesktopUa, webView.settings.userAgentString)
-        assertFalse("Auth flow must be marked complete", MainActivity.isAuthFlowActive)
     }
 
     // 10. Repeated Desktop Mode taps
@@ -330,11 +326,10 @@ class DesktopModeTest {
         }
     }
 
-    // 15. Verify Google Sign-In navigation while Desktop Mode is active
+    // 15. Verify Google Sign-In navigation while Desktop Mode is active preserves Desktop UA
     @Test
     fun test15_googleSignInNavigationPreservesDestinationUrl() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Initial state: Google homepage in Desktop Mode
@@ -346,20 +341,14 @@ class DesktopModeTest {
         assertTrue("Google sign in URL must be recognized as auth endpoint", MainActivity.isAuthenticationEndpoint(signInUrl))
 
         val uaChanged = MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = signInUrl)
-        assertTrue("UA must change from desktop to mobile for auth", uaChanged)
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
-        assertTrue("Auth flow must be active", MainActivity.isAuthFlowActive)
-
-        // Repeated inspection of same auth endpoint must NOT trigger extra UA changes
-        val uaChangedSecond = MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = signInUrl)
-        assertFalse("Subsequent auth check must not report UA change", uaChangedSecond)
+        assertFalse("Desktop UA must NOT change during sign in to prevent aborting navigation", uaChanged)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
     // 16. Verify Google "Add another account" navigation while Desktop Mode is active
     @Test
     fun test16_googleAddAnotherAccountNavigation() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Initial state: Google in Desktop Mode
@@ -370,16 +359,14 @@ class DesktopModeTest {
         assertTrue("AddSession URL must be recognized as auth endpoint", MainActivity.isAuthenticationEndpoint(addAccountUrl))
 
         val uaChanged = MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = addAccountUrl)
-        assertTrue("UA must transition to mobile for AddSession", uaChanged)
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
-        assertTrue(MainActivity.isAuthFlowActive)
+        assertFalse("Desktop UA must remain constant for AddSession", uaChanged)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
     // 17. Verify Google "Sign out" navigation while Desktop Mode is active
     @Test
     fun test17_googleSignOutNavigation() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Initial state: Google in Desktop Mode
@@ -394,21 +381,19 @@ class DesktopModeTest {
         assertTrue("google.com/accounts/Logout2 must be auth endpoint", MainActivity.isAuthenticationEndpoint(signOutUrl2))
 
         val uaChanged = MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = signOutUrl1)
-        assertTrue("UA must transition to mobile for sign out", uaChanged)
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
+        assertFalse("Desktop UA must remain constant for sign out", uaChanged)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
     }
 
-    // 18. Verify intermediate auth steps (2FA, consent, callbacks) do not prematurely restore Desktop UA
+    // 18. Verify intermediate auth steps (2FA, consent, callbacks) maintain Desktop UA
     @Test
     fun test18_intermediateAuthStepsDoNotPrematurelyRestoreDesktopUa() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // Step 1: Start auth
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://accounts.google.com/ServiceLogin")
-        assertEquals(defaultMobileUa, webView.settings.userAgentString)
-        assertTrue(MainActivity.isAuthFlowActive)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
 
         // Intermediate steps
         val intermediateSteps = listOf(
@@ -420,14 +405,12 @@ class DesktopModeTest {
 
         for (step in intermediateSteps) {
             MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = step)
-            assertEquals("Step $step must maintain mobile UA", defaultMobileUa, webView.settings.userAgentString)
-            assertTrue("Step $step must keep auth flow active", MainActivity.isAuthFlowActive)
+            assertEquals("Step $step must maintain desktop UA", expectedDesktopUa, webView.settings.userAgentString)
         }
 
         // Final landing back on Google search after successful login
         MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = "https://www.google.com/search?q=news")
-        assertEquals("Post-auth destination must restore desktop UA", expectedDesktopUa, webView.settings.userAgentString)
-        assertFalse("Auth flow must now be inactive", MainActivity.isAuthFlowActive)
+        assertEquals("Post-auth destination must retain desktop UA", expectedDesktopUa, webView.settings.userAgentString)
     }
 
     // 19. GitHub Navigation Preserves Desktop Mode Across All Pages
@@ -536,11 +519,10 @@ class DesktopModeTest {
         assertEquals("Restored tab must immediately be synchronized to Desktop UA", expectedDesktopUa, restoredB.settings.userAgentString)
     }
 
-    // 22. Authentication detection cannot permanently switch browser to Mobile Mode
+    // 22. Authentication navigation maintains Desktop Mode throughout
     @Test
     fun test22_authDetectionDoesNotPermanentlySwitchBrowserToMobileMode() {
         val webView = WebView(context)
-        val defaultMobileUa = webView.settings.userAgentString
         val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
 
         // 1. User browsing GitHub in Desktop Mode
@@ -549,17 +531,15 @@ class DesktopModeTest {
 
         // 2. User logs in via Google Identity provider
         MainActivity.syncWebViewDesktopMode(webView, url = "https://accounts.google.com/o/oauth2/v2/auth", isDesktopEnabled = true)
-        assertEquals("Google auth endpoint must temporarily use mobile UA", defaultMobileUa, webView.settings.userAgentString)
-        assertTrue(MainActivity.isAuthFlowActive)
+        assertEquals("Google auth endpoint must maintain Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
 
         // 3. OAuth callback
         MainActivity.syncWebViewDesktopMode(webView, url = "https://myapp.com/api/auth/callback/google?code=123", isDesktopEnabled = true)
-        assertEquals("OAuth callback maintains mobile UA", defaultMobileUa, webView.settings.userAgentString)
+        assertEquals("OAuth callback maintains Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
 
         // 4. Return to GitHub after authentication
         MainActivity.syncWebViewDesktopMode(webView, url = "https://github.com/dashboard", isDesktopEnabled = true)
-        assertEquals("Return to GitHub must immediately restore Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
-        assertFalse("Auth flow must be marked inactive", MainActivity.isAuthFlowActive)
+        assertEquals("Return to GitHub retains Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
     }
 
     // 23. Toggling Desktop -> Mobile -> Desktop cycles correctly
@@ -612,5 +592,196 @@ class DesktopModeTest {
 
         // loadUrlCount must still be exactly 1!
         assertEquals("syncWebViewDesktopMode must NEVER invoke loadUrl", 1, loadUrlCount)
+    }
+
+    // 25. Desktop Viewport Guard script is idempotent and handles multiple invocations safely
+    @Test
+    fun test25_desktopViewportGuardIsIdempotentAndSafe() {
+        var evaluatedScriptCount = 0
+        var lastScript: String? = null
+        val webView = object : WebView(context) {
+            override fun evaluateJavascript(script: String, resultCallback: android.webkit.ValueCallback<String>?) {
+                evaluatedScriptCount++
+                lastScript = script
+                super.evaluateJavascript(script, resultCallback)
+            }
+        }
+
+        // 1. Enable Desktop Viewport
+        MainActivity.applyDesktopViewport(webView, enabled = true)
+        assertTrue("Script must contain 1280px desktop width", lastScript?.contains("width=1280") == true)
+        assertTrue("Script must contain MutationObserver guard", lastScript?.contains("MutationObserver") == true)
+        assertTrue("Script must contain turbo:load listener", lastScript?.contains("turbo:load") == true)
+        assertTrue("Script must contain popstate listener", lastScript?.contains("popstate") == true)
+        assertTrue("Script must avoid mutation loops", lastScript?.contains("TARGET_CONTENT") == true)
+
+        // 2. Multiple repeated calls (simulating rapid SPA transitions) must execute safely
+        for (i in 1..5) {
+            MainActivity.applyDesktopViewport(webView, enabled = true)
+        }
+        assertEquals(6, evaluatedScriptCount)
+
+        // 3. Disable Desktop Viewport
+        MainActivity.applyDesktopViewport(webView, enabled = false)
+        assertTrue("Disabled script must disconnect MutationObserver", lastScript?.contains("disconnect()") == true)
+        assertTrue("Disabled script must restore device-width", lastScript?.contains("width=device-width") == true)
+    }
+
+    // 26. Deep GitHub authentication and settings URLs never trigger mobile auth flow
+    @Test
+    fun test26_githubAuthAndSettingsUrlsNeverTriggerMobileAuthFlow() {
+        val testUrls = listOf(
+            "https://github.com/login",
+            "https://github.com/session",
+            "https://github.com/settings/auth/tokens",
+            "https://github.com/orgs/my-org/sso",
+            "https://github.com/login/device",
+            "https://github.com/join",
+            "https://github.com/password_reset"
+        )
+        for (url in testUrls) {
+            assertFalse(
+                "GitHub URL ($url) must NOT be identified as Google/Apple identity provider endpoint",
+                MainActivity.isAuthenticationEndpoint(url)
+            )
+        }
+    }
+
+    // 27. Google Sign-In URL is allowed without interference
+    @Test
+    fun test27_googleSignInUrlIsAllowed() {
+        val signInUrl = "https://accounts.google.com/ServiceLogin?hl=en&passive=true&continue=https://www.google.com/"
+        val decision = NavigationController.evaluate(signInUrl, emptySet())
+        assertTrue("Google sign in URL must be Allowed by NavigationController", decision is NavigationDecision.Allowed)
+    }
+
+    // 28. Google Sign-Out URL is allowed without interference
+    @Test
+    fun test28_googleSignOutUrlIsAllowed() {
+        val signOutUrl = "https://accounts.google.com/Logout?continue=https://www.google.com/"
+        val decision = NavigationController.evaluate(signOutUrl, emptySet())
+        assertTrue("Google sign out URL must be Allowed by NavigationController", decision is NavigationDecision.Allowed)
+    }
+
+    // 29. Google Account Chooser URL is allowed without interference
+    @Test
+    fun test29_googleAccountChooserUrlIsAllowed() {
+        val accountChooserUrl = "https://accounts.google.com/AccountChooser?continue=https://www.google.com/"
+        val decision = NavigationController.evaluate(accountChooserUrl, emptySet())
+        assertTrue("Google account chooser URL must be Allowed by NavigationController", decision is NavigationDecision.Allowed)
+    }
+
+    // 30. Authentication navigation does not produce a redirect to previous page
+    @Test
+    fun test30_authNavigationDoesNotProduceRedirectToPreviousPage() {
+        val addAccountUrl = "https://accounts.google.com/AddSession?continue=https://www.google.com/"
+        val decision = NavigationController.evaluate(addAccountUrl, emptySet())
+        assertFalse("Auth URL must never produce a redirect", decision is NavigationDecision.Redirect)
+        assertTrue("Auth URL must be Allowed to navigate", decision is NavigationDecision.Allowed)
+    }
+
+    // 31. Authentication navigation does not call reload() or loadUrl()
+    @Test
+    fun test31_authNavigationDoesNotCallReloadOrLoadUrl() {
+        MainActivity.DesktopModeDiagnostics.reset()
+        val webView = WebView(context)
+        val initialReloads = MainActivity.DesktopModeDiagnostics.reloadCount
+        val initialLoads = MainActivity.DesktopModeDiagnostics.loadUrlCount
+
+        val authUrls = listOf(
+            "https://accounts.google.com/ServiceLogin",
+            "https://accounts.google.com/AddSession",
+            "https://accounts.google.com/Logout",
+            "https://accounts.google.com/AccountChooser"
+        )
+
+        for (url in authUrls) {
+            MainActivity.applyDesktopModeToWebView(webView, enabled = true, url = url)
+            MainActivity.applyDesktopViewport(webView, enabled = true)
+        }
+
+        assertEquals("Processing auth URLs must NEVER call reload()", initialReloads, MainActivity.DesktopModeDiagnostics.reloadCount)
+        assertEquals("Processing auth URLs must NEVER call loadUrl()", initialLoads, MainActivity.DesktopModeDiagnostics.loadUrlCount)
+    }
+
+    // 32. Desktop Mode preference remains unchanged during authentication
+    @Test
+    fun test32_desktopModePreferenceRemainsUnchangedDuringAuth() {
+        repository.isDesktopModeEnabled = true
+        assertTrue(repository.isDesktopModeEnabled)
+
+        val webView = WebView(context)
+        val authUrl = "https://accounts.google.com/ServiceLogin"
+        MainActivity.applyDesktopModeToWebView(webView, enabled = repository.isDesktopModeEnabled, url = authUrl)
+
+        // Repository user preference must remain strictly true
+        assertTrue("Repository desktop mode preference must remain true during auth", repository.isDesktopModeEnabled)
+    }
+
+    // 33. Authentication handling does not modify global Desktop Mode state
+    @Test
+    fun test33_authHandlingDoesNotModifyGlobalDesktopModeState() {
+        val webView = WebView(context)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // Configure desktop mode
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://www.google.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Navigate to auth
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://accounts.google.com/signin", isDesktopEnabled = true)
+        assertEquals("WebView UA must maintain Desktop UA", expectedDesktopUa, webView.settings.userAgentString)
+    }
+
+    // 34. Normal Google pages containing 'login' in text/query do not accidentally enter auth mode
+    @Test
+    fun test34_normalGooglePagesWithLoginTextDoNotAccidentallyEnterAuthMode() {
+        val searchWithLoginQuery = "https://www.google.com/search?q=how+to+login+to+router&hl=en"
+        assertFalse(
+            "Search results containing 'login' in query must NOT be recognized as auth endpoint",
+            MainActivity.isAuthenticationEndpoint(searchWithLoginQuery)
+        )
+    }
+
+    // 35. Returning from authentication restores/retains normal Desktop Mode behavior
+    @Test
+    fun test35_returningFromAuthRestoresAndRetainsNormalDesktopModeBehavior() {
+        val webView = WebView(context)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+
+        // 1. Initial Google in Desktop Mode
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://www.google.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // 2. Sign In
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://accounts.google.com/ServiceLogin", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // 3. Return to Google Search
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://www.google.com/search?q=muslim+browser", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
+    }
+
+    // 36. Navigation evaluation does not mutate userAgentString
+    @Test
+    fun test36_navigationEvaluationDoesNotMutateUserAgentString() {
+        val webView = WebView(context)
+        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
+        MainActivity.syncWebViewDesktopMode(webView, url = "https://www.google.com", isDesktopEnabled = true)
+        assertEquals(expectedDesktopUa, webView.settings.userAgentString)
+
+        // Simulating the URL evaluation in shouldOverrideUrlLoading
+        val targetUrl = "https://accounts.google.com/ServiceLogin"
+        val decision = NavigationController.evaluate(targetUrl, emptySet())
+        assertTrue(decision is NavigationDecision.Allowed)
+
+        // webView settings must NOT have been changed during the evaluation
+        assertEquals(
+            "Navigation evaluation must NEVER mutate userAgentString",
+            expectedDesktopUa,
+            webView.settings.userAgentString
+        )
     }
 }

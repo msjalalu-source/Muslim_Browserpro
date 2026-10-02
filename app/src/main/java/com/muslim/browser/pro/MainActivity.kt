@@ -323,9 +323,6 @@ class MainActivity : ComponentActivity() {
                 private fun processUrlLoading(view: WebView?, url: String): Boolean {
                     android.util.Log.d("DIAGNOSTIC", "processUrlLoading: URL=$url")
                     DesktopModeDiagnostics.redirectChain.add(url)
-                    if (view != null) {
-                        syncWebViewDesktopMode(view, url = url, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
-                    }
                     val handled = handleUrlNavigation(view, url)
                     DesktopModeDiagnostics.lastShouldOverrideResult = handled
                     return handled
@@ -366,9 +363,6 @@ class MainActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     android.util.Log.d("DIAGNOSTIC", "onPageStarted: URL=$url")
-                    if (view != null && url != null) {
-                        syncWebViewDesktopMode(view, url = url, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
-                    }
                     url?.let { viewModel.onPageStarted(it) }
                 }
 
