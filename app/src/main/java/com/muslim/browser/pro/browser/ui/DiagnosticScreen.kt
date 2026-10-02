@@ -272,12 +272,12 @@ fun DiagnosticScreen(
                     Column {
                         Surface(
                             shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFEF5350).copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, Color(0xFFEF5350))
+                            color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0xFFEF5350).copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0xFFEF5350))
                         ) {
                             Text(
                                 text = "TEMPORARY DEBUG / DIAGNOSTIC",
-                                color = Color(0xFFEF5350),
+                                color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                                 fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -341,6 +341,10 @@ fun DiagnosticScreen(
                         OutlinedButton(
                             onClick = { refreshData() },
                             shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = colors.textPrimary
+                            ),
+                            border = BorderStroke(1.dp, colors.border),
                             modifier = Modifier
                                 .height(34.dp)
                                 .testTag("diagnostic_refresh_button"),
@@ -349,10 +353,11 @@ fun DiagnosticScreen(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = null,
+                                tint = colors.textPrimary,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Refresh", fontSize = 11.sp)
+                            Text("Refresh", color = colors.textPrimary, fontSize = 11.sp)
                         }
 
                         Spacer(modifier = Modifier.width(6.dp))

@@ -75,16 +75,36 @@ val LocalAppColors = staticCompositionLocalOf { BlackWhiteColors }
 
 private val LightM3Scheme = lightColorScheme(
     primary = Color(0xFF0284C7),
+    onPrimary = Color(0xFFFFFFFF),
     secondary = Color(0xFF0369A1),
+    onSecondary = Color(0xFFFFFFFF),
     surface = Color(0xFFFFFFFF),
-    background = Color(0xFFF4F6F9)
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFE9EEF4),
+    onSurfaceVariant = Color(0xFF5A6A80),
+    background = Color(0xFFF4F6F9),
+    onBackground = Color(0xFF0F172A),
+    outline = Color(0xFFD1D9E4),
+    outlineVariant = Color(0xFFE2E8F0),
+    inverseSurface = Color(0xFF0F172A),
+    inverseOnSurface = Color(0xFFFFFFFF)
 )
 
 private val MonochromeM3Scheme = darkColorScheme(
     primary = Color(0xFFFFFFFF),
+    onPrimary = Color(0xFF000000),
     secondary = Color(0xFFAAAAAA),
+    onSecondary = Color(0xFF000000),
     surface = Color(0xFF141414),
-    background = Color(0xFF000000)
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF222222),
+    onSurfaceVariant = Color(0xFFAAAAAA),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    outline = Color(0xFF444444),
+    outlineVariant = Color(0xFF333333),
+    inverseSurface = Color(0xFFFFFFFF),
+    inverseOnSurface = Color(0xFF000000)
 )
 
 @Composable
@@ -102,7 +122,10 @@ fun MyApplicationTheme(
         AppTheme.BLACK_WHITE -> MonochromeM3Scheme
     }
 
-    CompositionLocalProvider(LocalAppColors provides appColors) {
+    CompositionLocalProvider(
+        LocalAppColors provides appColors,
+        androidx.compose.material3.LocalContentColor provides appColors.textPrimary
+    ) {
         MaterialTheme(
             colorScheme = m3Scheme,
             content = content

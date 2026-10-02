@@ -3,6 +3,7 @@ package com.muslim.browser.pro
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.SettingsRepository
+import com.muslim.browser.pro.browser.WebViewConfigurator
 import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.BlackWhiteColors
 import com.muslim.browser.pro.ui.theme.WhiteColors
@@ -150,5 +151,59 @@ class ExampleRobolectricTest {
     assertEquals(androidx.compose.ui.graphics.Color(0xFF141414), BlackWhiteColors.surface)
     assertEquals(androidx.compose.ui.graphics.Color(0xFFFFFFFF), BlackWhiteColors.textPrimary)
     assertEquals(androidx.compose.ui.graphics.Color(0xFFAAAAAA), BlackWhiteColors.textSecondary)
+  }
+
+  @Test
+  fun `verify WebView theme application sets black background in Black & White theme and white in White theme`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val webView = android.webkit.WebView(context)
+
+    // Apply Black Theme (isDarkTheme = true)
+    WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme = true)
+    assertTrue("Dark theme must be active in configurator", WebViewConfigurator.isDarkThemeActive)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+      @Suppress("DEPRECATION")
+      assertEquals(android.webkit.WebSettings.FORCE_DARK_ON, webView.settings.forceDark)
+    }
+
+    // Apply White Theme (isDarkTheme = false)
+    WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme = false)
+    assertFalse("Dark theme must be inactive in configurator", WebViewConfigurator.isDarkThemeActive)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+      @Suppress("DEPRECATION")
+      assertEquals(android.webkit.WebSettings.FORCE_DARK_OFF, webView.settings.forceDark)
+    }
+  }
+
+  @Test
+  fun `verify TabWebViewManager synchronizes theme across all live tabs`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    var syncedThemeCount = 0
+    var lastSyncedState: Boolean? = null
+
+    val manager = com.muslim.browser.pro.browser.TabWebViewManager(
+      context = context,
+      webViewFactory = { id -> android.webkit.WebView(context) },
+      onSyncTheme = { wv, isDark ->
+        syncedThemeCount++
+        lastSyncedState = isDark
+      }
+    )
+
+    // Create 2 tabs
+    manager.getOrCreateWebView("tab_1")
+    manager.getOrCreateWebView("tab_2")
+
+    // Synchronize dark theme
+    syncedThemeCount = 0
+    manager.syncAllLiveWebViewsTheme(isDarkTheme = true)
+    assertEquals(2, syncedThemeCount)
+    assertEquals(true, lastSyncedState)
+
+    // Synchronize light theme
+    syncedThemeCount = 0
+    manager.syncAllLiveWebViewsTheme(isDarkTheme = false)
+    assertEquals(2, syncedThemeCount)
+    assertEquals(false, lastSyncedState)
   }
 }

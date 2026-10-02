@@ -182,7 +182,9 @@ fun HomePage(
                             cursorColor = colors.accent,
                             focusedBorderColor = Color.Transparent,
                             unfocusedBorderColor = Color.Transparent,
-                            disabledBorderColor = Color.Transparent
+                            disabledBorderColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent
                         ),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -340,7 +342,11 @@ fun HomePage(
                                 unfocusedTextColor = colors.textPrimary,
                                 focusedBorderColor = colors.accent,
                                 unfocusedBorderColor = colors.border,
-                                cursorColor = colors.accent
+                                cursorColor = colors.accent,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textSecondary,
+                                focusedPlaceholderColor = colors.textSecondary,
+                                unfocusedPlaceholderColor = colors.textSecondary
                             )
                         )
                         OutlinedTextField(
@@ -357,7 +363,11 @@ fun HomePage(
                                 unfocusedTextColor = colors.textPrimary,
                                 focusedBorderColor = colors.accent,
                                 unfocusedBorderColor = colors.border,
-                                cursorColor = colors.accent
+                                cursorColor = colors.accent,
+                                focusedLabelColor = colors.accent,
+                                unfocusedLabelColor = colors.textSecondary,
+                                focusedPlaceholderColor = colors.textSecondary,
+                                unfocusedPlaceholderColor = colors.textSecondary
                             )
                         )
                     }

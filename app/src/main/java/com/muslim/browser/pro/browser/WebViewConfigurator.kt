@@ -266,57 +266,29 @@ object WebViewConfigurator {
                     WebSettings.FORCE_DARK_OFF
                 }
             }
-            val bgColor = if (isDarkTheme) Color.parseColor("#0F172A") else Color.WHITE
+            val bgColor = if (isDarkTheme) Color.BLACK else Color.WHITE
             webView.setBackgroundColor(bgColor)
             applyWebPageDarkTheme(webView, isDarkTheme)
         } catch (_: Exception) {}
     }
 
     /**
-     * Applies or removes lightweight dark rendering on web content.
-     * Preserves true image, video, and media colors while darkening light backgrounds and text.
-     * Includes luminance detection so already-dark websites (like GitHub in dark mode) are not inverted.
+     * Applies theme configuration to web content. Uses native WebView darkening
+     * without injecting destructive CSS inversion filters.
      */
     fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
         if (webView == null) return
         try {
-            if (isDarkTheme) {
-                val script = """
-                    (function() {
-                        try {
-                            var id = '__mb_dark_theme__';
-                            if (document.getElementById(id)) return;
-                            var target = document.body || document.documentElement;
-                            if (!target) return;
-                            var bg = window.getComputedStyle(target).backgroundColor;
-                            var m = bg ? bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/) : null;
-                            if (m) {
-                                var alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
-                                if (alpha > 0.1) {
-                                    var r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3]);
-                                    var lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                                    if (lum < 65) return;
-                                }
-                            }
-                            var style = document.createElement('style');
-                            style.id = id;
-                            style.textContent = 'html { filter: invert(100%) hue-rotate(180deg) !important; background-color: #0F172A !important; } img, video, canvas, svg, picture, iframe, [style*="background-image"] { filter: invert(100%) hue-rotate(180deg) !important; }';
-                            (document.head || document.documentElement).appendChild(style);
-                        } catch(e) {}
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(script, null)
-            } else {
-                val script = """
-                    (function() {
-                        try {
-                            var el = document.getElementById('__mb_dark_theme__');
-                            if (el) el.remove();
-                        } catch(e) {}
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(script, null)
-            }
+            // Remove any legacy injected dark style element if present
+            val cleanupScript = """
+                (function() {
+                    try {
+                        var el = document.getElementById('__mb_dark_theme__');
+                        if (el) el.remove();
+                    } catch(e) {}
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(cleanupScript, null)
         } catch (_: Throwable) {}
     }
 }

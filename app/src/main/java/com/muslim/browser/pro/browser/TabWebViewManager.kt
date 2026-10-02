@@ -25,7 +25,8 @@ class TabWebViewManager(
     val maxLiveWebViews: Int = MAX_LIVE_WEBVIEWS,
     private val webViewFactory: (tabId: String) -> WebView,
     private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> },
-    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null
+    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null,
+    private val onSyncTheme: ((WebView, Boolean) -> Unit)? = null
 ) {
     companion object {
         const val MAX_LIVE_WEBVIEWS = 4
@@ -91,6 +92,20 @@ class TabWebViewManager(
             for ((_, webView) in liveWebViews) {
                 try {
                     onSyncDesktopMode?.invoke(webView, isDesktopMode)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * Synchronizes all currently retained live WebViews with the authoritative theme state.
+     * Ensures consistent dark/light background and dark mode across all tabs.
+     */
+    fun syncAllLiveWebViewsTheme(isDarkTheme: Boolean) {
+        synchronized(liveWebViews) {
+            for ((_, webView) in liveWebViews) {
+                try {
+                    onSyncTheme?.invoke(webView, isDarkTheme)
                 } catch (_: Exception) {}
             }
         }

@@ -264,6 +264,9 @@ class MainActivity : ComponentActivity() {
             onSaveTabBundle = { id, bundle -> viewModel.saveTabState(id, bundle) },
             onSyncDesktopMode = { wv, desktopEnabled ->
                 syncWebViewDesktopMode(wv, url = wv.url, isDesktopEnabled = desktopEnabled)
+            },
+            onSyncTheme = { wv, isDark ->
+                applyWebViewTheme(wv, isDark)
             }
         )
 
@@ -281,10 +284,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            val isDark = uiState.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE
 
             LaunchedEffect(uiState.appTheme) {
+                tabWebViewManager.syncAllLiveWebViewsTheme(isDark)
                 webViewInstance?.let {
-                    applyWebViewTheme(it, isDarkTheme = uiState.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE)
+                    applyWebViewTheme(it, isDarkTheme = isDark)
+                }
+            }
+
+            val view = androidx.compose.ui.platform.LocalView.current
+            if (!view.isInEditMode) {
+                androidx.compose.runtime.SideEffect {
+                    val window = (view.context as? android.app.Activity)?.window
+                    if (window != null) {
+                        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
+                        insetsController.isAppearanceLightStatusBars = !isDark
+                        insetsController.isAppearanceLightNavigationBars = !isDark
+                        window.decorView.setBackgroundColor(if (isDark) android.graphics.Color.BLACK else android.graphics.Color.parseColor("#F4F6F9"))
+                    }
                 }
             }
 
@@ -309,7 +327,7 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun createConfiguredWebView(tabId: String): WebView {
-        val isDarkTheme = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val isDarkTheme = viewModel.uiState.value.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE
         val webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -371,7 +389,6 @@ class MainActivity : ComponentActivity() {
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_DEFAULT
                     applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
-                    applyWebPageDarkTheme(view, isDarkThemeActive)
                     viewModel.onPageCommitVisible()
                 }
 
@@ -1221,6 +1238,8 @@ fun BrowserApp(
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = colors.background,
+        contentColor = colors.textPrimary,
         bottomBar = {
             BottomNavBar(
                 canGoBack = uiState.canGoBack && !uiState.isHomePage,
@@ -1405,6 +1424,9 @@ fun BrowserApp(
             uiState.sslWarningState?.let { sslState ->
                 AlertDialog(
                     onDismissRequest = { onSslCancel(sslState.host) },
+                    containerColor = colors.surface,
+                    titleContentColor = colors.textPrimary,
+                    textContentColor = colors.textSecondary,
                     icon = {
                         Icon(
                             imageVector = Icons.Default.Warning,
@@ -1416,33 +1438,36 @@ fun BrowserApp(
                     title = {
                         Text(
                             text = "Security Certificate Warning",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            color = colors.textPrimary
                         )
                     },
                     text = {
                         Column {
                             Text(
                                 text = "The security certificate for \"${sslState.host}\" cannot be fully verified because the server did not provide its intermediate certificate chain.",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.textPrimary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Host: ${sslState.host}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = colors.textSecondary
                             )
                             if (sslState.details.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = sslState.details,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
+                                    color = colors.textSecondary.copy(alpha = 0.8f)
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = "Do you want to proceed to this website anyway?",
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = colors.textPrimary
                             )
                         }
                     },
@@ -1450,7 +1475,8 @@ fun BrowserApp(
                         Button(
                             onClick = { onSslProceed(sslState.host) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = Color.White
                             )
                         ) {
                             Text("Proceed")
@@ -1458,7 +1484,11 @@ fun BrowserApp(
                     },
                     dismissButton = {
                         OutlinedButton(
-                            onClick = { onSslCancel(sslState.host) }
+                            onClick = { onSslCancel(sslState.host) },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = colors.textPrimary
+                            ),
+                            border = BorderStroke(1.dp, colors.border)
                         ) {
                             Text("Cancel / Go Back")
                         }
