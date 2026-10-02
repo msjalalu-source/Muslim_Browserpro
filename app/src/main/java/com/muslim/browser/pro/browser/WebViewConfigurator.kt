@@ -198,100 +198,33 @@ object WebViewConfigurator {
     }
 
     /**
-     * Configures viewport meta tag dynamically to present full desktop layout (width=1024)
-     * in Desktop Mode, and device-width in Mobile Mode.
-     * Idempotent: safe to invoke once per page commit.
-     */
-    /**
-     * Configures viewport meta tag dynamically to present full desktop layout (width=1280)
-     * in Desktop Mode, and device-width in Mobile Mode.
-     *
-     * Architectural optimizations:
-     * - Single, lightweight MutationObserver scoped strictly to document.head and the viewport meta tag.
-     * - Consolidates SPA navigation events to an idempotent listener for 'turbo:load' and 'popstate'.
-     * - Disconnects the observer and removes listeners when Desktop Mode is disabled or WebView destroyed.
-     * - Safely patches navigator.userAgentData.mobile without breaking other Client Hints.
-     * - Idempotent: safe to invoke repeatedly without creating multiple observers.
+     * Authoritative, lightweight viewport configuration.
+     * Sets width=1280 for full desktop rendering when Desktop Mode is enabled,
+     * or standard device-width when disabled.
+     * Executed cleanly once at page commit without continuous observers or listeners.
      */
     fun applyDesktopViewport(webView: WebView?, enabled: Boolean) {
         if (webView == null) return
         try {
-            val effectiveDesktopMode = enabled
-
-            val script = if (effectiveDesktopMode) {
+            val script = if (enabled) {
                 """
                     (function() {
                         try {
-                            var TARGET_CONTENT = 'width=1280';
-                            
-                            function updateViewport() {
-                                var metas = document.querySelectorAll('meta[name="viewport"]');
-                                if (metas.length > 0) {
-                                    metas.forEach(function(m) {
-                                        if (m.getAttribute('content') !== TARGET_CONTENT) {
-                                            m.setAttribute('content', TARGET_CONTENT);
-                                        }
-                                    });
-                                } else {
-                                    var head = document.head || document.documentElement;
-                                    if (head) {
-                                        var meta = document.createElement('meta');
-                                        meta.name = 'viewport';
-                                        meta.content = TARGET_CONTENT;
-                                        head.appendChild(meta);
-                                    }
-                                }
-                            }
-                            
-                            updateViewport();
-
-                            // Safe UserAgentData patch: only override mobile getter if userAgentData natively exists
-                            if (window.navigator && window.navigator.userAgentData) {
-                                try {
-                                    if (window.navigator.userAgentData.mobile !== false) {
-                                        Object.defineProperty(window.navigator.userAgentData, 'mobile', {
-                                            get: function() { return false; },
-                                            configurable: true
-                                        });
-                                    }
-                                } catch(e) {}
-                            }
-
-                            // Single, lightweight MutationObserver on document.head only
-                            if (window.__mbViewportObserver) {
-                                window.__mbViewportObserver.disconnect();
-                                window.__mbViewportObserver = null;
-                            }
-                            
-                            var targetHead = document.head || document.documentElement;
-                            if (window.MutationObserver && targetHead) {
-                                window.__mbViewportObserver = new MutationObserver(function(mutations) {
-                                    for (var i = 0; i < mutations.length; i++) {
-                                        var m = mutations[i];
-                                        if (m.type === 'childList') {
-                                            updateViewport();
-                                            break;
-                                        } else if (m.type === 'attributes' && m.target && m.target.getAttribute('content') !== TARGET_CONTENT) {
-                                            m.target.setAttribute('content', TARGET_CONTENT);
-                                            break;
-                                        }
+                            var metas = document.querySelectorAll('meta[name="viewport"]');
+                            if (metas.length > 0) {
+                                metas.forEach(function(m) {
+                                    if (m.getAttribute('content') !== 'width=1280') {
+                                        m.setAttribute('content', 'width=1280');
                                     }
                                 });
-                                window.__mbViewportObserver.observe(targetHead, { childList: true, subtree: false });
-                                var vp = document.querySelector('meta[name="viewport"]');
-                                if (vp) {
-                                    window.__mbViewportObserver.observe(vp, { attributes: true, attributeFilter: ['content'] });
+                            } else {
+                                var head = document.head || document.documentElement;
+                                if (head) {
+                                    var meta = document.createElement('meta');
+                                    meta.name = 'viewport';
+                                    meta.content = 'width=1280';
+                                    head.appendChild(meta);
                                 }
-                            }
-
-                            // Single consolidated SPA listener for Turbo and PopState (registered once per document)
-                            if (!window.__mbSpaListenersAttached) {
-                                window.__mbSpaListenersAttached = true;
-                                var spaHandler = function() {
-                                    updateViewport();
-                                };
-                                window.addEventListener('turbo:load', spaHandler, { passive: true });
-                                window.addEventListener('popstate', spaHandler, { passive: true });
                             }
                         } catch(e) {}
                     })();
@@ -300,13 +233,6 @@ object WebViewConfigurator {
                 """
                     (function() {
                         try {
-                            // Disconnect and clean up observer
-                            if (window.__mbViewportObserver) {
-                                window.__mbViewportObserver.disconnect();
-                                window.__mbViewportObserver = null;
-                            }
-                            
-                            // Restore native viewport
                             var metas = document.querySelectorAll('meta[name="viewport"]');
                             if (metas.length > 0) {
                                 metas.forEach(function(m) {
@@ -314,13 +240,6 @@ object WebViewConfigurator {
                                         m.setAttribute('content', 'width=device-width, initial-scale=1.0');
                                     }
                                 });
-                            }
-                            
-                            // Restore native userAgentData.mobile if patched
-                            if (window.navigator && window.navigator.userAgentData) {
-                                try {
-                                    delete window.navigator.userAgentData.mobile;
-                                } catch(e) {}
                             }
                         } catch(e) {}
                     })();

@@ -529,10 +529,7 @@ class MainActivity : ComponentActivity() {
                             override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
                                 val destUrl = request?.url?.toString() ?: return false
                                 tempWebView.destroy()
-                                if (view != null) {
-                                    applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, destUrl)
-                                    view.loadUrl(destUrl)
-                                }
+                                view?.loadUrl(destUrl)
                                 return true
                             }
 
@@ -540,10 +537,7 @@ class MainActivity : ComponentActivity() {
                             override fun shouldOverrideUrlLoading(v: WebView?, destUrl: String?): Boolean {
                                 if (destUrl == null) return false
                                 tempWebView.destroy()
-                                if (view != null) {
-                                    applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, destUrl)
-                                    view.loadUrl(destUrl)
-                                }
+                                view?.loadUrl(destUrl)
                                 return true
                             }
 
@@ -551,10 +545,7 @@ class MainActivity : ComponentActivity() {
                                 super.onPageStarted(v, destUrl, favicon)
                                 if (!destUrl.isNullOrBlank() && destUrl != "about:blank") {
                                     tempWebView.destroy()
-                                    if (view != null) {
-                                        applyDesktopModeToWebView(view, viewModel.uiState.value.isDesktopModeEnabled, destUrl)
-                                        view.loadUrl(destUrl)
-                                    }
+                                    view?.loadUrl(destUrl)
                                 }
                             }
                         }
@@ -806,9 +797,6 @@ class MainActivity : ComponentActivity() {
                 true
             }
             is NavigationDecision.Redirect -> {
-                if (view != null) {
-                    syncWebViewDesktopMode(view, decision.url, viewModel.uiState.value.isDesktopModeEnabled)
-                }
                 view?.loadUrl(decision.url)
                 true
             }
@@ -875,30 +863,19 @@ class MainActivity : ComponentActivity() {
         tabWebViewManager.syncAllLiveWebViews(enabled)
 
         val webView = webViewInstance ?: return
+        applyDesktopViewport(webView, enabled)
 
-        // 1. Authoritative current URL: read directly from the active WebView instance
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
-        // If on browser home page with no web page open, configure setting for future navigation
+        DesktopModeDiagnostics.urlAfterToggle = currentUrl
+        DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
+
         if (currentUrl == null || viewModel.uiState.value.isHomePage) {
-            syncWebViewDesktopMode(webView, null, enabled)
-            applyDesktopViewport(webView, enabled)
-            DesktopModeDiagnostics.urlAfterToggle = currentUrl
-            DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
             return
         }
 
-        // 2. Apply the desktop User-Agent to the active WebView settings and adjust viewport
-        syncWebViewDesktopMode(webView, currentUrl, enabled)
-        applyDesktopViewport(webView, enabled)
-
-        // 3. Synchronize ViewModel state with the authoritative active URL
         viewModel.onPageStarted(currentUrl)
-
-        // 4. Record diagnostics
-        DesktopModeDiagnostics.urlAfterToggle = currentUrl
-        DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
         DesktopModeDiagnostics.reloadCount++
         DesktopModeDiagnostics.lastTriggerSource = "setDesktopMode_user_toggle"
 
@@ -907,11 +884,8 @@ class MainActivity : ComponentActivity() {
             "setDesktopMode toggle: enabled=$enabled, url=$currentUrl, UA=${webView.settings.userAgentString}"
         )
 
-        // 5. Temporarily bypass HTTP cache so server re-evaluates the new User-Agent instead of returning 304 Not Modified
         webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_NO_CACHE
-
-        // 6. Reload exactly ONE time
         webView.reload()
     }
 
@@ -1240,7 +1214,6 @@ fun BrowserApp(
         } else {
             val success = viewModel.submitQueryOrUrl(input)
             if (success) {
-                MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
                 activeWebView.loadUrl(viewModel.uiState.value.currentUrl)
             }
         }
@@ -1294,7 +1267,6 @@ fun BrowserApp(
                 webView = activeWebView,
                 onUrlSubmit = navigateToInput,
                 onReload = {
-                    MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
                     activeWebView.reload()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -1383,10 +1355,7 @@ fun BrowserApp(
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
                             evaluateJs = { script, cb -> activeWebView.evaluateJavascript(script, cb) },
-                            reloadPage = {
-                                MainActivity.syncWebViewDesktopMode(activeWebView, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
-                                activeWebView.reload()
-                            }
+                            reloadPage = { activeWebView.reload() }
                         )
                     },
                     onSelectTheme = { theme -> viewModel.setAppTheme(theme) },

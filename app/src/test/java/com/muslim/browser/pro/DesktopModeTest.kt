@@ -610,12 +610,8 @@ class DesktopModeTest {
         // 1. Enable Desktop Viewport
         MainActivity.applyDesktopViewport(webView, enabled = true)
         assertTrue("Script must contain 1280px desktop width", lastScript?.contains("width=1280") == true)
-        assertTrue("Script must contain MutationObserver guard", lastScript?.contains("MutationObserver") == true)
-        assertTrue("Script must contain turbo:load listener", lastScript?.contains("turbo:load") == true)
-        assertTrue("Script must contain popstate listener", lastScript?.contains("popstate") == true)
-        assertTrue("Script must avoid mutation loops", lastScript?.contains("TARGET_CONTENT") == true)
 
-        // 2. Multiple repeated calls (simulating rapid SPA transitions) must execute safely
+        // 2. Multiple repeated calls execute safely and idempotently
         for (i in 1..5) {
             MainActivity.applyDesktopViewport(webView, enabled = true)
         }
@@ -623,7 +619,6 @@ class DesktopModeTest {
 
         // 3. Disable Desktop Viewport
         MainActivity.applyDesktopViewport(webView, enabled = false)
-        assertTrue("Disabled script must disconnect MutationObserver", lastScript?.contains("disconnect()") == true)
         assertTrue("Disabled script must restore device-width", lastScript?.contains("width=device-width") == true)
     }
 
