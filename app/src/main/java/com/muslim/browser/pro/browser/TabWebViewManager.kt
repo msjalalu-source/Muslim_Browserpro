@@ -25,7 +25,6 @@ class TabWebViewManager(
     val maxLiveWebViews: Int = MAX_LIVE_WEBVIEWS,
     private val webViewFactory: (tabId: String) -> WebView,
     private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> },
-    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null,
     private val onSyncTheme: ((WebView, Boolean) -> Unit)? = null
 ) {
     companion object {
@@ -49,14 +48,10 @@ class TabWebViewManager(
         tabId: String,
         url: String? = null,
         bundle: Bundle? = null,
-        isDesktopMode: Boolean = false,
         onRestored: (() -> Unit)? = null
     ): Pair<WebView, Boolean> {
         val existing = liveWebViews[tabId]
         if (existing != null) {
-            // Live instance already exists. Access-order updates it to most-recently used.
-            // Synchronize with current authoritative Desktop Mode state without reloading or resetting state
-            onSyncDesktopMode?.invoke(existing, isDesktopMode)
             return Pair(existing, false)
         }
 
@@ -75,26 +70,8 @@ class TabWebViewManager(
             newWebView.loadUrl(url)
         }
 
-        // CRITICAL INVARIANT: Every newly created or restored WebView must IMMEDIATELY
-        // receive the current Desktop Mode configuration before normal browsing proceeds!
-        onSyncDesktopMode?.invoke(newWebView, isDesktopMode)
-
         liveWebViews[tabId] = newWebView
         return Pair(newWebView, restored)
-    }
-
-    /**
-     * Synchronizes all currently retained live WebViews with the new Desktop Mode setting.
-     * Ensures that background tabs do not retain stale User-Agent/viewport configurations.
-     */
-    fun syncAllLiveWebViews(isDesktopMode: Boolean) {
-        synchronized(liveWebViews) {
-            for ((_, webView) in liveWebViews) {
-                try {
-                    onSyncDesktopMode?.invoke(webView, isDesktopMode)
-                } catch (_: Exception) {}
-            }
-        }
     }
 
     /**
@@ -106,6 +83,19 @@ class TabWebViewManager(
             for ((_, webView) in liveWebViews) {
                 try {
                     onSyncTheme?.invoke(webView, isDarkTheme)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * Executes an action on all currently retained live WebViews.
+     */
+    fun forEachLiveWebView(action: (WebView) -> Unit) {
+        synchronized(liveWebViews) {
+            for ((_, webView) in liveWebViews) {
+                try {
+                    action(webView)
                 } catch (_: Exception) {}
             }
         }

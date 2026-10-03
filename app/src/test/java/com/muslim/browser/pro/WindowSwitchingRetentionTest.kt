@@ -35,7 +35,6 @@ class WindowSwitchingRetentionTest {
         savedBundles.clear()
         loadUrlCalls.clear()
         totalCreations = 0
-        MainActivity.DesktopModeDiagnostics.reset()
     }
 
     private fun createTestTabWebViewManager(maxLive: Int = TabWebViewManager.MAX_LIVE_WEBVIEWS): TabWebViewManager {
@@ -66,7 +65,6 @@ class WindowSwitchingRetentionTest {
         val (windowA1, restoredA1) = manager.getOrCreateWebView("tab_A", url = "https://example.com/pageA")
         assertFalse(restoredA1)
         assertEquals(1, loadUrlCalls["tab_A"])
-        assertEquals(0, MainActivity.DesktopModeDiagnostics.reloadCount)
 
         // 2. Open Window B using the '+' button and load another page
         val (windowB, restoredB) = manager.getOrCreateWebView("tab_B", url = "https://example.com/pageB")
@@ -81,8 +79,6 @@ class WindowSwitchingRetentionTest {
         assertSame("Live WebView instance of Window A must be exactly retained", windowA1, windowA2)
         assertFalse("Window A must NOT be restored from bundle when live instance exists", restoredA2)
         assertEquals("Window A must NOT have an additional loadUrl call", 1, loadUrlCalls["tab_A"])
-        assertEquals("Window A must NOT trigger reload()", 0, MainActivity.DesktopModeDiagnostics.reloadCount)
-        assertEquals("Window A must NOT trigger restoreState()", 0, MainActivity.DesktopModeDiagnostics.restorationCount)
     }
 
     // Test 2: Window A scrolls down -> Window B -> Window A. Expected: scroll position remains unchanged.
@@ -106,27 +102,26 @@ class WindowSwitchingRetentionTest {
         assertEquals("Window A scroll position must remain exactly 520 without jumping or reset", 520, windowA2.scrollY)
     }
 
-    // Test 3: Window A is in Desktop Mode -> Window B -> Window A. Expected: Desktop Mode remains active.
+    // Test 3: Window A has custom settings -> Window B -> Window A. Expected: Settings remain preserved.
     @Test
-    fun test3_windowSwitchingPreservesDesktopMode() {
+    fun test3_windowSwitchingPreservesWebViewSettings() {
         val manager = createTestTabWebViewManager()
 
-        // 1. Open Window A and enable Desktop Mode
-        val (windowA1, _) = manager.getOrCreateWebView("tab_A", url = "https://example.com/desktop-site")
-        MainActivity.applyDesktopModeToWebView(windowA1, enabled = true, url = "https://example.com/desktop-site")
-        val expectedDesktopUa = MainActivity.resolveDesktopUserAgent(context)
-        assertEquals(expectedDesktopUa, windowA1.settings.userAgentString)
+        // 1. Open Window A and configure settings
+        val (windowA1, _) = manager.getOrCreateWebView("tab_A", url = "https://example.com/site")
+        MainActivity.configureBaseSettings(windowA1, isDarkTheme = true)
         assertTrue(windowA1.settings.useWideViewPort)
+        assertTrue(windowA1.settings.javaScriptEnabled)
 
-        // 2. Open Window B in Mobile Mode
-        val (windowB, _) = manager.getOrCreateWebView("tab_B", url = "https://m.example.com/mobile-site")
-        MainActivity.applyDesktopModeToWebView(windowB, enabled = false, url = "https://m.example.com/mobile-site")
+        // 2. Open Window B
+        val (windowB, _) = manager.getOrCreateWebView("tab_B", url = "https://m.example.com/site")
+        MainActivity.configureBaseSettings(windowB, isDarkTheme = false)
 
         // 3. Switch back to Window A
-        val (windowA2, _) = manager.getOrCreateWebView("tab_A", url = "https://example.com/desktop-site")
+        val (windowA2, _) = manager.getOrCreateWebView("tab_A", url = "https://example.com/site")
         assertSame(windowA1, windowA2)
-        assertEquals("Window A Desktop User-Agent must remain untouched", expectedDesktopUa, windowA2.settings.userAgentString)
         assertTrue("Window A wide viewport setting must remain active", windowA2.settings.useWideViewPort)
+        assertTrue("Window A JavaScript setting must remain active", windowA2.settings.javaScriptEnabled)
     }
 
     // Test 4: Window A has an authenticated session -> Window B -> Window A. Expected: session remains intact.

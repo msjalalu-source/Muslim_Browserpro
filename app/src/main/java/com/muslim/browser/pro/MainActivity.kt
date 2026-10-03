@@ -109,7 +109,6 @@ import com.muslim.browser.pro.browser.ui.HistoryScreen
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.NavigationController
 import com.muslim.browser.pro.browser.NavigationDecision
-import com.muslim.browser.pro.browser.WebViewConfigurator
 import com.muslim.browser.pro.browser.TabWebViewManager
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
@@ -262,9 +261,6 @@ class MainActivity : ComponentActivity() {
             maxLiveWebViews = TabWebViewManager.MAX_LIVE_WEBVIEWS,
             webViewFactory = { id -> createConfiguredWebView(id) },
             onSaveTabBundle = { id, bundle -> viewModel.saveTabState(id, bundle) },
-            onSyncDesktopMode = { wv, desktopEnabled ->
-                syncWebViewDesktopMode(wv, url = wv.url, isDesktopEnabled = desktopEnabled)
-            },
             onSyncTheme = { wv, isDark ->
                 applyWebViewTheme(wv, isDark)
             }
@@ -274,11 +270,7 @@ class MainActivity : ComponentActivity() {
         val (initialWebView, _) = tabWebViewManager.getOrCreateWebView(
             tabId = viewModel.uiState.value.currentTabId,
             url = if (activeTab?.isHomePage == false) activeTab.url else null,
-            bundle = activeTab?.bundle,
-            isDesktopMode = viewModel.uiState.value.isDesktopModeEnabled,
-            onRestored = {
-                DesktopModeDiagnostics.restorationCount++
-            }
+            bundle = activeTab?.bundle
         )
         webViewInstance = initialWebView
 
@@ -328,22 +320,18 @@ class MainActivity : ComponentActivity() {
 
     internal fun createConfiguredWebView(tabId: String): WebView {
         val isDarkTheme = viewModel.uiState.value.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE
+        val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
         val webView = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            WebViewConfigurator.configureBaseSettings(this, isDarkTheme)
-            syncWebViewDesktopMode(this, url = null, isDesktopEnabled = viewModel.uiState.value.isDesktopModeEnabled)
-            DesktopModeDiagnostics.webViewRecreationCount++
+            configureBaseSettings(this, isDarkTheme, isDesktop)
 
             webViewClient = object : WebViewClient() {
                 private fun processUrlLoading(view: WebView?, url: String): Boolean {
                     android.util.Log.d("DIAGNOSTIC", "processUrlLoading: URL=$url")
-                    DesktopModeDiagnostics.redirectChain.add(url)
-                    val handled = handleUrlNavigation(view, url)
-                    DesktopModeDiagnostics.lastShouldOverrideResult = handled
-                    return handled
+                    return handleUrlNavigation(view, url)
                 }
 
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -387,8 +375,6 @@ class MainActivity : ComponentActivity() {
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
-                    DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_DEFAULT
-                    applyDesktopViewport(view, viewModel.uiState.value.isDesktopModeEnabled)
                     viewModel.onPageCommitVisible()
                 }
 
@@ -873,36 +859,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setDesktopMode(enabled: Boolean) {
-        DesktopModeDiagnostics.urlBeforeToggle = webViewInstance?.url
-        DesktopModeDiagnostics.userAgentBeforeToggle = webViewInstance?.settings?.userAgentString
-
         viewModel.toggleDesktopMode(enabled)
-        tabWebViewManager.syncAllLiveWebViews(enabled)
-
+        tabWebViewManager.forEachLiveWebView { applyDesktopMode(it, enabled) }
         val webView = webViewInstance ?: return
-        applyDesktopViewport(webView, enabled)
-
+        applyDesktopMode(webView, enabled)
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
-
-        DesktopModeDiagnostics.urlAfterToggle = currentUrl
-        DesktopModeDiagnostics.userAgentAfterToggle = webView.settings.userAgentString
 
         if (currentUrl == null || viewModel.uiState.value.isHomePage) {
             return
         }
 
         viewModel.onPageStarted(currentUrl)
-        DesktopModeDiagnostics.reloadCount++
-        DesktopModeDiagnostics.lastTriggerSource = "setDesktopMode_user_toggle"
-
-        android.util.Log.d(
-            "DESKTOP_DIAG",
-            "setDesktopMode toggle: enabled=$enabled, url=$currentUrl, UA=${webView.settings.userAgentString}"
-        )
-
-        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
-        DesktopModeDiagnostics.currentCacheMode = WebSettings.LOAD_NO_CACHE
         webView.reload()
     }
 
@@ -942,96 +910,91 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    object DesktopModeDiagnostics {
-        var urlBeforeToggle: String? = null
-        var urlAfterToggle: String? = null
-        var userAgentBeforeToggle: String? = null
-        var userAgentAfterToggle: String? = null
-        var reloadCount: Int = 0
-        var loadUrlCount: Int = 0
-        var lastTriggerSource: String? = null
-        val redirectChain: MutableList<String> = mutableListOf()
-        var lastShouldOverrideResult: Boolean = false
-        var currentDesktopMode: Boolean = false
-        var currentCacheMode: Int = WebSettings.LOAD_DEFAULT
-        var webViewRecreationCount: Int = 0
-        var isAuthFlowActive: Boolean = false
-        var restorationCount: Int = 0
-        var windowSwitchReloadCount: Int = 0
-
-        fun reset() {
-            urlBeforeToggle = null
-            urlAfterToggle = null
-            userAgentBeforeToggle = null
-            userAgentAfterToggle = null
-            reloadCount = 0
-            loadUrlCount = 0
-            lastTriggerSource = null
-            redirectChain.clear()
-            lastShouldOverrideResult = false
-            currentDesktopMode = false
-            currentCacheMode = WebSettings.LOAD_DEFAULT
-            webViewRecreationCount = 0
-            isAuthFlowActive = false
-            restorationCount = 0
-            windowSwitchReloadCount = 0
-        }
-    }
-
     companion object {
         private val EMPTY_BLOCKED_BYTES = ByteArray(0)
-        const val DESKTOP_USER_AGENT = WebViewConfigurator.DESKTOP_USER_AGENT
 
-        var isDarkThemeActive: Boolean
-            get() = WebViewConfigurator.isDarkThemeActive
-            set(value) { WebViewConfigurator.isDarkThemeActive = value }
+        const val DESKTOP_USER_AGENT =
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-        var defaultMobileUserAgent: String?
-            get() = WebViewConfigurator.defaultMobileUserAgent
-            set(value) { WebViewConfigurator.defaultMobileUserAgent = value }
+        @Volatile
+        var isDarkThemeActive: Boolean = true
 
-        var isAuthFlowActive: Boolean
-            get() = WebViewConfigurator.isAuthFlowActive
-            set(value) { WebViewConfigurator.isAuthFlowActive = value }
+        fun applyDesktopMode(webView: WebView, isDesktopEnabled: Boolean) {
+            webView.settings.apply {
+                if (isDesktopEnabled) {
+                    userAgentString = DESKTOP_USER_AGENT
+                    useWideViewPort = true
+                    loadWithOverviewMode = true
+                } else {
+                    userAgentString = null
+                    useWideViewPort = true
+                    loadWithOverviewMode = true
+                }
+            }
+        }
 
-        fun resolveDesktopUserAgent(context: Context): String =
-            WebViewConfigurator.resolveDesktopUserAgent(context)
+        fun configureBaseSettings(webView: WebView, isDarkTheme: Boolean, isDesktopEnabled: Boolean = false) {
+            val cookieManager = CookieManager.getInstance()
+            cookieManager.setAcceptCookie(true)
+            cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-        fun isAuthenticationEndpoint(url: String?): Boolean =
-            WebViewConfigurator.isAuthenticationEndpoint(url)
+            webView.settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                @Suppress("DEPRECATION")
+                databaseEnabled = true
+                cacheMode = WebSettings.LOAD_DEFAULT
+                setSupportMultipleWindows(true)
+                loadWithOverviewMode = true
+                useWideViewPort = true
+                builtInZoomControls = true
+                displayZoomControls = false
+                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    offscreenPreRaster = false
+                }
+                mediaPlaybackRequiresUserGesture = true
+                @Suppress("DEPRECATION")
+                saveFormData = false
+            }
 
-        fun syncWebViewDesktopMode(
-            webView: WebView?,
-            url: String? = null,
-            isDesktopEnabled: Boolean? = null,
-            updateUserAgent: Boolean = true
-        ): Boolean = WebViewConfigurator.syncDesktopMode(
-            webView = webView,
-            url = url,
-            isDesktopEnabled = isDesktopEnabled,
-            updateUserAgent = updateUserAgent
-        )
+            applyWebViewTheme(webView, isDarkTheme)
+        }
 
-        fun applyDesktopModeToWebView(
-            webView: WebView,
-            enabled: Boolean,
-            url: String? = null,
-            updateUserAgent: Boolean = true
-        ): Boolean = syncWebViewDesktopMode(
-            webView = webView,
-            url = url,
-            isDesktopEnabled = enabled,
-            updateUserAgent = updateUserAgent
-        )
+        fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
+            try {
+                isDarkThemeActive = isDarkTheme
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    webView.settings.isAlgorithmicDarkeningAllowed = isDarkTheme
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    @Suppress("DEPRECATION")
+                    webView.settings.forceDark = if (isDarkTheme) {
+                        WebSettings.FORCE_DARK_ON
+                    } else {
+                        WebSettings.FORCE_DARK_OFF
+                    }
+                }
+                val bgColor = if (isDarkTheme) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+                webView.setBackgroundColor(bgColor)
+                applyWebPageDarkTheme(webView, isDarkTheme)
+            } catch (_: Exception) {}
+        }
 
-        fun applyDesktopViewport(webView: WebView?, enabled: Boolean) =
-            WebViewConfigurator.applyDesktopViewport(webView, enabled)
-
-        fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) =
-            WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme)
-
-        fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) =
-            WebViewConfigurator.applyWebPageDarkTheme(webView, isDarkTheme)
+        fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
+            if (webView == null) return
+            try {
+                val cleanupScript = """
+                    (function() {
+                        try {
+                            var el = document.getElementById('__mb_dark_theme__');
+                            if (el) el.remove();
+                        } catch(e) {}
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(cleanupScript, null)
+            } catch (_: Throwable) {}
+        }
 
         // Normalizes and sanitizes MIME types requested by websites via accept attributes.
         // Handles comma-separated values, extensions (.pdf, .png, etc.), and defaults to all types.
@@ -1173,21 +1136,12 @@ fun BrowserApp(
         tabWebViewManager.getOrCreateWebView(
             tabId = uiState.currentTabId,
             url = if (activeTab?.isHomePage == false) activeTab.url else null,
-            bundle = activeTab?.bundle,
-            isDesktopMode = uiState.isDesktopModeEnabled,
-            onRestored = {
-                MainActivity.DesktopModeDiagnostics.restorationCount++
-            }
+            bundle = activeTab?.bundle
         )
     }
 
-    LaunchedEffect(activeWebView, uiState.isDesktopModeEnabled) {
+    LaunchedEffect(activeWebView) {
         onActiveWebViewChanged(activeWebView)
-        MainActivity.syncWebViewDesktopMode(
-            activeWebView,
-            url = activeWebView.url,
-            isDesktopEnabled = uiState.isDesktopModeEnabled
-        )
         tabWebViewManager.pauseAll(exceptTabId = uiState.currentTabId)
         tabWebViewManager.resumeTab(uiState.currentTabId)
     }

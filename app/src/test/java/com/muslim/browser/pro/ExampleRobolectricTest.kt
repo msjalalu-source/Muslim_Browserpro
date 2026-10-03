@@ -3,7 +3,6 @@ package com.muslim.browser.pro
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.muslim.browser.pro.browser.SettingsRepository
-import com.muslim.browser.pro.browser.WebViewConfigurator
 import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.BlackWhiteColors
 import com.muslim.browser.pro.ui.theme.WhiteColors
@@ -159,16 +158,16 @@ class ExampleRobolectricTest {
     val webView = android.webkit.WebView(context)
 
     // Apply Black Theme (isDarkTheme = true)
-    WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme = true)
-    assertTrue("Dark theme must be active in configurator", WebViewConfigurator.isDarkThemeActive)
+    MainActivity.applyWebViewTheme(webView, isDarkTheme = true)
+    assertTrue("Dark theme must be active", MainActivity.isDarkThemeActive)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
       @Suppress("DEPRECATION")
       assertEquals(android.webkit.WebSettings.FORCE_DARK_ON, webView.settings.forceDark)
     }
 
     // Apply White Theme (isDarkTheme = false)
-    WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme = false)
-    assertFalse("Dark theme must be inactive in configurator", WebViewConfigurator.isDarkThemeActive)
+    MainActivity.applyWebViewTheme(webView, isDarkTheme = false)
+    assertFalse("Dark theme must be inactive", MainActivity.isDarkThemeActive)
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
       @Suppress("DEPRECATION")
       assertEquals(android.webkit.WebSettings.FORCE_DARK_OFF, webView.settings.forceDark)
