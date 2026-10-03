@@ -858,7 +858,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setDesktopMode(enabled: Boolean) {
+    internal fun setDesktopMode(enabled: Boolean) {
         viewModel.toggleDesktopMode(enabled)
         tabWebViewManager.forEachLiveWebView { applyDesktopMode(it, enabled) }
         val webView = webViewInstance ?: return
@@ -925,10 +925,12 @@ class MainActivity : ComponentActivity() {
                     userAgentString = DESKTOP_USER_AGENT
                     useWideViewPort = true
                     loadWithOverviewMode = true
+                    textZoom = 100
                 } else {
                     userAgentString = null
                     useWideViewPort = true
                     loadWithOverviewMode = true
+                    textZoom = 100
                 }
             }
         }
@@ -949,6 +951,7 @@ class MainActivity : ComponentActivity() {
                 useWideViewPort = true
                 builtInZoomControls = true
                 displayZoomControls = false
+                textZoom = 100
                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     offscreenPreRaster = false
@@ -958,6 +961,7 @@ class MainActivity : ComponentActivity() {
                 saveFormData = false
             }
 
+            applyDesktopMode(webView, isDesktopEnabled)
             applyWebViewTheme(webView, isDarkTheme)
         }
 
