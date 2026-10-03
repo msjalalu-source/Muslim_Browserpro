@@ -68,7 +68,16 @@ data class DiagnosticData(
     val navigatorMaxTouchPoints: String = "Fetching...",
     val viewportMetaContent: String = "Fetching...",
     val currentWebViewUrl: String = "",
-    val desktopModeState: String = "" // "MOBILE MODE" or "DESKTOP MODE"
+    val desktopModeState: String = "", // "MOBILE MODE", "DESKTOP MODE", or "WINDOWS 10 TOUCH PROFILE"
+    val navigatorPlatform: String = "Fetching...",
+    val navigatorAppVersion: String = "Fetching...",
+    val navigatorVendor: String = "Fetching...",
+    val navigatorHardwareConcurrency: String = "Fetching...",
+    val navigatorDeviceMemory: String = "Fetching...",
+    val webglVendor: String = "Fetching...",
+    val webglRenderer: String = "Fetching...",
+    val cssPointerHover: String = "Fetching...",
+    val uaClientHintsPlatform: String = "Fetching..."
 ) {
     fun formatForClipboard(): String {
         return """
@@ -95,6 +104,15 @@ data class DiagnosticData(
                 $viewportMetaContent
             15. Current WebView URL: $currentWebViewUrl
             16. Current Desktop Mode state: $desktopModeState
+            17. navigator.platform: $navigatorPlatform
+            18. navigator.appVersion: $navigatorAppVersion
+            19. navigator.vendor: $navigatorVendor
+            20. navigator.hardwareConcurrency: $navigatorHardwareConcurrency
+            21. navigator.deviceMemory: $navigatorDeviceMemory
+            22. WebGL UNMASKED_VENDOR_WEBGL: $webglVendor
+            23. WebGL UNMASKED_RENDERER_WEBGL: $webglRenderer
+            24. CSS Pointer / Hover: $cssPointerHover
+            25. UA Client Hints Platform: $uaClientHintsPlatform
             ===========================================
         """.trimIndent()
     }
@@ -107,12 +125,19 @@ data class DiagnosticData(
 fun collectLiveWebViewDiagnostics(
     webView: WebView?,
     isDesktopModeEnabled: Boolean,
+    isWindows10TouchEnabled: Boolean = false,
     onResult: (DiagnosticData) -> Unit
 ) {
+    val modeState = when {
+        isWindows10TouchEnabled -> "WINDOWS 10 TOUCH PROFILE"
+        isDesktopModeEnabled -> "DESKTOP MODE"
+        else -> "MOBILE MODE"
+    }
+
     if (webView == null) {
         onResult(
             DiagnosticData(
-                desktopModeState = if (isDesktopModeEnabled) "DESKTOP MODE" else "MOBILE MODE",
+                desktopModeState = modeState,
                 windowInnerWidth = "Error: WebView is null"
             )
         )
@@ -121,7 +146,6 @@ fun collectLiveWebViewDiagnostics(
 
     val uaSettings = try { webView.settings.userAgentString ?: "" } catch (_: Exception) { "" }
     val currentUrl = try { webView.url ?: "" } catch (_: Exception) { "" }
-    val modeState = if (isDesktopModeEnabled) "DESKTOP MODE" else "MOBILE MODE"
 
     val js = """
         (function() {
@@ -129,9 +153,38 @@ fun collectLiveWebViewDiagnostics(
                 var vp = document.querySelector('meta[name="viewport"]');
                 var vpContent = vp ? vp.getAttribute('content') : 'NONE (No meta[name=viewport] tag found)';
                 var uadMobile = 'Not available (navigator.userAgentData undefined)';
-                if (window.navigator && window.navigator.userAgentData && typeof window.navigator.userAgentData.mobile !== 'undefined') {
-                    uadMobile = String(window.navigator.userAgentData.mobile);
+                var uadPlatform = 'Not available';
+                if (window.navigator && window.navigator.userAgentData) {
+                    if (typeof window.navigator.userAgentData.mobile !== 'undefined') {
+                        uadMobile = String(window.navigator.userAgentData.mobile);
+                    }
+                    if (typeof window.navigator.userAgentData.platform !== 'undefined') {
+                        uadPlatform = String(window.navigator.userAgentData.platform);
+                    }
                 }
+                var wglVendor = 'N/A';
+                var wglRenderer = 'N/A';
+                try {
+                    var canvas = document.createElement('canvas');
+                    var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                    if (gl) {
+                        var ext = gl.getExtension('WEBGL_debug_renderer_info');
+                        if (ext) {
+                            wglVendor = String(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL));
+                            wglRenderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL));
+                        }
+                    }
+                } catch(e) {}
+
+                var cssSignals = [];
+                try {
+                    if (window.matchMedia) {
+                        cssSignals.push('hover:' + window.matchMedia('(hover: hover)').matches);
+                        cssSignals.push('pointer:fine=' + window.matchMedia('(pointer: fine)').matches);
+                        cssSignals.push('any-pointer:coarse=' + window.matchMedia('(any-pointer: coarse)').matches);
+                    }
+                } catch(e) {}
+
                 return JSON.stringify({
                     innerWidth: String(window.innerWidth),
                     innerHeight: String(window.innerHeight),
@@ -142,10 +195,19 @@ fun collectLiveWebViewDiagnostics(
                     screenWidth: String(window.screen ? window.screen.width : 'N/A'),
                     screenHeight: String(window.screen ? window.screen.height : 'N/A'),
                     devicePixelRatio: String(window.devicePixelRatio),
-                    navigatorUserAgent: String(window.navigator.userAgent),
+                    navigatorUserAgent: String(window.navigator ? window.navigator.userAgent : 'N/A'),
                     userAgentDataMobile: uadMobile,
-                    maxTouchPoints: String(window.navigator.maxTouchPoints),
-                    viewportMeta: vpContent
+                    userAgentDataPlatform: uadPlatform,
+                    maxTouchPoints: String(window.navigator ? window.navigator.maxTouchPoints : 'N/A'),
+                    viewportMeta: vpContent,
+                    platform: String(window.navigator ? window.navigator.platform : 'N/A'),
+                    appVersion: String(window.navigator ? window.navigator.appVersion : 'N/A'),
+                    vendor: String(window.navigator ? window.navigator.vendor : 'N/A'),
+                    hardwareConcurrency: String(window.navigator ? window.navigator.hardwareConcurrency : 'N/A'),
+                    deviceMemory: String(window.navigator ? window.navigator.deviceMemory : 'N/A'),
+                    webglVendor: wglVendor,
+                    webglRenderer: wglRenderer,
+                    cssPointerHover: cssSignals.join(', ')
                 });
             } catch(e) {
                 return JSON.stringify({ error: e.toString() });
@@ -190,7 +252,16 @@ fun collectLiveWebViewDiagnostics(
                         navigatorMaxTouchPoints = obj.optString("maxTouchPoints", "N/A"),
                         viewportMetaContent = obj.optString("viewportMeta", "N/A"),
                         currentWebViewUrl = currentUrl,
-                        desktopModeState = modeState
+                        desktopModeState = modeState,
+                        navigatorPlatform = obj.optString("platform", "N/A"),
+                        navigatorAppVersion = obj.optString("appVersion", "N/A"),
+                        navigatorVendor = obj.optString("vendor", "N/A"),
+                        navigatorHardwareConcurrency = obj.optString("hardwareConcurrency", "N/A"),
+                        navigatorDeviceMemory = obj.optString("deviceMemory", "N/A"),
+                        webglVendor = obj.optString("webglVendor", "N/A"),
+                        webglRenderer = obj.optString("webglRenderer", "N/A"),
+                        cssPointerHover = obj.optString("cssPointerHover", "N/A"),
+                        uaClientHintsPlatform = obj.optString("userAgentDataPlatform", "N/A")
                     )
                 )
             } catch (e: Exception) {
@@ -217,12 +288,14 @@ fun collectLiveWebViewDiagnostics(
 }
 
 /**
- * Temporary diagnostic screen to inspect live WebView viewport and layout parameters.
+ * Diagnostic screen to inspect live WebView viewport, layout parameters, and
+ * browser identity profile signals (e.g. Windows 10 Touch).
  */
 @Composable
 fun DiagnosticScreen(
     webView: WebView?,
     isDesktopModeEnabled: Boolean,
+    isWindows10TouchEnabled: Boolean = false,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -234,7 +307,7 @@ fun DiagnosticScreen(
 
     fun refreshData() {
         isRefreshing = true
-        collectLiveWebViewDiagnostics(webView, isDesktopModeEnabled) { data ->
+        collectLiveWebViewDiagnostics(webView, isDesktopModeEnabled, isWindows10TouchEnabled) { data ->
             diagnosticData = data
             isRefreshing = false
         }
@@ -255,7 +328,7 @@ fun DiagnosticScreen(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            // Header: Temporary Debug Badge & Actions
+            // Header: Debug Badge & Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -276,17 +349,17 @@ fun DiagnosticScreen(
                             border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0xFFEF5350))
                         ) {
                             Text(
-                                text = "TEMPORARY DEBUG / DIAGNOSTIC",
+                                text = "IDENTITY & VIEWPORT DIAGNOSTIC",
                                 color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
-                                fontSize = 9.5.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
                         Text(
-                            text = "WebView Viewport Inspector",
+                            text = "Browser Signals & Viewport Inspector",
                             color = colors.textPrimary,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -294,106 +367,73 @@ fun DiagnosticScreen(
 
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.testTag("diagnostic_close_button")
+                    modifier = Modifier.testTag("close_diagnostic_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Return to Browser",
-                        tint = colors.iconTint
+                        contentDescription = "Close Diagnostic Screen",
+                        tint = colors.textPrimary
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // State Mode Banner: DESKTOP MODE vs MOBILE MODE
-            val isDesktop = isDesktopModeEnabled
-            Surface(
+            // Action Toolbar (Copy to Clipboard + Refresh)
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                color = if (isDesktop) colors.accent.copy(alpha = 0.15f) else colors.surfaceVariant,
-                border = BorderStroke(1.5.dp, if (isDesktop) colors.accent else colors.border)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        val clip = ClipData.newPlainText("Diagnostic Data", diagnosticData.formatForClipboard())
+                        clipboard?.setPrimaryClip(clip)
+                        Toast.makeText(context, "Diagnostic data copied to clipboard!", Toast.LENGTH_SHORT).show()
+                    },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .height(36.dp)
+                        .testTag("copy_diagnostic_button"),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.buttonBackground,
+                        contentColor = colors.buttonText
+                    )
                 ) {
-                    Column {
-                        Text(
-                            text = "CURRENT BROWSER STATE",
-                            fontSize = 10.sp,
-                            color = colors.textSecondary,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = if (isDesktop) "DESKTOP MODE" else "MOBILE MODE",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = if (isDesktop) colors.accent else colors.textPrimary,
-                            modifier = Modifier.testTag("diagnostic_mode_label")
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Copy Diagnostic", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
 
-                    Row {
-                        OutlinedButton(
-                            onClick = { refreshData() },
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = colors.textPrimary
-                            ),
-                            border = BorderStroke(1.dp, colors.border),
-                            modifier = Modifier
-                                .height(34.dp)
-                                .testTag("diagnostic_refresh_button"),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = null,
-                                tint = colors.textPrimary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Refresh", color = colors.textPrimary, fontSize = 11.sp)
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Button(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("WebView Diagnostics", diagnosticData.formatForClipboard())
-                                cm.setPrimaryClip(clip)
-                                Toast.makeText(context, "Diagnostics copied to clipboard", Toast.LENGTH_SHORT).show()
-                            },
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colors.buttonBackground,
-                                contentColor = colors.buttonText
-                            ),
-                            modifier = Modifier
-                                .height(34.dp)
-                                .testTag("diagnostic_copy_button"),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                OutlinedButton(
+                    onClick = { refreshData() },
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("refresh_diagnostic_button"),
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = colors.textPrimary
+                    ),
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Diagnostic",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isRefreshing) "Reading..." else "Refresh", fontSize = 12.sp)
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Scrollable Diagnostic Values
+            // Scrollable Diagnostic List
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -404,14 +444,14 @@ fun DiagnosticScreen(
                     index = 1,
                     label = "webView.settings.userAgentString",
                     value = diagnosticData.webViewUserAgentString,
-                    colors = colors
+                    colors = colors,
+                    highlight = true
                 )
                 DiagnosticItemCard(
                     index = 2,
                     label = "window.innerWidth",
                     value = diagnosticData.windowInnerWidth,
-                    colors = colors,
-                    highlight = true
+                    colors = colors
                 )
                 DiagnosticItemCard(
                     index = 3,
@@ -466,7 +506,8 @@ fun DiagnosticScreen(
                     index = 11,
                     label = "navigator.userAgent",
                     value = diagnosticData.navigatorUserAgent,
-                    colors = colors
+                    colors = colors,
+                    highlight = true
                 )
                 DiagnosticItemCard(
                     index = 12,
@@ -497,6 +538,64 @@ fun DiagnosticScreen(
                     index = 16,
                     label = "Current Desktop Mode State",
                     value = diagnosticData.desktopModeState,
+                    colors = colors,
+                    highlight = true
+                )
+                DiagnosticItemCard(
+                    index = 17,
+                    label = "navigator.platform",
+                    value = diagnosticData.navigatorPlatform,
+                    colors = colors,
+                    highlight = true
+                )
+                DiagnosticItemCard(
+                    index = 18,
+                    label = "navigator.appVersion",
+                    value = diagnosticData.navigatorAppVersion,
+                    colors = colors
+                )
+                DiagnosticItemCard(
+                    index = 19,
+                    label = "navigator.vendor",
+                    value = diagnosticData.navigatorVendor,
+                    colors = colors
+                )
+                DiagnosticItemCard(
+                    index = 20,
+                    label = "navigator.hardwareConcurrency",
+                    value = diagnosticData.navigatorHardwareConcurrency,
+                    colors = colors
+                )
+                DiagnosticItemCard(
+                    index = 21,
+                    label = "navigator.deviceMemory",
+                    value = diagnosticData.navigatorDeviceMemory,
+                    colors = colors
+                )
+                DiagnosticItemCard(
+                    index = 22,
+                    label = "WebGL UNMASKED_VENDOR_WEBGL",
+                    value = diagnosticData.webglVendor,
+                    colors = colors,
+                    highlight = true
+                )
+                DiagnosticItemCard(
+                    index = 23,
+                    label = "WebGL UNMASKED_RENDERER_WEBGL",
+                    value = diagnosticData.webglRenderer,
+                    colors = colors,
+                    highlight = true
+                )
+                DiagnosticItemCard(
+                    index = 24,
+                    label = "CSS Pointer / Hover Capabilities",
+                    value = diagnosticData.cssPointerHover,
+                    colors = colors
+                )
+                DiagnosticItemCard(
+                    index = 25,
+                    label = "UA Client Hints Platform",
+                    value = diagnosticData.uaClientHintsPlatform,
                     colors = colors,
                     highlight = true
                 )

@@ -76,6 +76,7 @@ data class BrowserUiState(
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
     val isDesktopModeEnabled: Boolean = false,
+    val isWindows10TouchEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE,
@@ -111,6 +112,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
+                isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
                 appTheme = repository.appTheme,
@@ -624,6 +626,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleDesktopMode(enabled: Boolean) {
         repository.isDesktopModeEnabled = enabled
         _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
+    }
+
+    fun toggleWindows10Touch(enabled: Boolean) {
+        repository.isWindows10TouchEnabled = enabled
+        _uiState.update { it.copy(isWindows10TouchEnabled = enabled) }
     }
 
     /**

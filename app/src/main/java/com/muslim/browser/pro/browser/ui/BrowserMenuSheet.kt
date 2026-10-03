@@ -85,6 +85,7 @@ fun BrowserMenuSheet(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
+    onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
@@ -723,6 +724,61 @@ fun BrowserMenuSheet(
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("desktop_mode_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Experimental Browser Identity Profile: Windows 10 Touch
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("item_windows_10_touch"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.DesktopWindows,
+                                contentDescription = "Windows 10 Touch",
+                                tint = if (uiState.isWindows10TouchEnabled) colors.accent else colors.textPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Windows 10 Touch",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Experimental browser identity profile",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = uiState.isWindows10TouchEnabled,
+                            onCheckedChange = onToggleWindows10Touch,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("windows_10_touch_switch")
                         )
                     }
                 }

@@ -306,6 +306,7 @@ class MainActivity : ComponentActivity() {
                     onClearAllData = { clearAllData() },
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
+                    onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
                     onSslCancel = { host -> onSslPromptCancel(host) },
                     onHandleUrlNavigation = { url ->
@@ -322,13 +323,14 @@ class MainActivity : ComponentActivity() {
     internal fun createConfiguredWebView(tabId: String): WebView {
         val isDarkTheme = viewModel.uiState.value.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE
         val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
+        val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
         val webView = WebView(this).apply {
-            android.util.Log.d("DESKTOP_DEBUG", "createConfiguredWebView: tabId=$tabId, instance=${System.identityHashCode(this)}, isDesktopEnabled=$isDesktop")
+            android.util.Log.d("DESKTOP_DEBUG", "createConfiguredWebView: tabId=$tabId, instance=${System.identityHashCode(this)}, isDesktopEnabled=$isDesktop, isWin10Touch=$isWin10Touch")
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            WebViewConfigurator.configureBaseSettings(this, isDarkTheme, isDesktop)
+            WebViewConfigurator.configureBaseSettings(this, isDarkTheme, isDesktop, isWin10Touch)
 
             webViewClient = object : WebViewClient() {
                 private fun processUrlLoading(view: WebView?, url: String): Boolean {
@@ -371,22 +373,48 @@ class MainActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     val isDesktopMode = viewModel.uiState.value.isDesktopModeEnabled
-                    if (isDesktopMode && view != null) {
-                        if (WebViewConfigurator.isAuthenticationUrl(url)) {
-                            android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Auth endpoint detected ($url). Temporarily using compatible mobile UA.")
-                            if (view.settings.userAgentString != null) {
-                                view.settings.userAgentString = null
+                    val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    val mode = WebViewConfigurator.getActiveIdentityMode(isDesktopMode, isWin10Touch)
+
+                    if (view != null) {
+                        when (mode) {
+                            WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH -> {
+                                if (WebViewConfigurator.isAuthenticationUrl(url)) {
+                                    android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Auth endpoint detected ($url). Temporarily using compatible mobile UA.")
+                                    if (view.settings.userAgentString != null) {
+                                        view.settings.userAgentString = null
+                                    }
+                                } else {
+                                    if (view.settings.userAgentString != WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT) {
+                                        android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Windows 10 Touch UA set.")
+                                        view.settings.userAgentString = WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
+                                    }
+                                    WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
+                                }
                             }
-                        } else {
-                            if (view.settings.userAgentString != WebViewConfigurator.DESKTOP_USER_AGENT) {
-                                android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Non-auth page ($url). Restoring desktop UA.")
-                                view.settings.userAgentString = WebViewConfigurator.DESKTOP_USER_AGENT
+                            WebViewConfigurator.BrowserIdentityMode.DESKTOP_LINUX -> {
+                                if (WebViewConfigurator.isAuthenticationUrl(url)) {
+                                    android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Auth endpoint detected ($url). Temporarily using compatible mobile UA.")
+                                    if (view.settings.userAgentString != null) {
+                                        view.settings.userAgentString = null
+                                    }
+                                } else {
+                                    if (view.settings.userAgentString != WebViewConfigurator.DESKTOP_USER_AGENT) {
+                                        android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Non-auth page ($url). Restoring desktop UA.")
+                                        view.settings.userAgentString = WebViewConfigurator.DESKTOP_USER_AGENT
+                                    }
+                                }
+                            }
+                            WebViewConfigurator.BrowserIdentityMode.MOBILE -> {
+                                if (view.settings.userAgentString != null) {
+                                    view.settings.userAgentString = null
+                                }
                             }
                         }
                     }
                     android.util.Log.d(
                         "DESKTOP_DEBUG",
-                        "onPageStarted: instance=${System.identityHashCode(view)}, URL=$url, UA=${view?.settings?.userAgentString}, isDesktopMode=$isDesktopMode"
+                        "onPageStarted: instance=${System.identityHashCode(view)}, URL=$url, UA=${view?.settings?.userAgentString}, mode=$mode"
                     )
                     url?.let { viewModel.onPageStarted(it) }
                 }
@@ -394,11 +422,19 @@ class MainActivity : ComponentActivity() {
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                    val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    if (isWin10Touch && !WebViewConfigurator.isAuthenticationUrl(url)) {
+                        WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
+                    }
                     viewModel.onPageCommitVisible()
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    if (isWin10Touch && !WebViewConfigurator.isAuthenticationUrl(url)) {
+                        WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
+                    }
                     android.util.Log.d(
                         "DESKTOP_DEBUG",
                         "onPageFinished: instance=${System.identityHashCode(view)}, URL=$url, UA=${view?.settings?.userAgentString}"
@@ -555,6 +591,11 @@ class MainActivity : ComponentActivity() {
                             setSupportMultipleWindows(false)
                         }
                         CookieManager.getInstance().setAcceptThirdPartyCookies(tempWebView, true)
+                        WebViewConfigurator.applyIdentityMode(
+                            tempWebView,
+                            viewModel.uiState.value.isDesktopModeEnabled,
+                            viewModel.uiState.value.isWindows10TouchEnabled
+                        )
 
                         var isHandled = false
                         fun forwardToParent(destUrl: String) {
@@ -899,9 +940,10 @@ class MainActivity : ComponentActivity() {
     internal fun setDesktopMode(enabled: Boolean) {
         android.util.Log.d("DESKTOP_DEBUG", "setDesktopMode toggle: enabled=$enabled")
         viewModel.toggleDesktopMode(enabled)
-        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyDesktopMode(it, enabled) }
+        val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyIdentityMode(it, enabled, isWin10Touch) }
         val webView = webViewInstance ?: return
-        WebViewConfigurator.applyDesktopMode(webView, enabled)
+        WebViewConfigurator.applyIdentityMode(webView, enabled, isWin10Touch)
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
@@ -917,6 +959,32 @@ class MainActivity : ComponentActivity() {
         android.util.Log.d(
             "DESKTOP_DEBUG",
             "setDesktopMode triggering reload: instance=${System.identityHashCode(webView)}, UA_before_reload=${webView.settings.userAgentString}"
+        )
+        webView.reload()
+    }
+
+    internal fun setWindows10Touch(enabled: Boolean) {
+        android.util.Log.d("DESKTOP_DEBUG", "setWindows10Touch toggle: enabled=$enabled")
+        viewModel.toggleWindows10Touch(enabled)
+        val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
+        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyIdentityMode(it, isDesktop, enabled) }
+        val webView = webViewInstance ?: return
+        WebViewConfigurator.applyIdentityMode(webView, isDesktop, enabled)
+        val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
+            ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
+
+        android.util.Log.d(
+            "DESKTOP_DEBUG",
+            "setWindows10Touch applied: instance=${System.identityHashCode(webView)}, currentUrl=$currentUrl, UA=${webView.settings.userAgentString}, isWindows10TouchEnabled=$enabled"
+        )
+
+        if (currentUrl == null || viewModel.uiState.value.isHomePage) {
+            return
+        }
+
+        android.util.Log.d(
+            "DESKTOP_DEBUG",
+            "setWindows10Touch triggering reload: instance=${System.identityHashCode(webView)}, UA_before_reload=${webView.settings.userAgentString}"
         )
         webView.reload()
     }
@@ -961,6 +1029,7 @@ class MainActivity : ComponentActivity() {
         private val EMPTY_BLOCKED_BYTES = ByteArray(0)
 
         const val DESKTOP_USER_AGENT = WebViewConfigurator.DESKTOP_USER_AGENT
+        const val WINDOWS_10_TOUCH_USER_AGENT = WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
 
         var isDarkThemeActive: Boolean
             get() = WebViewConfigurator.isDarkThemeActive
@@ -972,8 +1041,21 @@ class MainActivity : ComponentActivity() {
             WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled)
         }
 
-        fun configureBaseSettings(webView: WebView, isDarkTheme: Boolean, isDesktopEnabled: Boolean = false) {
-            WebViewConfigurator.configureBaseSettings(webView, isDarkTheme, isDesktopEnabled)
+        fun applyWindows10Touch(webView: WebView, isWindows10TouchEnabled: Boolean) {
+            WebViewConfigurator.applyIdentityMode(webView, isDesktopEnabled = false, isWindows10TouchEnabled = isWindows10TouchEnabled)
+        }
+
+        fun applyIdentityMode(webView: WebView, isDesktopEnabled: Boolean, isWindows10TouchEnabled: Boolean) {
+            WebViewConfigurator.applyIdentityMode(webView, isDesktopEnabled, isWindows10TouchEnabled)
+        }
+
+        fun configureBaseSettings(
+            webView: WebView,
+            isDarkTheme: Boolean,
+            isDesktopEnabled: Boolean = false,
+            isWindows10TouchEnabled: Boolean = false
+        ) {
+            WebViewConfigurator.configureBaseSettings(webView, isDarkTheme, isDesktopEnabled, isWindows10TouchEnabled)
         }
 
         fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
@@ -1109,6 +1191,7 @@ fun BrowserApp(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
+    onToggleWindows10Touch: (Boolean) -> Unit = {},
     onSslProceed: (String) -> Unit = {},
     onSslCancel: (String) -> Unit = {},
     onHandleUrlNavigation: (String) -> Boolean = { false },
@@ -1313,6 +1396,7 @@ fun BrowserApp(
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
+                    onToggleWindows10Touch = onToggleWindows10Touch,
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
                             evaluateJs = { script, cb -> activeWebView.evaluateJavascript(script, cb) },
@@ -1330,6 +1414,7 @@ fun BrowserApp(
                 DiagnosticScreen(
                     webView = activeWebView,
                     isDesktopModeEnabled = uiState.isDesktopModeEnabled,
+                    isWindows10TouchEnabled = uiState.isWindows10TouchEnabled,
                     onDismiss = { viewModel.closeDiagnostic() },
                     modifier = Modifier.fillMaxSize()
                 )
