@@ -267,8 +267,15 @@ class MainActivity : ComponentActivity() {
             },
             onSyncDesktopMode = { wv, isDesktop ->
                 val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
-                WebViewConfigurator.applyIdentityMode(wv, isDesktop, isWin10Touch)
-            }
+                WebViewConfigurator.syncDesktopMode(
+                    webView = wv,
+                    url = wv.url,
+                    isDesktopEnabled = isDesktop,
+                    updateUserAgent = true,
+                    isWindows10TouchEnabled = isWin10Touch
+                )
+            },
+            isDesktopModeProvider = { viewModel.uiState.value.isDesktopModeEnabled }
         )
 
         val activeTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
@@ -426,7 +433,11 @@ class MainActivity : ComponentActivity() {
                 override fun onPageCommitVisible(view: WebView?, url: String?) {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
+                    val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
                     val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    if (view != null) {
+                        WebViewConfigurator.applyDesktopViewport(view, isDesktop || isWin10Touch)
+                    }
                     if (isWin10Touch && !WebViewConfigurator.isAuthenticationUrl(url)) {
                         WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
                     }
@@ -435,7 +446,11 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
                     val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    if (view != null) {
+                        WebViewConfigurator.applyDesktopViewport(view, isDesktop || isWin10Touch)
+                    }
                     if (isWin10Touch && !WebViewConfigurator.isAuthenticationUrl(url)) {
                         WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
                     }
@@ -945,9 +960,15 @@ class MainActivity : ComponentActivity() {
         android.util.Log.d("DESKTOP_DEBUG", "setDesktopMode toggle: enabled=$enabled")
         viewModel.toggleDesktopMode(enabled)
         val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
-        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyIdentityMode(it, enabled, isWin10Touch) }
+        tabWebViewManager.syncAllLiveWebViews(enabled)
         val webView = webViewInstance ?: return
-        WebViewConfigurator.applyIdentityMode(webView, enabled, isWin10Touch)
+        WebViewConfigurator.syncDesktopMode(
+            webView = webView,
+            url = webView.url,
+            isDesktopEnabled = enabled,
+            updateUserAgent = true,
+            isWindows10TouchEnabled = isWin10Touch
+        )
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
@@ -971,9 +992,23 @@ class MainActivity : ComponentActivity() {
         android.util.Log.d("DESKTOP_DEBUG", "setWindows10Touch toggle: enabled=$enabled")
         viewModel.toggleWindows10Touch(enabled)
         val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
-        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyIdentityMode(it, isDesktop, enabled) }
+        tabWebViewManager.forEachLiveWebView {
+            WebViewConfigurator.syncDesktopMode(
+                webView = it,
+                url = it.url,
+                isDesktopEnabled = isDesktop,
+                updateUserAgent = true,
+                isWindows10TouchEnabled = enabled
+            )
+        }
         val webView = webViewInstance ?: return
-        WebViewConfigurator.applyIdentityMode(webView, isDesktop, enabled)
+        WebViewConfigurator.syncDesktopMode(
+            webView = webView,
+            url = webView.url,
+            isDesktopEnabled = isDesktop,
+            updateUserAgent = true,
+            isWindows10TouchEnabled = enabled
+        )
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
@@ -1219,6 +1254,14 @@ fun BrowserApp(
         onActiveWebViewChanged(activeWebView)
         tabWebViewManager.pauseAll(exceptTabId = uiState.currentTabId)
         tabWebViewManager.resumeTab(uiState.currentTabId)
+        val isWin10Touch = uiState.isWindows10TouchEnabled
+        WebViewConfigurator.syncDesktopMode(
+            webView = activeWebView,
+            url = activeWebView.url,
+            isDesktopEnabled = uiState.isDesktopModeEnabled,
+            updateUserAgent = true,
+            isWindows10TouchEnabled = isWin10Touch
+        )
     }
 
     // Toast / Snackbar feedback

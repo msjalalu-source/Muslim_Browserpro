@@ -300,4 +300,100 @@ class DesktopModeTest {
         com.muslim.browser.pro.browser.WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled = false)
         assertEquals(defaultUa, webView.settings.userAgentString)
     }
+
+    @Test
+    fun test11_githubPagesNeverTreatedAsAuthEndpointsAndRetainDesktopMode() {
+        val githubUrls = listOf(
+            "https://github.com",
+            "https://github.com/",
+            "https://github.com/login",
+            "https://github.com/session",
+            "https://github.com/torvalds/linux",
+            "https://github.com/octocat/oauth2/issues",
+            "https://github.com/spring-projects/spring-security-oauth2",
+            "https://github.com/settings/tokens",
+            "https://github.com/pulls",
+            "https://github.com/issues",
+            "https://github.com/notifications",
+            "https://github.com/search?q=kotlin+android",
+            "https://raw.githubusercontent.com/user/repo/main/README.md"
+        )
+
+        for (url in githubUrls) {
+            assertFalse("URL $url should not be treated as an auth endpoint that demotes to mobile UA", MainActivity.isAuthenticationUrl(url))
+        }
+
+        val webView = WebView(context)
+        for (url in githubUrls) {
+            webView.loadUrl(url)
+            MainActivity.applyDesktopMode(webView, isDesktopEnabled = true)
+            assertEquals("GitHub page $url must retain desktop user-agent", MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        }
+    }
+
+    @Test
+    fun test12_desktopViewportGuardScriptContainsEssentialComponents() {
+        assertEquals(1280, com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_VIEWPORT_TARGET_WIDTH)
+        assertEquals("width=1280", com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_VIEWPORT_CONTENT)
+
+        val guardScript = com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_VIEWPORT_GUARD_SCRIPT
+        assertTrue("Guard script must target width=1280", guardScript.contains("width=1280"))
+        assertTrue("Guard script must use MutationObserver", guardScript.contains("MutationObserver"))
+        assertTrue("Guard script must listen to turbo:load", guardScript.contains("turbo:load"))
+        assertTrue("Guard script must listen to turbo:render", guardScript.contains("turbo:render"))
+        assertTrue("Guard script must listen to pjax:end", guardScript.contains("pjax:end"))
+        assertTrue("Guard script must listen to popstate", guardScript.contains("popstate"))
+        assertTrue("Guard script must intercept pushState", guardScript.contains("pushState"))
+        assertTrue("Guard script must intercept replaceState", guardScript.contains("replaceState"))
+        assertTrue("Guard script must spoof userAgentData mobile flag to false", guardScript.contains("mobile: false"))
+        assertTrue("Guard script must define guard key", guardScript.contains("__mb_desktop_guard__"))
+
+        val cleanupScript = com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_VIEWPORT_CLEANUP_SCRIPT
+        assertTrue("Cleanup script must invoke cleanup", cleanupScript.contains("cleanup"))
+        assertTrue("Cleanup script must restore original viewport", cleanupScript.contains("data-mb-orig"))
+    }
+
+    @Test
+    fun test13_tabWebViewManagerSynchronizesDesktopModeOnCreationAndSwitch() {
+        var desktopModeState = true
+        var syncCount = 0
+
+        val tabManager = com.muslim.browser.pro.browser.TabWebViewManager(
+            context = context,
+            webViewFactory = { id ->
+                WebView(context).apply {
+                    MainActivity.configureBaseSettings(
+                        webView = this,
+                        isDarkTheme = false,
+                        isDesktopEnabled = desktopModeState
+                    )
+                }
+            },
+            onSyncDesktopMode = { wv, isDesktop ->
+                syncCount++
+                MainActivity.applyDesktopMode(wv, isDesktop)
+            },
+            isDesktopModeProvider = { desktopModeState }
+        )
+
+        // 1. Initial creation when Desktop Mode is true
+        val (wv1, _) = tabManager.getOrCreateWebView("tab1")
+        assertEquals(MainActivity.DESKTOP_USER_AGENT, wv1.settings.userAgentString)
+        assertTrue("onSyncDesktopMode should have been called on creation", syncCount >= 1)
+
+        // 2. Fetching existing tab should re-synchronize Desktop Mode
+        val prevSync = syncCount
+        tabManager.getOrCreateWebView("tab1")
+        assertTrue("onSyncDesktopMode should be invoked when accessing existing tab", syncCount > prevSync)
+
+        // 3. Desktop Mode toggled OFF
+        desktopModeState = false
+        tabManager.syncAllLiveWebViews(false)
+        assertFalse(wv1.settings.userAgentString.contains("Linux x86_64"))
+
+        // 4. Desktop Mode toggled back ON
+        desktopModeState = true
+        tabManager.syncAllLiveWebViews(true)
+        assertEquals(MainActivity.DESKTOP_USER_AGENT, wv1.settings.userAgentString)
+    }
 }

@@ -162,7 +162,11 @@ object WebViewConfigurator {
         if (url.isNullOrBlank()) return false
         val uri = try { Uri.parse(url) } catch (_: Exception) { return false }
         val host = uri.host?.lowercase(Locale.ROOT) ?: return false
-        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+
+        // GitHub pages must NEVER disable Desktop Mode or be treated as auth redirects requiring mobile UA
+        if (host == "github.com" || host.endsWith(".github.com")) {
+            return false
+        }
 
         if (host == "accounts.google.com" || host.endsWith(".accounts.google.com") ||
             host == "appleid.apple.com" ||
@@ -172,6 +176,7 @@ object WebViewConfigurator {
             return true
         }
 
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
         if (path.contains("/oauth2/") || path.contains("/oauth/") ||
             path.contains("/openid-connect/") || path.endsWith("/authorize")) {
             return true
@@ -242,40 +247,214 @@ object WebViewConfigurator {
         if (mode == BrowserIdentityMode.WINDOWS_10_TOUCH) {
             injectWindows10TouchProfileIfEnabled(webView, true)
         }
+        applyDesktopViewport(webView, isDesktopEnabled || isWindows10TouchEnabled)
     }
 
+    const val DESKTOP_VIEWPORT_TARGET_WIDTH = 1280
+    const val DESKTOP_VIEWPORT_CONTENT = "width=$DESKTOP_VIEWPORT_TARGET_WIDTH"
+
     /**
-     * Build 48 Dedicated Desktop Viewport mechanism:
-     * Forces desktop-style layout for pages using <meta name="viewport">.
-     * Lightweight, idempotent, scoped to document, safe for SPA, removable when disabled.
+     * Persistent, event-driven Desktop Viewport Guard script:
+     * - Maintains an appropriate desktop CSS viewport (width=1280) for desktop-class layouts
+     * - Survives GitHub Turbo, PJAX, SPA DOM replacements via MutationObserver on head/documentElement
+     * - Intercepts turbo:load, turbo:render, pjax:end, pageshow, popstate, history.pushState/replaceState
+     * - Patches navigator.userAgentData to ensure mobile: false and platform: 'Linux'
+     * - Strictly idempotent: installs once per document, avoids repeated execution loops
+     * - Zero timers or polling intervals
      */
-    fun applyDesktopViewport(webView: WebView, isDesktopOrTouchEnabled: Boolean) {
-        try {
-            val script = if (isDesktopOrTouchEnabled) {
-                """
-                (function() {
-                    try {
-                        var meta = document.querySelector('meta[name="viewport"]');
-                        if (!meta) {
-                            meta = document.createElement('meta');
-                            meta.name = 'viewport';
-                            if (document.head) document.head.appendChild(meta);
+    val DESKTOP_VIEWPORT_GUARD_SCRIPT: String = """
+        (function() {
+            var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
+            var GUARD_KEY = '__mb_desktop_guard__';
+
+            function applyViewport() {
+                try {
+                    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                    if (!head) return;
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.setAttribute('data-mb-created', 'true');
+                        head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                        if (meta.getAttribute('data-mb-orig') === null && !meta.hasAttribute('data-mb-created')) {
+                            meta.setAttribute('data-mb-orig', meta.getAttribute('content') || '');
                         }
-                        if (meta) {
-                            if (meta.getAttribute('data-mb-orig') === null) {
-                                meta.setAttribute('data-mb-orig', meta.getAttribute('content') || '');
+                        meta.setAttribute('content', TARGET_CONTENT);
+                    }
+                } catch(e) {}
+            }
+
+            function patchDesktopClientHints() {
+                try {
+                    if (navigator.userAgentData) {
+                        var origUaData = navigator.userAgentData;
+                        var fakeUaData = {
+                            brands: origUaData.brands || [
+                                { brand: 'Google Chrome', version: '131' },
+                                { brand: 'Chromium', version: '131' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ],
+                            mobile: false,
+                            platform: 'Linux',
+                            getHighEntropyValues: function(hints) {
+                                return origUaData.getHighEntropyValues ?
+                                    origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                        vals.mobile = false;
+                                        vals.platform = 'Linux';
+                                        return vals;
+                                    }) :
+                                    Promise.resolve({ mobile: false, platform: 'Linux' });
+                            },
+                            toJSON: function() {
+                                return { brands: this.brands, mobile: false, platform: 'Linux' };
                             }
-                            meta.setAttribute('content', 'width=1024, initial-scale=1.0');
+                        };
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() { return fakeUaData; },
+                            configurable: true
+                        });
+                    }
+                } catch(e) {}
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Linux x86_64'; },
+                        configurable: true
+                    });
+                } catch(e) {}
+            }
+
+            if (window[GUARD_KEY]) {
+                window[GUARD_KEY].ensureViewport();
+                return;
+            }
+
+            applyViewport();
+            patchDesktopClientHints();
+
+            var headObserver = null;
+            var docObserver = null;
+            try {
+                headObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        var m = mutations[i];
+                        if (m.type === 'childList') {
+                            applyViewport();
+                            break;
+                        } else if (m.type === 'attributes' && m.attributeName === 'content') {
+                            if (m.target && m.target.name === 'viewport' && m.target.getAttribute('content') !== TARGET_CONTENT) {
+                                applyViewport();
+                                break;
+                            }
+                        }
+                    }
+                });
+                if (document.head) {
+                    headObserver.observe(document.head, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['content']
+                    });
+                }
+
+                docObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        if (mutations[i].type === 'childList') {
+                            applyViewport();
+                            if (document.head && headObserver) {
+                                try {
+                                    headObserver.disconnect();
+                                    headObserver.observe(document.head, {
+                                        childList: true,
+                                        subtree: true,
+                                        attributes: true,
+                                        attributeFilter: ['content']
+                                    });
+                                } catch(e) {}
+                            }
+                            break;
+                        }
+                    }
+                });
+                docObserver.observe(document.documentElement, {
+                    childList: true,
+                    subtree: false
+                });
+            } catch(e) {}
+
+            var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+            function onNav() {
+                applyViewport();
+            }
+            navEvents.forEach(function(evt) {
+                window.addEventListener(evt, onNav, { passive: true });
+            });
+
+            var origPush = history.pushState;
+            if (origPush) {
+                history.pushState = function() {
+                    var res = origPush.apply(this, arguments);
+                    applyViewport();
+                    return res;
+                };
+            }
+            var origReplace = history.replaceState;
+            if (origReplace) {
+                history.replaceState = function() {
+                    var res = origReplace.apply(this, arguments);
+                    applyViewport();
+                    return res;
+                };
+            }
+
+            window[GUARD_KEY] = {
+                ensureViewport: applyViewport,
+                cleanup: function() {
+                    try {
+                        if (headObserver) headObserver.disconnect();
+                        if (docObserver) docObserver.disconnect();
+                        navEvents.forEach(function(evt) {
+                            window.removeEventListener(evt, onNav);
+                        });
+                        if (origPush) history.pushState = origPush;
+                        if (origReplace) history.replaceState = origReplace;
+
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta) {
+                            if (meta.hasAttribute('data-mb-created')) {
+                                meta.remove();
+                            } else if (meta.hasAttribute('data-mb-orig')) {
+                                var orig = meta.getAttribute('data-mb-orig');
+                                if (orig) {
+                                    meta.setAttribute('content', orig);
+                                } else {
+                                    meta.removeAttribute('content');
+                                }
+                                meta.removeAttribute('data-mb-orig');
+                            }
                         }
                     } catch(e) {}
-                })();
-                """.trimIndent()
+                    delete window[GUARD_KEY];
+                }
+            };
+        })();
+    """.trimIndent()
+
+    val DESKTOP_VIEWPORT_CLEANUP_SCRIPT: String = """
+        (function() {
+            var GUARD_KEY = '__mb_desktop_guard__';
+            if (window[GUARD_KEY] && typeof window[GUARD_KEY].cleanup === 'function') {
+                window[GUARD_KEY].cleanup();
             } else {
-                """
-                (function() {
-                    try {
-                        var meta = document.querySelector('meta[name="viewport"]');
-                        if (meta && meta.getAttribute('data-mb-orig') !== null) {
+                try {
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (meta) {
+                        if (meta.hasAttribute('data-mb-created')) {
+                            meta.remove();
+                        } else if (meta.hasAttribute('data-mb-orig')) {
                             var orig = meta.getAttribute('data-mb-orig');
                             if (orig) {
                                 meta.setAttribute('content', orig);
@@ -284,16 +463,30 @@ object WebViewConfigurator {
                             }
                             meta.removeAttribute('data-mb-orig');
                         }
-                    } catch(e) {}
-                })();
-                """.trimIndent()
+                    }
+                } catch(e) {}
+            }
+        })();
+    """.trimIndent()
+
+    /**
+     * Dedicated Desktop Viewport mechanism:
+     * Maintains desktop-style layout for pages using <meta name="viewport">.
+     * Lightweight, idempotent, scoped to document, safe for SPA, removable when disabled.
+     */
+    fun applyDesktopViewport(webView: WebView, isDesktopOrTouchEnabled: Boolean) {
+        try {
+            val script = if (isDesktopOrTouchEnabled) {
+                DESKTOP_VIEWPORT_GUARD_SCRIPT
+            } else {
+                DESKTOP_VIEWPORT_CLEANUP_SCRIPT
             }
             webView.evaluateJavascript(script, null)
         } catch (_: Throwable) {}
     }
 
     /**
-     * Build 48 Authoritative Desktop Mode synchronization function:
+     * Authoritative Desktop Mode synchronization function:
      * - Determines the correct User-Agent and Desktop Mode state.
      * - Applies the correct User-Agent to the WebView if [updateUserAgent] is true.
      * - Ensures useWideViewPort = true, loadWithOverviewMode = true.

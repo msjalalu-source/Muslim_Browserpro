@@ -26,7 +26,8 @@ class TabWebViewManager(
     private val webViewFactory: (tabId: String) -> WebView,
     private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> },
     private val onSyncTheme: ((WebView, Boolean) -> Unit)? = null,
-    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null
+    private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null,
+    private val isDesktopModeProvider: (() -> Boolean)? = null
 ) {
     companion object {
         const val MAX_LIVE_WEBVIEWS = 4
@@ -53,6 +54,9 @@ class TabWebViewManager(
     ): Pair<WebView, Boolean> {
         val existing = liveWebViews[tabId]
         if (existing != null) {
+            isDesktopModeProvider?.invoke()?.let { isDesktop ->
+                onSyncDesktopMode?.invoke(existing, isDesktop)
+            }
             return Pair(existing, false)
         }
 
@@ -69,6 +73,10 @@ class TabWebViewManager(
             onRestored?.invoke()
         } else if (!url.isNullOrBlank()) {
             newWebView.loadUrl(url)
+        }
+
+        isDesktopModeProvider?.invoke()?.let { isDesktop ->
+            onSyncDesktopMode?.invoke(newWebView, isDesktop)
         }
 
         liveWebViews[tabId] = newWebView
