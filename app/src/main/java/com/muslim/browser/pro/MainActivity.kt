@@ -110,6 +110,7 @@ import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.NavigationController
 import com.muslim.browser.pro.browser.NavigationDecision
 import com.muslim.browser.pro.browser.TabWebViewManager
+import com.muslim.browser.pro.browser.WebViewConfigurator
 import com.muslim.browser.pro.browser.ui.OpenWindowsDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 import java.io.ByteArrayInputStream
@@ -322,11 +323,12 @@ class MainActivity : ComponentActivity() {
         val isDarkTheme = viewModel.uiState.value.appTheme != com.muslim.browser.pro.ui.theme.AppTheme.WHITE
         val isDesktop = viewModel.uiState.value.isDesktopModeEnabled
         val webView = WebView(this).apply {
+            android.util.Log.d("DESKTOP_DEBUG", "createConfiguredWebView: tabId=$tabId, instance=${System.identityHashCode(this)}, isDesktopEnabled=$isDesktop")
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            configureBaseSettings(this, isDarkTheme, isDesktop)
+            WebViewConfigurator.configureBaseSettings(this, isDarkTheme, isDesktop)
 
             webViewClient = object : WebViewClient() {
                 private fun processUrlLoading(view: WebView?, url: String): Boolean {
@@ -368,7 +370,24 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
-                    android.util.Log.d("DIAGNOSTIC", "onPageStarted: URL=$url")
+                    val isDesktopMode = viewModel.uiState.value.isDesktopModeEnabled
+                    if (isDesktopMode && view != null) {
+                        if (WebViewConfigurator.isAuthenticationUrl(url)) {
+                            android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Auth endpoint detected ($url). Temporarily using compatible mobile UA.")
+                            if (view.settings.userAgentString != null) {
+                                view.settings.userAgentString = null
+                            }
+                        } else {
+                            if (view.settings.userAgentString != WebViewConfigurator.DESKTOP_USER_AGENT) {
+                                android.util.Log.d("DESKTOP_DEBUG", "onPageStarted: Non-auth page ($url). Restoring desktop UA.")
+                                view.settings.userAgentString = WebViewConfigurator.DESKTOP_USER_AGENT
+                            }
+                        }
+                    }
+                    android.util.Log.d(
+                        "DESKTOP_DEBUG",
+                        "onPageStarted: instance=${System.identityHashCode(view)}, URL=$url, UA=${view?.settings?.userAgentString}, isDesktopMode=$isDesktopMode"
+                    )
                     url?.let { viewModel.onPageStarted(it) }
                 }
 
@@ -380,7 +399,10 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    android.util.Log.d("DIAGNOSTIC", "onPageFinished: URL=$url")
+                    android.util.Log.d(
+                        "DESKTOP_DEBUG",
+                        "onPageFinished: instance=${System.identityHashCode(view)}, URL=$url, UA=${view?.settings?.userAgentString}"
+                    )
                     url?.let {
                         viewModel.onPageFinished(
                             url = it,
@@ -527,28 +549,44 @@ class MainActivity : ComponentActivity() {
                     }
                     if (resultMsg != null) {
                         val tempWebView = WebView(this@MainActivity)
-                        tempWebView.settings.javaScriptEnabled = true
+                        tempWebView.settings.apply {
+                            javaScriptEnabled = true
+                            domStorageEnabled = true
+                            setSupportMultipleWindows(false)
+                        }
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(tempWebView, true)
+
+                        var isHandled = false
+                        fun forwardToParent(destUrl: String) {
+                            if (isHandled || destUrl.isBlank() || destUrl == "about:blank") return
+                            isHandled = true
+                            view?.post {
+                                try {
+                                    tempWebView.stopLoading()
+                                    tempWebView.destroy()
+                                } catch (_: Exception) {}
+                                view.loadUrl(destUrl)
+                            }
+                        }
+
                         tempWebView.webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(v: WebView?, request: WebResourceRequest?): Boolean {
                                 val destUrl = request?.url?.toString() ?: return false
-                                tempWebView.destroy()
-                                view?.loadUrl(destUrl)
+                                forwardToParent(destUrl)
                                 return true
                             }
 
                             @Deprecated("Deprecated in Java")
                             override fun shouldOverrideUrlLoading(v: WebView?, destUrl: String?): Boolean {
                                 if (destUrl == null) return false
-                                tempWebView.destroy()
-                                view?.loadUrl(destUrl)
+                                forwardToParent(destUrl)
                                 return true
                             }
 
                             override fun onPageStarted(v: WebView?, destUrl: String?, favicon: Bitmap?) {
                                 super.onPageStarted(v, destUrl, favicon)
                                 if (!destUrl.isNullOrBlank() && destUrl != "about:blank") {
-                                    tempWebView.destroy()
-                                    view?.loadUrl(destUrl)
+                                    forwardToParent(destUrl)
                                 }
                             }
                         }
@@ -859,18 +897,27 @@ class MainActivity : ComponentActivity() {
     }
 
     internal fun setDesktopMode(enabled: Boolean) {
+        android.util.Log.d("DESKTOP_DEBUG", "setDesktopMode toggle: enabled=$enabled")
         viewModel.toggleDesktopMode(enabled)
-        tabWebViewManager.forEachLiveWebView { applyDesktopMode(it, enabled) }
+        tabWebViewManager.forEachLiveWebView { WebViewConfigurator.applyDesktopMode(it, enabled) }
         val webView = webViewInstance ?: return
-        applyDesktopMode(webView, enabled)
+        WebViewConfigurator.applyDesktopMode(webView, enabled)
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
+
+        android.util.Log.d(
+            "DESKTOP_DEBUG",
+            "setDesktopMode applied: instance=${System.identityHashCode(webView)}, currentUrl=$currentUrl, UA=${webView.settings.userAgentString}, isDesktopModeEnabled=$enabled"
+        )
 
         if (currentUrl == null || viewModel.uiState.value.isHomePage) {
             return
         }
 
-        viewModel.onPageStarted(currentUrl)
+        android.util.Log.d(
+            "DESKTOP_DEBUG",
+            "setDesktopMode triggering reload: instance=${System.identityHashCode(webView)}, UA_before_reload=${webView.settings.userAgentString}"
+        )
         webView.reload()
     }
 
@@ -913,91 +960,28 @@ class MainActivity : ComponentActivity() {
     companion object {
         private val EMPTY_BLOCKED_BYTES = ByteArray(0)
 
-        const val DESKTOP_USER_AGENT =
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        const val DESKTOP_USER_AGENT = WebViewConfigurator.DESKTOP_USER_AGENT
 
-        @Volatile
-        var isDarkThemeActive: Boolean = true
+        var isDarkThemeActive: Boolean
+            get() = WebViewConfigurator.isDarkThemeActive
+            set(value) { WebViewConfigurator.isDarkThemeActive = value }
+
+        fun isAuthenticationUrl(url: String?): Boolean = WebViewConfigurator.isAuthenticationUrl(url)
 
         fun applyDesktopMode(webView: WebView, isDesktopEnabled: Boolean) {
-            webView.settings.apply {
-                if (isDesktopEnabled) {
-                    userAgentString = DESKTOP_USER_AGENT
-                    useWideViewPort = true
-                    loadWithOverviewMode = true
-                    textZoom = 100
-                } else {
-                    userAgentString = null
-                    useWideViewPort = true
-                    loadWithOverviewMode = true
-                    textZoom = 100
-                }
-            }
+            WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled)
         }
 
         fun configureBaseSettings(webView: WebView, isDarkTheme: Boolean, isDesktopEnabled: Boolean = false) {
-            val cookieManager = CookieManager.getInstance()
-            cookieManager.setAcceptCookie(true)
-            cookieManager.setAcceptThirdPartyCookies(webView, true)
-
-            webView.settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                @Suppress("DEPRECATION")
-                databaseEnabled = true
-                cacheMode = WebSettings.LOAD_DEFAULT
-                setSupportMultipleWindows(true)
-                loadWithOverviewMode = true
-                useWideViewPort = true
-                builtInZoomControls = true
-                displayZoomControls = false
-                textZoom = 100
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    offscreenPreRaster = false
-                }
-                mediaPlaybackRequiresUserGesture = true
-                @Suppress("DEPRECATION")
-                saveFormData = false
-            }
-
-            applyDesktopMode(webView, isDesktopEnabled)
-            applyWebViewTheme(webView, isDarkTheme)
+            WebViewConfigurator.configureBaseSettings(webView, isDarkTheme, isDesktopEnabled)
         }
 
         fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
-            try {
-                isDarkThemeActive = isDarkTheme
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    webView.settings.isAlgorithmicDarkeningAllowed = isDarkTheme
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    @Suppress("DEPRECATION")
-                    webView.settings.forceDark = if (isDarkTheme) {
-                        WebSettings.FORCE_DARK_ON
-                    } else {
-                        WebSettings.FORCE_DARK_OFF
-                    }
-                }
-                val bgColor = if (isDarkTheme) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-                webView.setBackgroundColor(bgColor)
-                applyWebPageDarkTheme(webView, isDarkTheme)
-            } catch (_: Exception) {}
+            WebViewConfigurator.applyWebViewTheme(webView, isDarkTheme)
         }
 
         fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
-            if (webView == null) return
-            try {
-                val cleanupScript = """
-                    (function() {
-                        try {
-                            var el = document.getElementById('__mb_dark_theme__');
-                            if (el) el.remove();
-                        } catch(e) {}
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(cleanupScript, null)
-            } catch (_: Throwable) {}
+            WebViewConfigurator.applyWebPageDarkTheme(webView, isDarkTheme)
         }
 
         // Normalizes and sanitizes MIME types requested by websites via accept attributes.

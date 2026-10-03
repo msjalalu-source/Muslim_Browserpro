@@ -213,4 +213,91 @@ class DesktopModeTest {
         assertTrue(webView.settings.builtInZoomControls)
         assertFalse(webView.settings.displayZoomControls)
     }
+
+    @Test
+    fun test8_authenticationEndpointCompatibilityDetection() {
+        // Known major IdP hosts
+        assertTrue(MainActivity.isAuthenticationUrl("https://accounts.google.com/signin/v2/identifier"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://accounts.google.com/o/oauth2/v2/auth?client_id=123"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://sub.accounts.google.com/login"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://appleid.apple.com/auth/authorize"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://login.microsoftonline.com/common/oauth2/v2.0/authorize"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://auth.account.sony.com/login"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://auth.example.org/session"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://id.example.com/oauth/token"))
+
+        // OAuth 2.0 and OpenID Connect paths
+        assertTrue(MainActivity.isAuthenticationUrl("https://mywebsite.com/api/oauth2/authorize"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://mywebsite.com/oauth/authorize?response_type=code"))
+        assertTrue(MainActivity.isAuthenticationUrl("https://sso.company.com/openid-connect/auth"))
+
+        // Normal browsing URLs must NOT be flagged as authentication endpoints
+        assertFalse(MainActivity.isAuthenticationUrl("https://www.google.com/"))
+        assertFalse(MainActivity.isAuthenticationUrl("https://www.google.com/search?q=kotlin"))
+        assertFalse(MainActivity.isAuthenticationUrl("https://en.wikipedia.org/wiki/Android"))
+        assertFalse(MainActivity.isAuthenticationUrl("https://news.ycombinator.com/"))
+        assertFalse(MainActivity.isAuthenticationUrl("https://github.com/torvalds/linux"))
+        assertFalse(MainActivity.isAuthenticationUrl(""))
+        assertFalse(MainActivity.isAuthenticationUrl(null))
+    }
+
+    @Test
+    fun test9_applyDesktopModeWithAuthEndpointPreservesMobileUA() {
+        val webView = WebView(context)
+        val defaultUa = webView.settings.userAgentString
+
+        // Normal page with Desktop Mode enabled -> Desktop UA
+        webView.loadUrl("https://www.example.com")
+        MainActivity.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+
+        // Auth endpoint with Desktop Mode enabled -> compatible Mobile UA (null/default)
+        webView.loadUrl("https://accounts.google.com/signin")
+        MainActivity.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(defaultUa, webView.settings.userAgentString)
+
+        // Switching back to regular page -> Desktop UA
+        webView.loadUrl("https://www.example.com/dashboard")
+        MainActivity.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(MainActivity.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+    }
+
+    @Test
+    fun test10_webViewConfiguratorBuild48ArchitectureDirectVerification() {
+        val webView = WebView(context)
+        val defaultUa = webView.settings.userAgentString
+
+        // 1. Base configuration with Desktop Mode disabled
+        com.muslim.browser.pro.browser.WebViewConfigurator.configureBaseSettings(
+            webView = webView,
+            isDarkTheme = false,
+            isDesktopEnabled = false
+        )
+        assertTrue(webView.settings.javaScriptEnabled)
+        assertTrue(webView.settings.domStorageEnabled)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
+        assertEquals(100, webView.settings.textZoom)
+        assertEquals(defaultUa, webView.settings.userAgentString)
+
+        // 2. Enable Desktop Mode via WebViewConfigurator
+        com.muslim.browser.pro.browser.WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+        assertTrue(webView.settings.useWideViewPort)
+        assertTrue(webView.settings.loadWithOverviewMode)
+
+        // 3. Navigate to auth endpoint -> compatible mobile UA is applied
+        webView.loadUrl("https://accounts.google.com/o/oauth2/v2/auth")
+        com.muslim.browser.pro.browser.WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(defaultUa, webView.settings.userAgentString)
+
+        // 4. Navigate back to destination page -> Desktop UA restored
+        webView.loadUrl("https://mywebsite.org/home")
+        com.muslim.browser.pro.browser.WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled = true)
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.DESKTOP_USER_AGENT, webView.settings.userAgentString)
+
+        // 5. Disable Desktop Mode
+        com.muslim.browser.pro.browser.WebViewConfigurator.applyDesktopMode(webView, isDesktopEnabled = false)
+        assertEquals(defaultUa, webView.settings.userAgentString)
+    }
 }
