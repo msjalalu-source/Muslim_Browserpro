@@ -266,16 +266,22 @@ class MainActivity : ComponentActivity() {
                 applyWebViewTheme(wv, isDark)
             },
             onSyncDesktopMode = { wv, isDesktop ->
-                val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
-                WebViewConfigurator.syncDesktopMode(
-                    webView = wv,
-                    url = wv.url,
-                    isDesktopEnabled = isDesktop,
-                    updateUserAgent = true,
-                    isWindows10TouchEnabled = isWin10Touch
-                )
+                if (viewModel.uiState.value.isSimpleDesktopModeEnabled) {
+                    SimpleDesktopMode.apply(wv, true)
+                } else {
+                    val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                    WebViewConfigurator.syncDesktopMode(
+                        webView = wv,
+                        url = wv.url,
+                        isDesktopEnabled = isDesktop,
+                        updateUserAgent = true,
+                        isWindows10TouchEnabled = isWin10Touch
+                    )
+                }
             },
-            isDesktopModeProvider = { viewModel.uiState.value.isDesktopModeEnabled }
+            isDesktopModeProvider = {
+                viewModel.uiState.value.isDesktopModeEnabled || viewModel.uiState.value.isSimpleDesktopModeEnabled
+            }
         )
 
         val activeTab = viewModel.uiState.value.tabs.find { it.id == viewModel.uiState.value.currentTabId }
@@ -317,6 +323,7 @@ class MainActivity : ComponentActivity() {
                     onClearAllData = { clearAllData() },
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
+                    onToggleSimpleDesktopMode = { enabled -> setSimpleDesktopMode(enabled) },
                     onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
                     onSslCancel = { host -> onSslPromptCancel(host) },

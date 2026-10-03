@@ -76,6 +76,7 @@ data class BrowserUiState(
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
     val isDesktopModeEnabled: Boolean = false,
+    val isSimpleDesktopModeEnabled: Boolean = false,
     val isWindows10TouchEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
@@ -112,6 +113,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
+                isSimpleDesktopModeEnabled = repository.isSimpleDesktopModeEnabled,
                 isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
@@ -625,12 +627,37 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleDesktopMode(enabled: Boolean) {
         repository.isDesktopModeEnabled = enabled
-        _uiState.update { it.copy(isDesktopModeEnabled = enabled) }
+        if (enabled) {
+            repository.isSimpleDesktopModeEnabled = false
+            _uiState.update { it.copy(isDesktopModeEnabled = true, isSimpleDesktopModeEnabled = false) }
+        } else {
+            _uiState.update { it.copy(isDesktopModeEnabled = false) }
+        }
+    }
+
+    fun toggleSimpleDesktopMode(enabled: Boolean) {
+        repository.isSimpleDesktopModeEnabled = enabled
+        if (enabled) {
+            repository.isDesktopModeEnabled = false
+            repository.isWindows10TouchEnabled = false
+            _uiState.update { it.copy(
+                isSimpleDesktopModeEnabled = true,
+                isDesktopModeEnabled = false,
+                isWindows10TouchEnabled = false
+            ) }
+        } else {
+            _uiState.update { it.copy(isSimpleDesktopModeEnabled = false) }
+        }
     }
 
     fun toggleWindows10Touch(enabled: Boolean) {
         repository.isWindows10TouchEnabled = enabled
-        _uiState.update { it.copy(isWindows10TouchEnabled = enabled) }
+        if (enabled) {
+            repository.isSimpleDesktopModeEnabled = false
+            _uiState.update { it.copy(isWindows10TouchEnabled = true, isSimpleDesktopModeEnabled = false) }
+        } else {
+            _uiState.update { it.copy(isWindows10TouchEnabled = false) }
+        }
     }
 
     /**

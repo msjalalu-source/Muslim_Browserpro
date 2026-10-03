@@ -85,6 +85,7 @@ fun BrowserMenuSheet(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
+    onToggleSimpleDesktopMode: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
@@ -724,6 +725,64 @@ fun BrowserMenuSheet(
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("desktop_mode_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Simple Desktop Mode (Experimental Minimal Architecture)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("item_simple_desktop_mode"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DesktopWindows,
+                                contentDescription = null,
+                                tint = if (uiState.isSimpleDesktopModeEnabled) colors.accent else colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Simple Desktop Mode",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Experimental minimal native architecture",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = uiState.isSimpleDesktopModeEnabled,
+                            onCheckedChange = onToggleSimpleDesktopMode,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("simple_desktop_mode_switch")
                         )
                     }
                 }

@@ -295,6 +295,12 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
         }
 
+    var isSimpleDesktopModeEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SIMPLE_DESKTOP_MODE, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SIMPLE_DESKTOP_MODE, value).apply()
+        }
+
     var isWindows10TouchEnabled: Boolean
         get() = prefs.getBoolean(KEY_WINDOWS_10_TOUCH, false)
         set(value) {
@@ -613,6 +619,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
+        private const val KEY_SIMPLE_DESKTOP_MODE = "key_simple_desktop_mode"
         private const val KEY_WINDOWS_10_TOUCH = "key_windows_10_touch"
         private const val KEY_APP_THEME = "key_app_theme"
         private const val KEY_SELECTED_TRANSLATION_ENGINE = "key_selected_translation_engine"
