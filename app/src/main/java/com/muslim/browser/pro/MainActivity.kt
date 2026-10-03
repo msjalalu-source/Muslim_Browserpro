@@ -264,6 +264,10 @@ class MainActivity : ComponentActivity() {
             onSaveTabBundle = { id, bundle -> viewModel.saveTabState(id, bundle) },
             onSyncTheme = { wv, isDark ->
                 applyWebViewTheme(wv, isDark)
+            },
+            onSyncDesktopMode = { wv, isDesktop ->
+                val isWin10Touch = viewModel.uiState.value.isWindows10TouchEnabled
+                WebViewConfigurator.applyIdentityMode(wv, isDesktop, isWin10Touch)
             }
         )
 

@@ -245,6 +245,99 @@ object WebViewConfigurator {
     }
 
     /**
+     * Build 48 Dedicated Desktop Viewport mechanism:
+     * Forces desktop-style layout for pages using <meta name="viewport">.
+     * Lightweight, idempotent, scoped to document, safe for SPA, removable when disabled.
+     */
+    fun applyDesktopViewport(webView: WebView, isDesktopOrTouchEnabled: Boolean) {
+        try {
+            val script = if (isDesktopOrTouchEnabled) {
+                """
+                (function() {
+                    try {
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (!meta) {
+                            meta = document.createElement('meta');
+                            meta.name = 'viewport';
+                            if (document.head) document.head.appendChild(meta);
+                        }
+                        if (meta) {
+                            if (meta.getAttribute('data-mb-orig') === null) {
+                                meta.setAttribute('data-mb-orig', meta.getAttribute('content') || '');
+                            }
+                            meta.setAttribute('content', 'width=1024, initial-scale=1.0');
+                        }
+                    } catch(e) {}
+                })();
+                """.trimIndent()
+            } else {
+                """
+                (function() {
+                    try {
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta && meta.getAttribute('data-mb-orig') !== null) {
+                            var orig = meta.getAttribute('data-mb-orig');
+                            if (orig) {
+                                meta.setAttribute('content', orig);
+                            } else {
+                                meta.removeAttribute('content');
+                            }
+                            meta.removeAttribute('data-mb-orig');
+                        }
+                    } catch(e) {}
+                })();
+                """.trimIndent()
+            }
+            webView.evaluateJavascript(script, null)
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Build 48 Authoritative Desktop Mode synchronization function:
+     * - Determines the correct User-Agent and Desktop Mode state.
+     * - Applies the correct User-Agent to the WebView if [updateUserAgent] is true.
+     * - Ensures useWideViewPort = true, loadWithOverviewMode = true.
+     * - Preserves the current URL without calling loadUrl() or reload().
+     * - Idempotent and lightweight.
+     */
+    fun syncDesktopMode(
+        webView: WebView,
+        url: String?,
+        isDesktopEnabled: Boolean,
+        updateUserAgent: Boolean = true,
+        isWindows10TouchEnabled: Boolean = false
+    ) {
+        val mode = getActiveIdentityMode(isDesktopEnabled, isWindows10TouchEnabled)
+        val targetUa = when (mode) {
+            BrowserIdentityMode.WINDOWS_10_TOUCH -> {
+                if (isAuthenticationUrl(url)) null else WINDOWS_10_TOUCH_USER_AGENT
+            }
+            BrowserIdentityMode.DESKTOP_LINUX -> {
+                if (isAuthenticationUrl(url)) null else DESKTOP_USER_AGENT
+            }
+            BrowserIdentityMode.MOBILE -> null
+        }
+
+        webView.settings.apply {
+            if (updateUserAgent) {
+                if (userAgentString != targetUa) {
+                    userAgentString = targetUa
+                }
+            }
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            textZoom = 100
+            builtInZoomControls = true
+            displayZoomControls = false
+        }
+
+        if (mode == BrowserIdentityMode.WINDOWS_10_TOUCH) {
+            injectWindows10TouchProfileIfEnabled(webView, true)
+        }
+        applyDesktopViewport(webView, isDesktopEnabled || isWindows10TouchEnabled)
+    }
+
+    /**
      * Backwards-compatible delegator for Desktop Mode configuration.
      */
     fun applyDesktopMode(webView: WebView, isDesktopEnabled: Boolean, isWindows10TouchEnabled: Boolean = false) {

@@ -112,5 +112,109 @@ class ViewportDiagnosticTest {
         }
 
         assertEquals("MOBILE MODE", mobileData?.desktopModeState)
+
+        // Test with Windows 10 Touch mode
+        var touchData: DiagnosticData? = null
+        collectLiveWebViewDiagnostics(
+            webView = null,
+            isDesktopModeEnabled = false,
+            isWindows10TouchEnabled = true
+        ) { data ->
+            touchData = data
+        }
+
+        assertEquals("WINDOWS 10 TOUCH PROFILE", touchData?.desktopModeState)
+    }
+
+    @Test
+    fun test5_windows10TouchPrecedenceAndIdentitySelection() {
+        // Windows 10 Touch enabled overrides standard Desktop Mode
+        val mode1 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+            isDesktopEnabled = true,
+            isWindows10TouchEnabled = true
+        )
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH, mode1)
+
+        // Windows 10 Touch enabled alone
+        val mode2 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+            isDesktopEnabled = false,
+            isWindows10TouchEnabled = true
+        )
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH, mode2)
+
+        // Desktop alone
+        val mode3 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+            isDesktopEnabled = true,
+            isWindows10TouchEnabled = false
+        )
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.DESKTOP_LINUX, mode3)
+
+        // Neither
+        val mode4 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+            isDesktopEnabled = false,
+            isWindows10TouchEnabled = false
+        )
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.MOBILE, mode4)
+    }
+
+    @Test
+    fun test6_settingsRepositoryAndViewModelPersistWindows10Touch() {
+        val repo = com.muslim.browser.pro.browser.SettingsRepository(context)
+        repo.isWindows10TouchEnabled = false
+        assertFalse(repo.isWindows10TouchEnabled)
+
+        val viewModel = BrowserViewModel(context)
+        assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
+
+        viewModel.toggleWindows10Touch(true)
+        assertTrue(viewModel.uiState.value.isWindows10TouchEnabled)
+        assertTrue(repo.isWindows10TouchEnabled)
+
+        viewModel.toggleWindows10Touch(false)
+        assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
+        assertFalse(repo.isWindows10TouchEnabled)
+    }
+
+    @Test
+    fun test7_diagnosticDataContainsAll25FieldsForWindows10TouchAudit() {
+        val sample = DiagnosticData(
+            webViewUserAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0",
+            windowInnerWidth = "1920",
+            windowInnerHeight = "1080",
+            windowOuterWidth = "1920",
+            windowOuterHeight = "1080",
+            documentClientWidth = "1920",
+            documentClientHeight = "1080",
+            screenWidth = "1920",
+            screenHeight = "1080",
+            devicePixelRatio = "1.0",
+            navigatorUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0",
+            userAgentDataMobile = "false",
+            navigatorMaxTouchPoints = "10",
+            viewportMetaContent = "width=1024",
+            currentWebViewUrl = "https://example.com/test",
+            desktopModeState = "WINDOWS 10 TOUCH PROFILE",
+            navigatorPlatform = "Win32",
+            navigatorAppVersion = "5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0",
+            navigatorVendor = "Google Inc.",
+            navigatorHardwareConcurrency = "8",
+            navigatorDeviceMemory = "8",
+            webglVendor = "Google Inc. (Intel)",
+            webglRenderer = "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+            cssPointerHover = "hover: true, pointer: fine, any-pointer: coarse",
+            uaClientHintsPlatform = "Windows"
+        )
+
+        val formatted = sample.formatForClipboard()
+
+        assertTrue(formatted.contains("17. navigator.platform: Win32"))
+        assertTrue(formatted.contains("18. navigator.appVersion: 5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0.0.0"))
+        assertTrue(formatted.contains("19. navigator.vendor: Google Inc."))
+        assertTrue(formatted.contains("20. navigator.hardwareConcurrency: 8"))
+        assertTrue(formatted.contains("21. navigator.deviceMemory: 8"))
+        assertTrue(formatted.contains("22. WebGL UNMASKED_VENDOR_WEBGL: Google Inc. (Intel)"))
+        assertTrue(formatted.contains("23. WebGL UNMASKED_RENDERER_WEBGL: ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)"))
+        assertTrue(formatted.contains("24. CSS Pointer / Hover: hover: true, pointer: fine, any-pointer: coarse"))
+        assertTrue(formatted.contains("25. UA Client Hints Platform: Windows"))
     }
 }
