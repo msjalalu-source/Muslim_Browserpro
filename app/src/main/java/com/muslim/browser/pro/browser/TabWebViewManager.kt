@@ -72,16 +72,6 @@ class TabWebViewManager(
         ensureCapacity(exemptTabId = tabId)
 
         val newWebView = webViewFactory(tabId)
-        var restored = false
-
-        if (bundle != null) {
-            newWebView.restoreState(bundle)
-            restored = true
-            onRestored?.invoke()
-        } else if (!url.isNullOrBlank()) {
-            newWebView.loadUrl(url)
-        }
-
         val arch = architectureProvider?.invoke()
         if (arch != null) {
             onSyncArchitecture?.invoke(newWebView, arch)
@@ -89,6 +79,15 @@ class TabWebViewManager(
             isDesktopModeProvider?.invoke()?.let { isDesktop ->
                 onSyncDesktopMode?.invoke(newWebView, isDesktop)
             }
+        }
+
+        var restored = false
+        if (bundle != null) {
+            newWebView.restoreState(bundle)
+            restored = true
+            onRestored?.invoke()
+        } else if (!url.isNullOrBlank()) {
+            newWebView.loadUrl(url)
         }
 
         liveWebViews[tabId] = newWebView
