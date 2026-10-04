@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -43,6 +45,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.painterResource
+import com.muslim.browser.pro.browser.SearchEngine
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,9 +73,13 @@ fun HomePage(
     onQueryChange: (String) -> Unit,
     onSubmitQuery: (String) -> Unit,
     onAddFavorite: (name: String, url: String) -> Unit,
+    onSelectSearchEngine: (SearchEngine) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
+
+    // State for Search Engine Selector Dropdown
+    var showSearchEngineMenu by remember { mutableStateOf(false) }
 
     // State for Add Favorite Dialog
     var showFavoriteDialog by remember { mutableStateOf(false) }
@@ -154,15 +162,60 @@ fun HomePage(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = colors.iconTint,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Box {
+                        IconButton(
+                            onClick = { showSearchEngineMenu = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("search_engine_selector_button")
+                        ) {
+                            Image(
+                                painter = painterResource(id = uiState.selectedSearchEngine.iconRes),
+                                contentDescription = uiState.selectedSearchEngine.engineName,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showSearchEngineMenu,
+                            onDismissRequest = { showSearchEngineMenu = false },
+                            modifier = Modifier
+                                .background(colors.surface)
+                                .testTag("search_engine_dropdown_menu")
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Image(
+                                        painter = painterResource(id = SearchEngine.DUCKDUCKGO.iconRes),
+                                        contentDescription = "DuckDuckGo",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                onClick = {
+                                    onSelectSearchEngine(SearchEngine.DUCKDUCKGO)
+                                    showSearchEngineMenu = false
+                                },
+                                modifier = Modifier.testTag("search_engine_option_duckduckgo")
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Image(
+                                        painter = painterResource(id = SearchEngine.GOOGLE.iconRes),
+                                        contentDescription = "Google",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                onClick = {
+                                    onSelectSearchEngine(SearchEngine.GOOGLE)
+                                    showSearchEngineMenu = false
+                                },
+                                modifier = Modifier.testTag("search_engine_option_google")
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
                     TextField(
                         value = uiState.searchInput,
                         onValueChange = onQueryChange,

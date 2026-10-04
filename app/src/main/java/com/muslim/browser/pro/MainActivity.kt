@@ -921,7 +921,8 @@ class MainActivity : ComponentActivity() {
         val decision = NavigationController.evaluate(
             url = url,
             customKeywords = viewModel.uiState.value.customKeywords,
-            normalizedKeywords = viewModel.getNormalizedKeywords()
+            normalizedKeywords = viewModel.getNormalizedKeywords(),
+            searchEngine = viewModel.uiState.value.selectedSearchEngine
         )
         return when (decision) {
             is NavigationDecision.Blocked -> {
@@ -1443,6 +1444,7 @@ fun BrowserApp(
                     onQueryChange = { viewModel.onSearchInputChange(it) },
                     onSubmitQuery = navigateToInput,
                     onAddFavorite = { name, url -> viewModel.addFavoriteSite(name, url) },
+                    onSelectSearchEngine = { viewModel.selectSearchEngine(it) },
                     modifier = Modifier.fillMaxSize()
                 )
             }

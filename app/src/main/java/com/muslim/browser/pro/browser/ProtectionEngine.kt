@@ -106,6 +106,25 @@ object ProtectionEngine {
     }
 
     /**
+     * Builds a standardized DuckDuckGo SafeSearch URL using the official safe.duckduckgo.com endpoint.
+     */
+    fun buildDuckDuckGoSafeSearchUrl(query: String): String {
+        val trimmed = query.trim()
+        val encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.name())
+        return "https://safe.duckduckgo.com/?q=$encoded"
+    }
+
+    /**
+     * Builds a safe search URL for the specified supported search engine (DUCKDUCKGO or GOOGLE).
+     */
+    fun buildSafeSearchUrl(query: String, searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO): String {
+        return when (searchEngine) {
+            SearchEngine.DUCKDUCKGO -> buildDuckDuckGoSafeSearchUrl(query)
+            SearchEngine.GOOGLE -> buildGoogleSafeSearchUrl(query)
+        }
+    }
+
+    /**
      * Checks if a URL is already a Google Search URL with safe=active enforced.
      */
     fun isGoogleSafeSearchUrl(url: String): Boolean {
@@ -121,6 +140,27 @@ object ProtectionEngine {
         if (!path.contains("/search") && !path.contains("/webhp")) return false
         val safeParam = uri.getQueryParameter("safe")?.lowercase(Locale.ROOT)
         return safeParam == "active"
+    }
+
+    /**
+     * Checks if a URL is already a DuckDuckGo Search URL with safe search enforced (safe.duckduckgo.com).
+     */
+    fun isDuckDuckGoSafeSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return false
+        }
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        return host == "safe.duckduckgo.com" || (host.contains("duckduckgo.com") && uri.getQueryParameter("kp") == "1")
+    }
+
+    /**
+     * Checks if a URL is already an allowed safe search URL for either supported engine.
+     */
+    fun isSafeSearchUrl(url: String): Boolean {
+        return isGoogleSafeSearchUrl(url) || isDuckDuckGoSafeSearchUrl(url)
     }
 
     /**

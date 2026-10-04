@@ -25,7 +25,8 @@ object NavigationController {
     fun evaluate(
         url: String,
         customKeywords: Set<String>,
-        normalizedKeywords: Collection<String>? = null
+        normalizedKeywords: Collection<String>? = null,
+        searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO
     ): NavigationDecision {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return NavigationDecision.Allowed
@@ -45,11 +46,11 @@ object NavigationController {
                 )
             }
 
-            if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
+            if (ProtectionEngine.isSafeSearchUrl(trimmed)) {
                 return NavigationDecision.Allowed
             }
 
-            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(searchEngineQuery)
+            val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
             return NavigationDecision.Redirect(safeUrl)
         }
 

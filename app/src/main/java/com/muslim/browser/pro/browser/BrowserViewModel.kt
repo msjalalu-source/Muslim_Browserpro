@@ -82,6 +82,7 @@ data class BrowserUiState(
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE,
     val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
+    val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
     val isDiagnosticOpen: Boolean = false
 )
@@ -118,7 +119,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
                 appTheme = repository.appTheme,
-                selectedTranslationEngine = repository.selectedTranslationEngine
+                selectedTranslationEngine = repository.selectedTranslationEngine,
+                selectedSearchEngine = repository.selectedSearchEngine
             )
         )
     }
@@ -348,7 +350,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 )
                 return false
             }
-            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(queryFromUrl)
+            val currentEngine = _uiState.value.selectedSearchEngine
+            val safeUrl = ProtectionEngine.buildSafeSearchUrl(queryFromUrl, currentEngine)
             loadTargetUrl(safeUrl)
             return true
         }
@@ -366,7 +369,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 )
                 return false
             }
-            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(trimmed)
+            val currentEngine = _uiState.value.selectedSearchEngine
+            val safeUrl = ProtectionEngine.buildSafeSearchUrl(trimmed, currentEngine)
             loadTargetUrl(safeUrl)
             return true
         }
@@ -613,6 +617,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             showToast("Keyword is empty or already in the protected list.")
         }
         return added
+    }
+
+    fun selectSearchEngine(engine: SearchEngine) {
+        repository.selectedSearchEngine = engine
+        _uiState.update { it.copy(selectedSearchEngine = engine) }
     }
 
     fun togglePopupBlocking(enabled: Boolean) {

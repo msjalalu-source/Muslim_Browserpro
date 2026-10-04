@@ -386,6 +386,20 @@ class SettingsRepository(context: Context) {
             prefs.edit().putString(KEY_SELECTED_TRANSLATION_ENGINE, value.name).apply()
         }
 
+    var selectedSearchEngine: SearchEngine
+        get() {
+            val name = prefs.getString(KEY_SELECTED_SEARCH_ENGINE, SearchEngine.DUCKDUCKGO.name)
+                ?: SearchEngine.DUCKDUCKGO.name
+            return try {
+                SearchEngine.valueOf(name)
+            } catch (_: Exception) {
+                SearchEngine.DUCKDUCKGO
+            }
+        }
+        set(value) {
+            prefs.edit().putString(KEY_SELECTED_SEARCH_ENGINE, value.name).apply()
+        }
+
     // ==========================================
     // BROWSING HISTORY PERSISTENCE
     // ==========================================
@@ -670,6 +684,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_WINDOWS_10_TOUCH = "key_windows_10_touch"
         private const val KEY_APP_THEME = "key_app_theme"
         private const val KEY_SELECTED_TRANSLATION_ENGINE = "key_selected_translation_engine"
+        private const val KEY_SELECTED_SEARCH_ENGINE = "key_selected_search_engine"
         private const val KEY_FAVORITES = "key_favorite_sites"
         private const val KEY_SAVED_TABS = "key_saved_tabs"
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
