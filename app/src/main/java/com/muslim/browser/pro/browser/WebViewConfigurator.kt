@@ -709,18 +709,47 @@ object WebViewConfigurator {
     """.trimIndent()
 
     /**
-     * Desktop Mode 2 Event Script (Balanced Simplification):
-     * - Zero MutationObservers: completely eliminates continuous DOM tree observation
-     * - Zero history monkey-patching
-     * - Zero client hints override script
-     * - Purely event-driven viewport enforcement on navigation / render events
-     * - Listens to: turbo:load, turbo:render, pjax:end, pageshow, popstate
-     * - Sets viewport width=1280 idempotently on initialization and navigation
+     * Desktop Mode 4 Targeted Guard Script:
+     * - Retains viewport width=1280 reinforcement
+     * - Narrowly targeted viewport observer:
+     *   * Directly observes ONLY the viewport meta element for 'content' attribute changes
+     *   * Observes document.head with childList=true, subtree=false to react ONLY to direct insertions/removals of <meta name="viewport">
+     *   * Ignores all unrelated <head> changes: title, stylesheets, favicons, preloads, scripts, links, other meta tags
+     * - Retains navigation event listeners: turbo:load, turbo:render, pjax:end, pageshow, popstate
+     * - Patches navigator.userAgentData and navigator.platform for desktop identity
+     * - Zero history monkey-patching (no history.pushState/replaceState)
+     * - Strictly idempotent with window.__mb_desktop_mode4__
      */
-    val DESKTOP_MODE_2_EVENT_SCRIPT: String = """
+    val DESKTOP_MODE_4_GUARD_SCRIPT: String = """
         (function() {
             var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
-            var GUARD_KEY = '__mb_desktop_mode2__';
+            var GUARD_KEY = '__mb_desktop_mode4__';
+
+            var metaObserver = null;
+            var headObserver = null;
+
+            function attachMetaObserver(metaEl) {
+                if (!metaEl || !window.MutationObserver) return;
+                if (metaObserver) {
+                    try { metaObserver.disconnect(); } catch(e) {}
+                }
+                metaObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        if (mutations[i].attributeName === 'content') {
+                            if (metaEl.getAttribute('content') !== TARGET_CONTENT) {
+                                applyViewport();
+                            }
+                            break;
+                        }
+                    }
+                });
+                try {
+                    metaObserver.observe(metaEl, {
+                        attributes: true,
+                        attributeFilter: ['content']
+                    });
+                } catch(e) {}
+            }
 
             function applyViewport() {
                 try {
@@ -730,24 +759,103 @@ object WebViewConfigurator {
                     if (!meta) {
                         meta = document.createElement('meta');
                         meta.name = 'viewport';
-                        meta.setAttribute('data-mb2-created', 'true');
+                        meta.setAttribute('data-mb4-created', 'true');
                         head.appendChild(meta);
                     }
                     if (meta.getAttribute('content') !== TARGET_CONTENT) {
-                        if (meta.getAttribute('data-mb2-orig') === null && !meta.hasAttribute('data-mb2-created')) {
-                            meta.setAttribute('data-mb2-orig', meta.getAttribute('content') || '');
+                        if (meta.getAttribute('data-mb4-orig') === null && !meta.hasAttribute('data-mb4-created')) {
+                            meta.setAttribute('data-mb4-orig', meta.getAttribute('content') || '');
                         }
                         meta.setAttribute('content', TARGET_CONTENT);
                     }
+                    attachMetaObserver(meta);
+                } catch(e) {}
+            }
+
+            function patchDesktopClientHints() {
+                try {
+                    if (navigator.userAgentData) {
+                        var origUaData = navigator.userAgentData;
+                        var fakeUaData = {
+                            brands: origUaData.brands || [
+                                { brand: 'Google Chrome', version: '131' },
+                                { brand: 'Chromium', version: '131' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ],
+                            mobile: false,
+                            platform: 'Linux',
+                            getHighEntropyValues: function(hints) {
+                                return origUaData.getHighEntropyValues ?
+                                    origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                        vals.mobile = false;
+                                        vals.platform = 'Linux';
+                                        return vals;
+                                    }) :
+                                    Promise.resolve({ mobile: false, platform: 'Linux' });
+                            },
+                            toJSON: function() {
+                                return { brands: this.brands, mobile: false, platform: 'Linux' };
+                            }
+                        };
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() { return fakeUaData; },
+                            configurable: true
+                        });
+                    }
+                } catch(e) {}
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Linux x86_64'; },
+                        configurable: true
+                    });
                 } catch(e) {}
             }
 
             if (window[GUARD_KEY]) {
-                applyViewport();
+                window[GUARD_KEY].ensureViewport();
                 return;
             }
 
             applyViewport();
+            patchDesktopClientHints();
+
+            try {
+                var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                if (head && window.MutationObserver) {
+                    headObserver = new MutationObserver(function(mutations) {
+                        for (var i = 0; i < mutations.length; i++) {
+                            var m = mutations[i];
+                            if (m.type === 'childList') {
+                                var changed = false;
+                                for (var j = 0; j < m.addedNodes.length; j++) {
+                                    var node = m.addedNodes[j];
+                                    if (node.nodeType === 1 && node.nodeName === 'META' && (node.name === 'viewport' || node.getAttribute('name') === 'viewport')) {
+                                        changed = true;
+                                        break;
+                                    }
+                                }
+                                if (!changed) {
+                                    for (var k = 0; k < m.removedNodes.length; k++) {
+                                        var rNode = m.removedNodes[k];
+                                        if (rNode.nodeType === 1 && rNode.nodeName === 'META' && (rNode.name === 'viewport' || rNode.getAttribute('name') === 'viewport')) {
+                                            changed = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (changed) {
+                                    applyViewport();
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                    headObserver.observe(head, {
+                        childList: true,
+                        subtree: false
+                    });
+                }
+            } catch(e) {}
 
             var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
             function onNav() { applyViewport(); }
@@ -759,18 +867,179 @@ object WebViewConfigurator {
                 ensureViewport: applyViewport,
                 cleanup: function() {
                     try {
+                        if (headObserver) headObserver.disconnect();
+                        if (metaObserver) metaObserver.disconnect();
                         navEvents.forEach(function(evt) {
                             window.removeEventListener(evt, onNav);
                         });
                         var meta = document.querySelector('meta[name="viewport"]');
                         if (meta) {
-                            if (meta.hasAttribute('data-mb2-created')) {
+                            if (meta.hasAttribute('data-mb4-created')) {
                                 meta.remove();
-                            } else if (meta.hasAttribute('data-mb2-orig')) {
-                                var orig = meta.getAttribute('data-mb2-orig');
+                            } else if (meta.hasAttribute('data-mb4-orig')) {
+                                var orig = meta.getAttribute('data-mb4-orig');
                                 if (orig) meta.setAttribute('content', orig);
                                 else meta.removeAttribute('content');
-                                meta.removeAttribute('data-mb2-orig');
+                                meta.removeAttribute('data-mb4-orig');
+                            }
+                        }
+                    } catch(e) {}
+                    delete window[GUARD_KEY];
+                }
+            };
+        })();
+    """.trimIndent()
+
+    /**
+     * Desktop Mode 5 Lifecycle Hybrid Script:
+     * - Native WebView lifecycle enforcement (onPageFinished, onPageCommitVisible)
+     * - Lightweight SPA navigation listeners: turbo:load, turbo:render, pjax:end, pageshow, popstate
+     * - Zero permanent MutationObserver: uses a strictly one-shot fallback stabilization observer
+     *   that disconnects immediately once viewport enforcement is confirmed
+     * - Zero continuous DOM scanning, zero setInterval, zero timers, zero polling loops
+     * - Patches navigator.userAgentData and navigator.platform for desktop identity
+     * - Zero history monkey-patching (no history.pushState/replaceState)
+     * - Strictly idempotent with window.__mb_desktop_mode5__
+     */
+    val DESKTOP_MODE_5_HYBRID_SCRIPT: String = """
+        (function() {
+            var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
+            var GUARD_KEY = '__mb_desktop_mode5__';
+
+            var fallbackObserver = null;
+
+            function disconnectFallback() {
+                if (fallbackObserver) {
+                    try { fallbackObserver.disconnect(); } catch(e) {}
+                    fallbackObserver = null;
+                }
+            }
+
+            function applyViewport() {
+                try {
+                    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                    if (!head) return false;
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.setAttribute('data-mb5-created', 'true');
+                        head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                        if (meta.getAttribute('data-mb5-orig') === null && !meta.hasAttribute('data-mb5-created')) {
+                            meta.setAttribute('data-mb5-orig', meta.getAttribute('content') || '');
+                        }
+                        meta.setAttribute('content', TARGET_CONTENT);
+                    }
+                    return true;
+                } catch(e) {
+                    return false;
+                }
+            }
+
+            function startOneShotFallback() {
+                if (fallbackObserver || !window.MutationObserver) return;
+                var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                if (!head) return;
+                try {
+                    fallbackObserver = new MutationObserver(function(mutations) {
+                        for (var i = 0; i < mutations.length; i++) {
+                            var m = mutations[i];
+                            if (m.type === 'childList') {
+                                for (var j = 0; j < m.addedNodes.length; j++) {
+                                    var node = m.addedNodes[j];
+                                    if (node.nodeType === 1 && node.nodeName === 'META' && (node.name === 'viewport' || node.getAttribute('name') === 'viewport')) {
+                                        applyViewport();
+                                        disconnectFallback(); // One-shot only! Disconnect immediately upon enforcement.
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    fallbackObserver.observe(head, { childList: true, subtree: false });
+                } catch(e) {}
+            }
+
+            function patchDesktopClientHints() {
+                try {
+                    if (navigator.userAgentData) {
+                        var origUaData = navigator.userAgentData;
+                        var fakeUaData = {
+                            brands: origUaData.brands || [
+                                { brand: 'Google Chrome', version: '131' },
+                                { brand: 'Chromium', version: '131' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ],
+                            mobile: false,
+                            platform: 'Linux',
+                            getHighEntropyValues: function(hints) {
+                                return origUaData.getHighEntropyValues ?
+                                    origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                        vals.mobile = false;
+                                        vals.platform = 'Linux';
+                                        return vals;
+                                    }) :
+                                    Promise.resolve({ mobile: false, platform: 'Linux' });
+                            },
+                            toJSON: function() {
+                                return { brands: this.brands, mobile: false, platform: 'Linux' };
+                            }
+                        };
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() { return fakeUaData; },
+                            configurable: true
+                        });
+                    }
+                } catch(e) {}
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Linux x86_64'; },
+                        configurable: true
+                    });
+                } catch(e) {}
+            }
+
+            if (window[GUARD_KEY]) {
+                window[GUARD_KEY].ensureViewport();
+                return;
+            }
+
+            var success = applyViewport();
+            if (!success) {
+                startOneShotFallback();
+            }
+            patchDesktopClientHints();
+
+            var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+            function onNav() {
+                var ok = applyViewport();
+                if (!ok) {
+                    startOneShotFallback();
+                }
+            }
+            navEvents.forEach(function(evt) {
+                window.addEventListener(evt, onNav, { passive: true });
+            });
+
+            window[GUARD_KEY] = {
+                ensureViewport: applyViewport,
+                cleanup: function() {
+                    try {
+                        disconnectFallback();
+                        navEvents.forEach(function(evt) {
+                            window.removeEventListener(evt, onNav);
+                        });
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta) {
+                            if (meta.hasAttribute('data-mb5-created')) {
+                                meta.remove();
+                            } else if (meta.hasAttribute('data-mb5-orig')) {
+                                var orig = meta.getAttribute('data-mb5-orig');
+                                if (orig) meta.setAttribute('content', orig);
+                                else meta.removeAttribute('content');
+                                meta.removeAttribute('data-mb5-orig');
                             }
                         }
                     } catch(e) {}
@@ -785,7 +1054,7 @@ object WebViewConfigurator {
      */
     val CLEANUP_ALL_DESKTOP_SCRIPTS: String = """
         (function() {
-            var keys = ['__mb_desktop_guard__', '__mb_desktop_mode1__', '__mb_desktop_mode2__'];
+            var keys = ['__mb_desktop_guard__', '__mb_desktop_mode1__', '__mb_desktop_mode4__', '__mb_desktop_mode5__'];
             for (var i = 0; i < keys.length; i++) {
                 var k = keys[i];
                 if (window[k] && typeof window[k].cleanup === 'function') {
@@ -795,15 +1064,16 @@ object WebViewConfigurator {
             try {
                 var meta = document.querySelector('meta[name="viewport"]');
                 if (meta) {
-                    if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb1-created') || meta.hasAttribute('data-mb2-created')) {
+                    if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb1-created') || meta.hasAttribute('data-mb4-created') || meta.hasAttribute('data-mb5-created')) {
                         meta.remove();
-                    } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb1-orig') || meta.hasAttribute('data-mb2-orig')) {
-                        var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb1-orig') || meta.getAttribute('data-mb2-orig');
+                    } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb1-orig') || meta.hasAttribute('data-mb4-orig') || meta.hasAttribute('data-mb5-orig')) {
+                        var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb1-orig') || meta.getAttribute('data-mb4-orig') || meta.getAttribute('data-mb5-orig');
                         if (orig) meta.setAttribute('content', orig);
                         else meta.removeAttribute('content');
                         meta.removeAttribute('data-mb-orig');
                         meta.removeAttribute('data-mb1-orig');
-                        meta.removeAttribute('data-mb2-orig');
+                        meta.removeAttribute('data-mb4-orig');
+                        meta.removeAttribute('data-mb5-orig');
                     }
                 }
             } catch(e) {}
@@ -838,11 +1108,13 @@ object WebViewConfigurator {
                 DesktopArchitecture.DESKTOP_MODE_1 -> {
                     webView.evaluateJavascript(DESKTOP_MODE_1_GUARD_SCRIPT, null)
                 }
-                DesktopArchitecture.DESKTOP_MODE_2 -> {
-                    webView.evaluateJavascript(DESKTOP_MODE_2_EVENT_SCRIPT, null)
+                DesktopArchitecture.DESKTOP_MODE_4 -> {
+                    webView.evaluateJavascript(DESKTOP_MODE_4_GUARD_SCRIPT, null)
                 }
-                DesktopArchitecture.DESKTOP_MODE_3, DesktopArchitecture.NONE -> {
-                    // Desktop Mode 3 uses zero JS injection; cleanup any previously active scripts
+                DesktopArchitecture.DESKTOP_MODE_5 -> {
+                    webView.evaluateJavascript(DESKTOP_MODE_5_HYBRID_SCRIPT, null)
+                }
+                DesktopArchitecture.NONE -> {
                     webView.evaluateJavascript(CLEANUP_ALL_DESKTOP_SCRIPTS, null)
                 }
             }
@@ -851,8 +1123,8 @@ object WebViewConfigurator {
 
     /**
      * Authoritative Desktop Architecture synchronization function:
-     * - Guarantees strict mutual exclusion among STANDARD, DESKTOP_MODE_1, DESKTOP_MODE_2,
-     *   DESKTOP_MODE_3, and WINDOWS_10_TOUCH.
+     * - Guarantees strict mutual exclusion among STANDARD, DESKTOP_MODE_1, DESKTOP_MODE_4,
+     *   DESKTOP_MODE_5, and WINDOWS_10_TOUCH.
      * - Applies the correct User-Agent.
      * - Applies native WebSettings (useWideViewPort, loadWithOverviewMode, textZoom, zoom controls).
      * - Selects the exact viewport/script mechanism tailored to the complexity level of the architecture.
@@ -870,8 +1142,8 @@ object WebViewConfigurator {
             }
             DesktopArchitecture.STANDARD,
             DesktopArchitecture.DESKTOP_MODE_1,
-            DesktopArchitecture.DESKTOP_MODE_2,
-            DesktopArchitecture.DESKTOP_MODE_3 -> {
+            DesktopArchitecture.DESKTOP_MODE_4,
+            DesktopArchitecture.DESKTOP_MODE_5 -> {
                 if (isAuthenticationUrl(url)) null else DESKTOP_USER_AGENT
             }
             DesktopArchitecture.NONE -> null

@@ -78,8 +78,8 @@ data class BrowserUiState(
     val desktopArchitecture: DesktopArchitecture = DesktopArchitecture.NONE,
     val isDesktopModeEnabled: Boolean = false,
     val isDesktopMode1Enabled: Boolean = false,
-    val isDesktopMode2Enabled: Boolean = false,
-    val isDesktopMode3Enabled: Boolean = false,
+    val isDesktopMode4Enabled: Boolean = false,
+    val isDesktopMode5Enabled: Boolean = false,
     val isWindows10TouchEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
@@ -119,8 +119,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 desktopArchitecture = repository.desktopArchitecture,
                 isDesktopModeEnabled = repository.isDesktopModeEnabled,
                 isDesktopMode1Enabled = repository.isDesktopMode1Enabled,
-                isDesktopMode2Enabled = repository.isDesktopMode2Enabled,
-                isDesktopMode3Enabled = repository.isDesktopMode3Enabled,
+                isDesktopMode4Enabled = repository.isDesktopMode4Enabled,
+                isDesktopMode5Enabled = repository.isDesktopMode5Enabled,
                 isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
@@ -647,8 +647,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 desktopArchitecture = architecture,
                 isDesktopModeEnabled = architecture == DesktopArchitecture.STANDARD,
                 isDesktopMode1Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_1,
-                isDesktopMode2Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_2,
-                isDesktopMode3Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_3,
+                isDesktopMode4Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_4,
+                isDesktopMode5Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_5,
                 isWindows10TouchEnabled = architecture == DesktopArchitecture.WINDOWS_10_TOUCH
             )
         }
@@ -662,12 +662,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
     }
 
-    fun toggleDesktopMode2(enabled: Boolean) {
-        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE)
+    fun toggleDesktopMode4(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
     }
 
-    fun toggleDesktopMode3(enabled: Boolean) {
-        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
+    fun toggleDesktopMode5(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_5 else DesktopArchitecture.NONE)
     }
 
     fun toggleWindows10Touch(enabled: Boolean) {

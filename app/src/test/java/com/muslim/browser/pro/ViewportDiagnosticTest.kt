@@ -136,25 +136,25 @@ class ViewportDiagnosticTest {
         assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH, mode1)
 
         // Windows 10 Touch enabled alone
-        val mode2 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+        val touchOnlyMode = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
             isDesktopEnabled = false,
             isWindows10TouchEnabled = true
         )
-        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH, mode2)
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.WINDOWS_10_TOUCH, touchOnlyMode)
 
         // Desktop alone
-        val mode3 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+        val desktopOnlyMode = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
             isDesktopEnabled = true,
             isWindows10TouchEnabled = false
         )
-        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.DESKTOP_LINUX, mode3)
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.DESKTOP_LINUX, desktopOnlyMode)
 
         // Neither
-        val mode4 = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
+        val mobileOnlyMode = com.muslim.browser.pro.browser.WebViewConfigurator.getActiveIdentityMode(
             isDesktopEnabled = false,
             isWindows10TouchEnabled = false
         )
-        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.MOBILE, mode4)
+        assertEquals(com.muslim.browser.pro.browser.WebViewConfigurator.BrowserIdentityMode.MOBILE, mobileOnlyMode)
     }
 
     @Test

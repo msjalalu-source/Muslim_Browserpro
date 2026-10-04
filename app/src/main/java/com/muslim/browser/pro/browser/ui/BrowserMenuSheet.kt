@@ -86,8 +86,8 @@ fun BrowserMenuSheet(
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onToggleDesktopMode1: (Boolean) -> Unit = {},
-    onToggleDesktopMode2: (Boolean) -> Unit = {},
-    onToggleDesktopMode3: (Boolean) -> Unit = {},
+    onToggleDesktopMode4: (Boolean) -> Unit = {},
+    onToggleDesktopMode5: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
@@ -791,11 +791,11 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Desktop Mode 2 (Balanced Simplification)
+                // Desktop Mode 4 (Targeted Viewport Guard)
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_2"),
+                        .testTag("section_desktop_mode_4"),
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surfaceVariant,
                     border = BorderStroke(1.dp, colors.border)
@@ -813,20 +813,20 @@ fun BrowserMenuSheet(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Desktop Mode 2",
-                                tint = if (uiState.isDesktopMode2Enabled) colors.accent else colors.iconTint,
+                                contentDescription = "Desktop Mode 4",
+                                tint = if (uiState.isDesktopMode4Enabled) colors.accent else colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Desktop Mode 2",
+                                    text = "Desktop Mode 4",
                                     color = colors.textPrimary,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Balanced simplification",
+                                    text = "Targeted viewport guard",
                                     color = colors.textSecondary,
                                     fontSize = 10.sp
                                 )
@@ -834,26 +834,26 @@ fun BrowserMenuSheet(
                         }
 
                         Switch(
-                            checked = uiState.isDesktopMode2Enabled,
-                            onCheckedChange = onToggleDesktopMode2,
+                            checked = uiState.isDesktopMode4Enabled,
+                            onCheckedChange = onToggleDesktopMode4,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
                                 uncheckedThumbColor = colors.textSecondary,
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
-                            modifier = Modifier.testTag("desktop_mode_2_switch")
+                            modifier = Modifier.testTag("desktop_mode_4_switch")
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Desktop Mode 3 (Maximum Simplification)
+                // Desktop Mode 5 (Lifecycle Hybrid)
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_3"),
+                        .testTag("section_desktop_mode_5"),
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surfaceVariant,
                     border = BorderStroke(1.dp, colors.border)
@@ -871,20 +871,20 @@ fun BrowserMenuSheet(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Desktop Mode 3",
-                                tint = if (uiState.isDesktopMode3Enabled) colors.accent else colors.iconTint,
+                                contentDescription = "Desktop Mode 5",
+                                tint = if (uiState.isDesktopMode5Enabled) colors.accent else colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Desktop Mode 3",
+                                    text = "Desktop Mode 5",
                                     color = colors.textPrimary,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Maximum simplification",
+                                    text = "Lifecycle hybrid",
                                     color = colors.textSecondary,
                                     fontSize = 10.sp
                                 )
@@ -892,15 +892,15 @@ fun BrowserMenuSheet(
                         }
 
                         Switch(
-                            checked = uiState.isDesktopMode3Enabled,
-                            onCheckedChange = onToggleDesktopMode3,
+                            checked = uiState.isDesktopMode5Enabled,
+                            onCheckedChange = onToggleDesktopMode5,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
                                 uncheckedThumbColor = colors.textSecondary,
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
-                            modifier = Modifier.testTag("desktop_mode_3_switch")
+                            modifier = Modifier.testTag("desktop_mode_5_switch")
                         )
                     }
                 }

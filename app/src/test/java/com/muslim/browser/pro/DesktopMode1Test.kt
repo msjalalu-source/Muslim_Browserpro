@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
  * - Retained: UA Client Hints spoofing (mobile: false, platform: 'Linux')
  * - Removed: document.documentElement root observer (avoids recursive DOM observation)
  * - Removed: history.pushState / history.replaceState monkey-patching
- * - Mutual Exclusion: strictly mutually exclusive with Standard, Mode 2, Mode 3, Windows 10 Touch
+ * - Mutual Exclusion: strictly mutually exclusive with Standard, Mode 4, Mode 5, Windows 10 Touch
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -71,8 +71,8 @@ class DesktopMode1Test {
         viewModel.toggleDesktopMode1(true)
         assertTrue(viewModel.uiState.value.isDesktopMode1Enabled)
         assertFalse(viewModel.uiState.value.isDesktopModeEnabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode2Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode3Enabled)
+        assertFalse(viewModel.uiState.value.isDesktopMode4Enabled)
+        assertFalse(viewModel.uiState.value.isDesktopMode5Enabled)
         assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
         assertEquals(DesktopArchitecture.DESKTOP_MODE_1, viewModel.uiState.value.desktopArchitecture)
 

@@ -333,8 +333,8 @@ class MainActivity : ComponentActivity() {
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
                     onToggleDesktopMode1 = { enabled -> setDesktopMode1(enabled) },
-                    onToggleDesktopMode2 = { enabled -> setDesktopMode2(enabled) },
-                    onToggleDesktopMode3 = { enabled -> setDesktopMode3(enabled) },
+                    onToggleDesktopMode4 = { enabled -> setDesktopMode4(enabled) },
+                    onToggleDesktopMode5 = { enabled -> setDesktopMode5(enabled) },
                     onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
                     onSslCancel = { host -> onSslPromptCancel(host) },
@@ -413,8 +413,8 @@ class MainActivity : ComponentActivity() {
                             }
                             DesktopArchitecture.STANDARD,
                             DesktopArchitecture.DESKTOP_MODE_1,
-                            DesktopArchitecture.DESKTOP_MODE_2,
-                            DesktopArchitecture.DESKTOP_MODE_3 -> {
+                            DesktopArchitecture.DESKTOP_MODE_4,
+                            DesktopArchitecture.DESKTOP_MODE_5 -> {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.DESKTOP_USER_AGENT
                             }
                             DesktopArchitecture.NONE -> null
@@ -999,12 +999,12 @@ class MainActivity : ComponentActivity() {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
     }
 
-    internal fun setDesktopMode2(enabled: Boolean) {
-        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE)
+    internal fun setDesktopMode4(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
     }
 
-    internal fun setDesktopMode3(enabled: Boolean) {
-        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
+    internal fun setDesktopMode5(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_5 else DesktopArchitecture.NONE)
     }
 
     internal fun setWindows10Touch(enabled: Boolean) {
@@ -1210,8 +1210,8 @@ fun BrowserApp(
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
     onToggleDesktopMode1: (Boolean) -> Unit = {},
-    onToggleDesktopMode2: (Boolean) -> Unit = {},
-    onToggleDesktopMode3: (Boolean) -> Unit = {},
+    onToggleDesktopMode4: (Boolean) -> Unit = {},
+    onToggleDesktopMode5: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onSslProceed: (String) -> Unit = {},
     onSslCancel: (String) -> Unit = {},
@@ -1425,8 +1425,8 @@ fun BrowserApp(
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
                     onToggleDesktopMode1 = onToggleDesktopMode1,
-                    onToggleDesktopMode2 = onToggleDesktopMode2,
-                    onToggleDesktopMode3 = onToggleDesktopMode3,
+                    onToggleDesktopMode4 = onToggleDesktopMode4,
+                    onToggleDesktopMode5 = onToggleDesktopMode5,
                     onToggleWindows10Touch = onToggleWindows10Touch,
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(

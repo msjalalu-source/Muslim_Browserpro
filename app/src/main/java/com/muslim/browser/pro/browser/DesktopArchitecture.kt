@@ -9,19 +9,20 @@ package com.muslim.browser.pro.browser
  * 3. [DESKTOP_MODE_1] - Conservative Simplification: Single head-only MutationObserver,
  *    Turbo/PJAX/navigation event listeners, Client Hints override, desktop UA, and native WebSettings.
  *    (Eliminates document-level root observer and history monkey-patching).
- * 4. [DESKTOP_MODE_2] - Balanced Simplification: Zero MutationObservers, zero history monkey-patching,
- *    zero client hints override script. Pure event-driven viewport enforcement on Turbo/PJAX/navigation
- *    events, desktop UA, and native WebSettings.
- * 5. [DESKTOP_MODE_3] - Maximum Simplification: Zero JavaScript injection. Pure native WebView
- *    configuration (desktop UA, useWideViewPort, loadWithOverviewMode, zoom settings).
+ * 4. [DESKTOP_MODE_4] - Targeted Guard: Single targeted viewport observer (observes only the viewport
+ *    meta tag and head direct child additions for viewport meta, ignoring unrelated head elements),
+ *    Turbo/PJAX/navigation event listeners, Client Hints override, desktop UA, and native WebSettings.
+ * 5. [DESKTOP_MODE_5] - Lifecycle Hybrid: Native WebView lifecycle enforcement (onPageFinished)
+ *    combined with lightweight SPA navigation listeners, one-shot fallback stabilization observer
+ *    (disconnects immediately upon enforcement), Client Hints override, desktop UA, and native WebSettings.
  * 6. [WINDOWS_10_TOUCH] - Windows 10 desktop identity with touch profile (10 touch points, D3D11 GPU).
  */
 enum class DesktopArchitecture(val displayName: String) {
     NONE("Mobile"),
     STANDARD("Desktop Mode"),
     DESKTOP_MODE_1("Desktop Mode 1"),
-    DESKTOP_MODE_2("Desktop Mode 2"),
-    DESKTOP_MODE_3("Desktop Mode 3"),
+    DESKTOP_MODE_4("Desktop Mode 4"),
+    DESKTOP_MODE_5("Desktop Mode 5"),
     WINDOWS_10_TOUCH("Windows 10 Desktop");
 
     val isAnyDesktop: Boolean
@@ -33,11 +34,11 @@ enum class DesktopArchitecture(val displayName: String) {
     val isMode1: Boolean
         get() = this == DESKTOP_MODE_1
 
-    val isMode2: Boolean
-        get() = this == DESKTOP_MODE_2
+    val isMode4: Boolean
+        get() = this == DESKTOP_MODE_4
 
-    val isMode3: Boolean
-        get() = this == DESKTOP_MODE_3
+    val isMode5: Boolean
+        get() = this == DESKTOP_MODE_5
 
     val isWindows10Touch: Boolean
         get() = this == WINDOWS_10_TOUCH
