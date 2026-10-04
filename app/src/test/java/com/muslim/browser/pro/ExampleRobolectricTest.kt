@@ -30,15 +30,17 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `verify exactly two theme options exist and black cannot be selected`() {
-    // Exactly 2 options: White, Black & White
+  fun `verify exactly three theme options exist and black cannot be selected`() {
+    // Exactly 3 options: White, Black & White, Force Dark On
     val themes = AppTheme.values()
-    assertEquals(2, themes.size)
+    assertEquals(3, themes.size)
     assertEquals(AppTheme.WHITE, themes[0])
     assertEquals(AppTheme.BLACK_WHITE, themes[1])
+    assertEquals(AppTheme.FORCE_DARK_ON, themes[2])
 
     assertEquals("White", AppTheme.WHITE.displayName)
     assertEquals("Black & White", AppTheme.BLACK_WHITE.displayName)
+    assertEquals("Force Dark On", AppTheme.FORCE_DARK_ON.displayName)
 
     // Verify "Black" is not an enum constant or option
     val names = themes.map { it.name }

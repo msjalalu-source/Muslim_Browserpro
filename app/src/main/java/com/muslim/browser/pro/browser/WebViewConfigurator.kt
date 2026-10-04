@@ -122,16 +122,69 @@ object WebViewConfigurator {
                 }
             } catch(e) {}
 
-            // 4. Window Outer Dimensions (Desktop-consistent: outerWidth/outerHeight)
+            // 4. Window Viewport & Outer Dimensions (Desktop-consistent: inner/outer width & height, document client dimensions)
             try {
-                Object.defineProperty(window, 'outerWidth', {
-                    get: function() { return window.innerWidth ? Math.max(window.innerWidth, 1280) : 1280; },
-                    configurable: true
-                });
-                Object.defineProperty(window, 'outerHeight', {
-                    get: function() { return window.innerHeight ? Math.max(window.innerHeight, 720) : 1040; },
-                    configurable: true
-                });
+                var desktopInnerW = 1280;
+                var desktopInnerH = 720;
+                var desktopOuterW = 1280;
+                var desktopOuterH = 800; // 720 + 80px browser chrome
+
+                var winProto = Object.getPrototypeOf(window) || (window.Window && window.Window.prototype);
+                var winProps = {
+                    innerWidth: { get: function() { return desktopInnerW; }, configurable: true },
+                    innerHeight: { get: function() { return desktopInnerH; }, configurable: true },
+                    outerWidth: { get: function() { return desktopOuterW; }, configurable: true },
+                    outerHeight: { get: function() { return desktopOuterH; }, configurable: true }
+                };
+                for (var wKey in winProps) {
+                    try { Object.defineProperty(window, wKey, winProps[wKey]); } catch(e) {}
+                    if (winProto) {
+                        try { Object.defineProperty(winProto, wKey, winProps[wKey]); } catch(e) {}
+                    }
+                    if (window.Window && window.Window.prototype) {
+                        try { Object.defineProperty(window.Window.prototype, wKey, winProps[wKey]); } catch(e) {}
+                    }
+                }
+
+                var elemProto = window.Element && window.Element.prototype;
+                if (elemProto) {
+                    var origClientHeightDesc = Object.getOwnPropertyDescriptor(elemProto, 'clientHeight');
+                    var origClientHeightGet = origClientHeightDesc ? origClientHeightDesc.get : null;
+                    Object.defineProperty(elemProto, 'clientHeight', {
+                        get: function() {
+                            if (this === document.documentElement || (document.compatMode === 'BackCompat' && this === document.body)) {
+                                return desktopInnerH;
+                            }
+                            return origClientHeightGet ? origClientHeightGet.apply(this, arguments) : 0;
+                        },
+                        configurable: true
+                    });
+
+                    var origClientWidthDesc = Object.getOwnPropertyDescriptor(elemProto, 'clientWidth');
+                    var origClientWidthGet = origClientWidthDesc ? origClientWidthDesc.get : null;
+                    Object.defineProperty(elemProto, 'clientWidth', {
+                        get: function() {
+                            if (this === document.documentElement || (document.compatMode === 'BackCompat' && this === document.body)) {
+                                return desktopInnerW;
+                            }
+                            return origClientWidthGet ? origClientWidthGet.apply(this, arguments) : 0;
+                        },
+                        configurable: true
+                    });
+                }
+
+                if (document.documentElement) {
+                    try {
+                        Object.defineProperty(document.documentElement, 'clientWidth', {
+                            get: function() { return desktopInnerW; },
+                            configurable: true
+                        });
+                        Object.defineProperty(document.documentElement, 'clientHeight', {
+                            get: function() { return desktopInnerH; },
+                            configurable: true
+                        });
+                    } catch(e) {}
+                }
             } catch(e) {}
 
             // 5. WebGL GPU / Unmasked Renderer Signals (Intel Direct3D11)
@@ -521,6 +574,243 @@ object WebViewConfigurator {
     """.trimIndent()
 
     /**
+     * Desktop Mode 1 Guard Script (Conservative Simplification):
+     * - Retains viewport width=1280 reinforcement
+     * - Head-only MutationObserver: observes only document.head for viewport changes
+     * - Eliminates document-level root observer to avoid recursive DOM observation
+     * - Eliminates history.pushState / replaceState monkey-patching
+     * - Listens to Turbo/PJAX and browser navigation events: turbo:load, turbo:render, pjax:end, pageshow, popstate
+     * - Patches navigator.userAgentData and navigator.platform for desktop identity
+     * - Strictly idempotent with window.__mb_desktop_mode1__
+     */
+    val DESKTOP_MODE_1_GUARD_SCRIPT: String = """
+        (function() {
+            var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
+            var GUARD_KEY = '__mb_desktop_mode1__';
+
+            function applyViewport() {
+                try {
+                    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                    if (!head) return;
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.setAttribute('data-mb1-created', 'true');
+                        head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                        if (meta.getAttribute('data-mb1-orig') === null && !meta.hasAttribute('data-mb1-created')) {
+                            meta.setAttribute('data-mb1-orig', meta.getAttribute('content') || '');
+                        }
+                        meta.setAttribute('content', TARGET_CONTENT);
+                    }
+                } catch(e) {}
+            }
+
+            function patchDesktopClientHints() {
+                try {
+                    if (navigator.userAgentData) {
+                        var origUaData = navigator.userAgentData;
+                        var fakeUaData = {
+                            brands: origUaData.brands || [
+                                { brand: 'Google Chrome', version: '131' },
+                                { brand: 'Chromium', version: '131' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ],
+                            mobile: false,
+                            platform: 'Linux',
+                            getHighEntropyValues: function(hints) {
+                                return origUaData.getHighEntropyValues ?
+                                    origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                        vals.mobile = false;
+                                        vals.platform = 'Linux';
+                                        return vals;
+                                    }) :
+                                    Promise.resolve({ mobile: false, platform: 'Linux' });
+                            },
+                            toJSON: function() {
+                                return { brands: this.brands, mobile: false, platform: 'Linux' };
+                            }
+                        };
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() { return fakeUaData; },
+                            configurable: true
+                        });
+                    }
+                } catch(e) {}
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Linux x86_64'; },
+                        configurable: true
+                    });
+                } catch(e) {}
+            }
+
+            if (window[GUARD_KEY]) {
+                window[GUARD_KEY].ensureViewport();
+                return;
+            }
+
+            applyViewport();
+            patchDesktopClientHints();
+
+            var headObserver = null;
+            try {
+                headObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        var m = mutations[i];
+                        if (m.type === 'childList' || (m.type === 'attributes' && m.attributeName === 'content')) {
+                            applyViewport();
+                            break;
+                        }
+                    }
+                });
+                if (document.head) {
+                    headObserver.observe(document.head, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['content']
+                    });
+                }
+            } catch(e) {}
+
+            var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+            function onNav() { applyViewport(); }
+            navEvents.forEach(function(evt) {
+                window.addEventListener(evt, onNav, { passive: true });
+            });
+
+            window[GUARD_KEY] = {
+                ensureViewport: applyViewport,
+                cleanup: function() {
+                    try {
+                        if (headObserver) headObserver.disconnect();
+                        navEvents.forEach(function(evt) {
+                            window.removeEventListener(evt, onNav);
+                        });
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta) {
+                            if (meta.hasAttribute('data-mb1-created')) {
+                                meta.remove();
+                            } else if (meta.hasAttribute('data-mb1-orig')) {
+                                var orig = meta.getAttribute('data-mb1-orig');
+                                if (orig) meta.setAttribute('content', orig);
+                                else meta.removeAttribute('content');
+                                meta.removeAttribute('data-mb1-orig');
+                            }
+                        }
+                    } catch(e) {}
+                    delete window[GUARD_KEY];
+                }
+            };
+        })();
+    """.trimIndent()
+
+    /**
+     * Desktop Mode 2 Event Script (Balanced Simplification):
+     * - Zero MutationObservers: completely eliminates continuous DOM tree observation
+     * - Zero history monkey-patching
+     * - Zero client hints override script
+     * - Purely event-driven viewport enforcement on navigation / render events
+     * - Listens to: turbo:load, turbo:render, pjax:end, pageshow, popstate
+     * - Sets viewport width=1280 idempotently on initialization and navigation
+     */
+    val DESKTOP_MODE_2_EVENT_SCRIPT: String = """
+        (function() {
+            var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
+            var GUARD_KEY = '__mb_desktop_mode2__';
+
+            function applyViewport() {
+                try {
+                    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                    if (!head) return;
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.setAttribute('data-mb2-created', 'true');
+                        head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                        if (meta.getAttribute('data-mb2-orig') === null && !meta.hasAttribute('data-mb2-created')) {
+                            meta.setAttribute('data-mb2-orig', meta.getAttribute('content') || '');
+                        }
+                        meta.setAttribute('content', TARGET_CONTENT);
+                    }
+                } catch(e) {}
+            }
+
+            if (window[GUARD_KEY]) {
+                applyViewport();
+                return;
+            }
+
+            applyViewport();
+
+            var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+            function onNav() { applyViewport(); }
+            navEvents.forEach(function(evt) {
+                window.addEventListener(evt, onNav, { passive: true });
+            });
+
+            window[GUARD_KEY] = {
+                ensureViewport: applyViewport,
+                cleanup: function() {
+                    try {
+                        navEvents.forEach(function(evt) {
+                            window.removeEventListener(evt, onNav);
+                        });
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta) {
+                            if (meta.hasAttribute('data-mb2-created')) {
+                                meta.remove();
+                            } else if (meta.hasAttribute('data-mb2-orig')) {
+                                var orig = meta.getAttribute('data-mb2-orig');
+                                if (orig) meta.setAttribute('content', orig);
+                                else meta.removeAttribute('content');
+                                meta.removeAttribute('data-mb2-orig');
+                            }
+                        }
+                    } catch(e) {}
+                    delete window[GUARD_KEY];
+                }
+            };
+        })();
+    """.trimIndent()
+
+    /**
+     * Unified cleanup script that cleans up whichever desktop guard scripts were active.
+     */
+    val CLEANUP_ALL_DESKTOP_SCRIPTS: String = """
+        (function() {
+            var keys = ['__mb_desktop_guard__', '__mb_desktop_mode1__', '__mb_desktop_mode2__'];
+            for (var i = 0; i < keys.length; i++) {
+                var k = keys[i];
+                if (window[k] && typeof window[k].cleanup === 'function') {
+                    try { window[k].cleanup(); } catch(e) {}
+                }
+            }
+            try {
+                var meta = document.querySelector('meta[name="viewport"]');
+                if (meta) {
+                    if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb1-created') || meta.hasAttribute('data-mb2-created')) {
+                        meta.remove();
+                    } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb1-orig') || meta.hasAttribute('data-mb2-orig')) {
+                        var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb1-orig') || meta.getAttribute('data-mb2-orig');
+                        if (orig) meta.setAttribute('content', orig);
+                        else meta.removeAttribute('content');
+                        meta.removeAttribute('data-mb-orig');
+                        meta.removeAttribute('data-mb1-orig');
+                        meta.removeAttribute('data-mb2-orig');
+                    }
+                }
+            } catch(e) {}
+        })();
+    """.trimIndent()
+
+    /**
      * Dedicated Desktop Viewport mechanism:
      * Maintains desktop-style layout for pages using <meta name="viewport">.
      * Lightweight, idempotent, scoped to document, safe for SPA, removable when disabled.
@@ -530,10 +820,81 @@ object WebViewConfigurator {
             val script = if (isDesktopOrTouchEnabled) {
                 DESKTOP_VIEWPORT_GUARD_SCRIPT
             } else {
-                DESKTOP_VIEWPORT_CLEANUP_SCRIPT
+                CLEANUP_ALL_DESKTOP_SCRIPTS
             }
             webView.evaluateJavascript(script, null)
         } catch (_: Throwable) {}
+    }
+
+    /**
+     * Applies the appropriate viewport enforcement or cleanup script based on [DesktopArchitecture].
+     */
+    fun applyArchitectureViewport(webView: WebView, architecture: DesktopArchitecture) {
+        try {
+            when (architecture) {
+                DesktopArchitecture.STANDARD, DesktopArchitecture.WINDOWS_10_TOUCH -> {
+                    webView.evaluateJavascript(DESKTOP_VIEWPORT_GUARD_SCRIPT, null)
+                }
+                DesktopArchitecture.DESKTOP_MODE_1 -> {
+                    webView.evaluateJavascript(DESKTOP_MODE_1_GUARD_SCRIPT, null)
+                }
+                DesktopArchitecture.DESKTOP_MODE_2 -> {
+                    webView.evaluateJavascript(DESKTOP_MODE_2_EVENT_SCRIPT, null)
+                }
+                DesktopArchitecture.DESKTOP_MODE_3, DesktopArchitecture.NONE -> {
+                    // Desktop Mode 3 uses zero JS injection; cleanup any previously active scripts
+                    webView.evaluateJavascript(CLEANUP_ALL_DESKTOP_SCRIPTS, null)
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    /**
+     * Authoritative Desktop Architecture synchronization function:
+     * - Guarantees strict mutual exclusion among STANDARD, DESKTOP_MODE_1, DESKTOP_MODE_2,
+     *   DESKTOP_MODE_3, and WINDOWS_10_TOUCH.
+     * - Applies the correct User-Agent.
+     * - Applies native WebSettings (useWideViewPort, loadWithOverviewMode, textZoom, zoom controls).
+     * - Selects the exact viewport/script mechanism tailored to the complexity level of the architecture.
+     * - Idempotent, safe across tab switching, reload, and navigation.
+     */
+    fun syncDesktopArchitecture(
+        webView: WebView,
+        url: String?,
+        architecture: DesktopArchitecture,
+        updateUserAgent: Boolean = true
+    ) {
+        val targetUa = when (architecture) {
+            DesktopArchitecture.WINDOWS_10_TOUCH -> {
+                if (isAuthenticationUrl(url)) null else WINDOWS_10_TOUCH_USER_AGENT
+            }
+            DesktopArchitecture.STANDARD,
+            DesktopArchitecture.DESKTOP_MODE_1,
+            DesktopArchitecture.DESKTOP_MODE_2,
+            DesktopArchitecture.DESKTOP_MODE_3 -> {
+                if (isAuthenticationUrl(url)) null else DESKTOP_USER_AGENT
+            }
+            DesktopArchitecture.NONE -> null
+        }
+
+        webView.settings.apply {
+            if (updateUserAgent) {
+                if (userAgentString != targetUa) {
+                    userAgentString = targetUa
+                }
+            }
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            textZoom = 100
+            builtInZoomControls = true
+            displayZoomControls = false
+        }
+
+        if (architecture == DesktopArchitecture.WINDOWS_10_TOUCH) {
+            injectWindows10TouchProfileIfEnabled(webView, true)
+        }
+
+        applyArchitectureViewport(webView, architecture)
     }
 
     /**
@@ -551,34 +912,12 @@ object WebViewConfigurator {
         updateUserAgent: Boolean = true,
         isWindows10TouchEnabled: Boolean = false
     ) {
-        val mode = getActiveIdentityMode(isDesktopEnabled, isWindows10TouchEnabled)
-        val targetUa = when (mode) {
-            BrowserIdentityMode.WINDOWS_10_TOUCH -> {
-                if (isAuthenticationUrl(url)) null else WINDOWS_10_TOUCH_USER_AGENT
-            }
-            BrowserIdentityMode.DESKTOP_LINUX -> {
-                if (isAuthenticationUrl(url)) null else DESKTOP_USER_AGENT
-            }
-            BrowserIdentityMode.MOBILE -> null
+        val arch = when {
+            isWindows10TouchEnabled -> DesktopArchitecture.WINDOWS_10_TOUCH
+            isDesktopEnabled -> DesktopArchitecture.STANDARD
+            else -> DesktopArchitecture.NONE
         }
-
-        webView.settings.apply {
-            if (updateUserAgent) {
-                if (userAgentString != targetUa) {
-                    userAgentString = targetUa
-                }
-            }
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            textZoom = 100
-            builtInZoomControls = true
-            displayZoomControls = false
-        }
-
-        if (mode == BrowserIdentityMode.WINDOWS_10_TOUCH) {
-            injectWindows10TouchProfileIfEnabled(webView, true)
-        }
-        applyDesktopViewport(webView, isDesktopEnabled || isWindows10TouchEnabled)
+        syncDesktopArchitecture(webView, url, arch, updateUserAgent)
     }
 
     /**
@@ -595,7 +934,8 @@ object WebViewConfigurator {
         webView: WebView,
         isDarkTheme: Boolean,
         isDesktopEnabled: Boolean = false,
-        isWindows10TouchEnabled: Boolean = false
+        isWindows10TouchEnabled: Boolean = false,
+        desktopArchitecture: DesktopArchitecture? = null
     ) {
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
@@ -622,12 +962,19 @@ object WebViewConfigurator {
             saveFormData = false
         }
 
-        applyIdentityMode(webView, isDesktopEnabled, isWindows10TouchEnabled)
+        val arch = desktopArchitecture ?: when {
+            isWindows10TouchEnabled -> DesktopArchitecture.WINDOWS_10_TOUCH
+            isDesktopEnabled -> DesktopArchitecture.STANDARD
+            else -> DesktopArchitecture.NONE
+        }
+        syncDesktopArchitecture(webView, webView.url, arch, updateUserAgent = true)
         applyWebViewTheme(webView, isDarkTheme)
     }
 
     /**
-     * Applies the application theme (dark/light) to the WebView.
+     * Applies native WebView dark-mode configuration (Force Dark On) or restores normal rendering.
+     * Uses native isAlgorithmicDarkeningAllowed (API 33+) and WebSettings.FORCE_DARK_ON/OFF (API 29+).
+     * Does NOT use custom JavaScript color replacement, CSS filters, or white-to-gray transformations.
      */
     fun applyWebViewTheme(webView: WebView, isDarkTheme: Boolean) {
         try {
@@ -645,87 +992,6 @@ object WebViewConfigurator {
             }
             val bgColor = if (isDarkTheme) android.graphics.Color.BLACK else android.graphics.Color.WHITE
             webView.setBackgroundColor(bgColor)
-            applyWebPageDarkTheme(webView, isDarkTheme)
         } catch (_: Exception) {}
-    }
-
-    fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
-        if (webView == null) return
-        try {
-            if (isDarkTheme) {
-                val script = """
-                    (function() {
-                        try {
-                            var style = document.getElementById('__mb_dark_theme__');
-                            if (!style) {
-                                style = document.createElement('style');
-                                style.id = '__mb_dark_theme__';
-                                (document.head || document.documentElement).appendChild(style);
-                            }
-                            style.textContent = `
-                                [data-mb-white-bg="true"] { background-color: gray !important; }
-                                [data-mb-white-color="true"] { color: gray !important; }
-                                [data-mb-white-border="true"] { border-color: gray !important; }
-                            `;
-
-                            function isPureWhite(colorStr) {
-                                if (!colorStr) return false;
-                                var s = colorStr.replace(/\s+/g, '').toLowerCase();
-                                return s === 'rgb(255,255,255)' ||
-                                       s === 'rgba(255,255,255,1)' ||
-                                       s === '#ffffff' ||
-                                       s === '#fff' ||
-                                       s === 'white';
-                            }
-
-                            var html = document.documentElement;
-                            var body = document.body;
-                            if (html) {
-                                var htmlBg = window.getComputedStyle(html).backgroundColor;
-                                var bodyBg = body ? window.getComputedStyle(body).backgroundColor : null;
-                                var isHtmlTrans = !htmlBg || htmlBg === 'rgba(0,0,0,0)' || htmlBg === 'transparent';
-                                var isBodyTrans = !bodyBg || bodyBg === 'rgba(0,0,0,0)' || bodyBg === 'transparent';
-                                if (isPureWhite(htmlBg) || (isHtmlTrans && (isBodyTrans || isPureWhite(bodyBg)))) {
-                                    html.setAttribute('data-mb-white-bg', 'true');
-                                }
-                            }
-
-                            var all = document.querySelectorAll('*');
-                            for (var i = 0; i < all.length; i++) {
-                                var node = all[i];
-                                if (node.id === '__mb_dark_theme__') continue;
-                                var cs = window.getComputedStyle(node);
-                                if (isPureWhite(cs.backgroundColor)) {
-                                    node.setAttribute('data-mb-white-bg', 'true');
-                                }
-                                if (isPureWhite(cs.color)) {
-                                    node.setAttribute('data-mb-white-color', 'true');
-                                }
-                                if (isPureWhite(cs.borderColor)) {
-                                    node.setAttribute('data-mb-white-border', 'true');
-                                }
-                            }
-                        } catch(e) {}
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(script, null)
-            } else {
-                val cleanupScript = """
-                    (function() {
-                        try {
-                            var el = document.getElementById('__mb_dark_theme__');
-                            if (el) el.remove();
-                            var nodes = document.querySelectorAll('[data-mb-white-bg],[data-mb-white-color],[data-mb-white-border]');
-                            for (var i = 0; i < nodes.length; i++) {
-                                nodes[i].removeAttribute('data-mb-white-bg');
-                                nodes[i].removeAttribute('data-mb-white-color');
-                                nodes[i].removeAttribute('data-mb-white-border');
-                            }
-                        } catch(e) {}
-                    })();
-                """.trimIndent()
-                webView.evaluateJavascript(cleanupScript, null)
-            }
-        } catch (_: Throwable) {}
     }
 }

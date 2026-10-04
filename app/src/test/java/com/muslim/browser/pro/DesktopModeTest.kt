@@ -396,4 +396,50 @@ class DesktopModeTest {
         tabManager.syncAllLiveWebViews(true)
         assertEquals(MainActivity.DESKTOP_USER_AGENT, wv1.settings.userAgentString)
     }
+
+    @Test
+    fun test14_mutualExclusionBetweenAllFiveDesktopArchitectures() {
+        val viewModel = BrowserViewModel(context)
+
+        // 1. Initially NONE
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.NONE, viewModel.uiState.value.desktopArchitecture)
+
+        // 2. Standard ON
+        viewModel.toggleDesktopMode(true)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.STANDARD, viewModel.uiState.value.desktopArchitecture)
+        assertTrue(viewModel.uiState.value.isDesktopModeEnabled)
+        assertFalse(viewModel.uiState.value.isDesktopMode1Enabled)
+        assertFalse(viewModel.uiState.value.isDesktopMode2Enabled)
+        assertFalse(viewModel.uiState.value.isDesktopMode3Enabled)
+        assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
+
+        // 3. Mode 1 ON
+        viewModel.toggleDesktopMode1(true)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.DESKTOP_MODE_1, viewModel.uiState.value.desktopArchitecture)
+        assertFalse(viewModel.uiState.value.isDesktopModeEnabled)
+        assertTrue(viewModel.uiState.value.isDesktopMode1Enabled)
+
+        // 4. Mode 2 ON
+        viewModel.toggleDesktopMode2(true)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.DESKTOP_MODE_2, viewModel.uiState.value.desktopArchitecture)
+        assertFalse(viewModel.uiState.value.isDesktopMode1Enabled)
+        assertTrue(viewModel.uiState.value.isDesktopMode2Enabled)
+
+        // 5. Mode 3 ON
+        viewModel.toggleDesktopMode3(true)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.DESKTOP_MODE_3, viewModel.uiState.value.desktopArchitecture)
+        assertFalse(viewModel.uiState.value.isDesktopMode2Enabled)
+        assertTrue(viewModel.uiState.value.isDesktopMode3Enabled)
+
+        // 6. Windows 10 Touch ON
+        viewModel.toggleWindows10Touch(true)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.WINDOWS_10_TOUCH, viewModel.uiState.value.desktopArchitecture)
+        assertFalse(viewModel.uiState.value.isDesktopMode3Enabled)
+        assertTrue(viewModel.uiState.value.isWindows10TouchEnabled)
+
+        // 7. Toggle active one OFF -> NONE
+        viewModel.toggleWindows10Touch(false)
+        assertEquals(com.muslim.browser.pro.browser.DesktopArchitecture.NONE, viewModel.uiState.value.desktopArchitecture)
+        assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
+    }
 }

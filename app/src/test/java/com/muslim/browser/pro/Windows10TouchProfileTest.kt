@@ -295,4 +295,52 @@ class Windows10TouchProfileTest {
         assertTrue("Must define properties on NavProto", script.contains("navProto"))
         assertTrue("Must define properties on screenProto", script.contains("screenProto"))
     }
+
+    @Test
+    fun test13_windows10DesktopViewportAndScreenGeometryConsistency() {
+        val script = WebViewConfigurator.WINDOWS_10_TOUCH_INJECTION_SCRIPT
+
+        // 1 & 2: Screen dimensions
+        assertTrue("screen.width must be 1920", script.contains("width: { get: function() { return 1920; }"))
+        assertTrue("screen.height must be 1080", script.contains("height: { get: function() { return 1080; }"))
+
+        // 3: innerHeight must be bounded and not greater than screen.height
+        assertTrue("Must spoof innerHeight", script.contains("innerHeight"))
+        assertTrue("Must set innerHeight to 720", script.contains("desktopInnerH = 720"))
+        val innerH = 720
+        val screenH = 1080
+        assertTrue("innerHeight must not be greater than screen.height", innerH <= screenH)
+
+        // 4: outerHeight must be bounded and not greater than screen.height
+        assertTrue("Must spoof outerHeight", script.contains("outerHeight"))
+        assertTrue("Must set outerHeight to 800", script.contains("desktopOuterH = 800"))
+        val outerH = 800
+        assertTrue("outerHeight must not be greater than screen.height", outerH <= screenH)
+
+        // 5: clientHeight must not be greater than screen.height
+        assertTrue("Must spoof clientHeight", script.contains("clientHeight"))
+        val clientH = 720
+        assertTrue("clientHeight must not be greater than screen.height", clientH <= screenH)
+
+        // 6: innerHeight and outerHeight must be internally consistent (inner <= outer)
+        assertTrue("innerHeight must be <= outerHeight", innerH <= outerH)
+        assertEquals("Difference must account for desktop browser chrome", 80, outerH - innerH)
+
+        // 7: navigator.platform remains Win32
+        assertTrue("navigator.platform must remain Win32", script.contains("return 'Win32'"))
+
+        // 8: UA Client Hints platform remains Windows
+        assertTrue("UA Client Hints platform must remain Windows", script.contains("platform: 'Windows'"))
+
+        // 9: navigator.userAgentData.mobile remains false
+        assertTrue("navigator.userAgentData.mobile must remain false", script.contains("mobile: false"))
+
+        // 10: maxTouchPoints remains 10
+        assertTrue("maxTouchPoints must remain 10", script.contains("return 10"))
+
+        // 11: Mobile/non-desktop mode remains unchanged
+        val webView = WebView(context)
+        MainActivity.configureBaseSettings(webView, isDarkTheme = false, isDesktopEnabled = false, isWindows10TouchEnabled = false)
+        assertFalse("Mobile mode must not contain Windows NT", webView.settings.userAgentString.contains("Windows NT"))
+    }
 }

@@ -336,22 +336,62 @@ class SettingsRepository(context: Context) {
             prefs.edit().putBoolean(KEY_AD_BLOCKING, value).apply()
         }
 
-    var isDesktopModeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_DESKTOP_MODE, false)
+    var desktopArchitecture: DesktopArchitecture
+        get() {
+            val raw = prefs.getString(KEY_DESKTOP_ARCHITECTURE, null)
+            if (raw != null) {
+                return try {
+                    DesktopArchitecture.valueOf(raw)
+                } catch (_: Exception) {
+                    DesktopArchitecture.NONE
+                }
+            }
+            val isWin10 = prefs.getBoolean(KEY_WINDOWS_10_TOUCH, false)
+            val isDesktop = prefs.getBoolean(KEY_DESKTOP_MODE, false)
+            val migrated = when {
+                isWin10 -> DesktopArchitecture.WINDOWS_10_TOUCH
+                isDesktop -> DesktopArchitecture.STANDARD
+                else -> DesktopArchitecture.NONE
+            }
+            prefs.edit().putString(KEY_DESKTOP_ARCHITECTURE, migrated.name).apply()
+            return migrated
+        }
         set(value) {
-            prefs.edit().putBoolean(KEY_DESKTOP_MODE, value).apply()
+            prefs.edit()
+                .putString(KEY_DESKTOP_ARCHITECTURE, value.name)
+                .putBoolean(KEY_DESKTOP_MODE, value == DesktopArchitecture.STANDARD)
+                .putBoolean(KEY_WINDOWS_10_TOUCH, value == DesktopArchitecture.WINDOWS_10_TOUCH)
+                .apply()
         }
 
-    var isSimpleDesktopModeEnabled: Boolean
-        get() = prefs.getBoolean(KEY_SIMPLE_DESKTOP_MODE, false)
+    var isDesktopModeEnabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.STANDARD
         set(value) {
-            prefs.edit().putBoolean(KEY_SIMPLE_DESKTOP_MODE, value).apply()
+            desktopArchitecture = if (value) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
         }
 
     var isWindows10TouchEnabled: Boolean
-        get() = prefs.getBoolean(KEY_WINDOWS_10_TOUCH, false)
+        get() = desktopArchitecture == DesktopArchitecture.WINDOWS_10_TOUCH
         set(value) {
-            prefs.edit().putBoolean(KEY_WINDOWS_10_TOUCH, value).apply()
+            desktopArchitecture = if (value) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+        }
+
+    var isDesktopMode1Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_1
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE
+        }
+
+    var isDesktopMode2Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_2
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE
+        }
+
+    var isDesktopMode3Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_3
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE
         }
 
     var appTheme: com.muslim.browser.pro.ui.theme.AppTheme
@@ -680,8 +720,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         private const val KEY_AD_BLOCKING = "key_ad_blocking"
         private const val KEY_DESKTOP_MODE = "key_desktop_mode"
-        private const val KEY_SIMPLE_DESKTOP_MODE = "key_simple_desktop_mode"
         private const val KEY_WINDOWS_10_TOUCH = "key_windows_10_touch"
+        private const val KEY_DESKTOP_ARCHITECTURE = "key_desktop_architecture"
         private const val KEY_APP_THEME = "key_app_theme"
         private const val KEY_SELECTED_TRANSLATION_ENGINE = "key_selected_translation_engine"
         private const val KEY_SELECTED_SEARCH_ENGINE = "key_selected_search_engine"

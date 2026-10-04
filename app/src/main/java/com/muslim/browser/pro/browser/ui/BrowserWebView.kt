@@ -221,9 +221,9 @@ fun BrowserWebView(
                     }
                 },
                 update = { container ->
-                    val isDark = !colors.isLight
-                    if (MainActivity.isDarkThemeActive != isDark) {
-                        MainActivity.applyWebViewTheme(webView, isDark)
+                    val isForceDark = uiState.appTheme == com.muslim.browser.pro.ui.theme.AppTheme.FORCE_DARK_ON
+                    if (MainActivity.isDarkThemeActive != isForceDark) {
+                        MainActivity.applyWebViewTheme(webView, isForceDark)
                     }
                     if (container.childCount != 1 || container.getChildAt(0) !== webView) {
                         (webView.parent as? android.view.ViewGroup)?.removeView(webView)

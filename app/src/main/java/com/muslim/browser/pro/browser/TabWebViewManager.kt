@@ -27,7 +27,9 @@ class TabWebViewManager(
     private val onSaveTabBundle: (tabId: String, bundle: Bundle) -> Unit = { _, _ -> },
     private val onSyncTheme: ((WebView, Boolean) -> Unit)? = null,
     private val onSyncDesktopMode: ((WebView, Boolean) -> Unit)? = null,
-    private val isDesktopModeProvider: (() -> Boolean)? = null
+    private val isDesktopModeProvider: (() -> Boolean)? = null,
+    private val onSyncArchitecture: ((WebView, DesktopArchitecture) -> Unit)? = null,
+    private val architectureProvider: (() -> DesktopArchitecture)? = null
 ) {
     companion object {
         const val MAX_LIVE_WEBVIEWS = 4
@@ -54,8 +56,13 @@ class TabWebViewManager(
     ): Pair<WebView, Boolean> {
         val existing = liveWebViews[tabId]
         if (existing != null) {
-            isDesktopModeProvider?.invoke()?.let { isDesktop ->
-                onSyncDesktopMode?.invoke(existing, isDesktop)
+            val arch = architectureProvider?.invoke()
+            if (arch != null) {
+                onSyncArchitecture?.invoke(existing, arch)
+            } else {
+                isDesktopModeProvider?.invoke()?.let { isDesktop ->
+                    onSyncDesktopMode?.invoke(existing, isDesktop)
+                }
             }
             return Pair(existing, false)
         }
@@ -75,8 +82,13 @@ class TabWebViewManager(
             newWebView.loadUrl(url)
         }
 
-        isDesktopModeProvider?.invoke()?.let { isDesktop ->
-            onSyncDesktopMode?.invoke(newWebView, isDesktop)
+        val arch = architectureProvider?.invoke()
+        if (arch != null) {
+            onSyncArchitecture?.invoke(newWebView, arch)
+        } else {
+            isDesktopModeProvider?.invoke()?.let { isDesktop ->
+                onSyncDesktopMode?.invoke(newWebView, isDesktop)
+            }
         }
 
         liveWebViews[tabId] = newWebView
@@ -105,6 +117,23 @@ class TabWebViewManager(
             for ((_, webView) in liveWebViews) {
                 try {
                     onSyncDesktopMode?.invoke(webView, isDesktopMode)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * Synchronizes all currently retained live WebViews with the active DesktopArchitecture.
+     */
+    fun syncAllLiveWebViewsArchitecture(architecture: DesktopArchitecture) {
+        synchronized(liveWebViews) {
+            for ((_, webView) in liveWebViews) {
+                try {
+                    if (onSyncArchitecture != null) {
+                        onSyncArchitecture.invoke(webView, architecture)
+                    } else {
+                        onSyncDesktopMode?.invoke(webView, architecture.isAnyDesktop)
+                    }
                 } catch (_: Exception) {}
             }
         }

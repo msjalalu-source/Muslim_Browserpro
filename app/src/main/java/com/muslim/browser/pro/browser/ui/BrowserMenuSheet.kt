@@ -85,7 +85,9 @@ fun BrowserMenuSheet(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
-    onToggleSimpleDesktopMode: (Boolean) -> Unit = {},
+    onToggleDesktopMode1: (Boolean) -> Unit = {},
+    onToggleDesktopMode2: (Boolean) -> Unit = {},
+    onToggleDesktopMode3: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
@@ -731,19 +733,19 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Simple Desktop Mode (Experimental Minimal Architecture)
+                // Desktop Mode 1 (Conservative Simplification)
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("item_simple_desktop_mode"),
+                        .testTag("section_desktop_mode_1"),
                     shape = RoundedCornerShape(8.dp),
-                    color = colors.surface,
-                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -753,20 +755,20 @@ fun BrowserMenuSheet(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = null,
-                                tint = if (uiState.isSimpleDesktopModeEnabled) colors.accent else colors.iconTint,
+                                contentDescription = "Desktop Mode 1",
+                                tint = if (uiState.isDesktopMode1Enabled) colors.accent else colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Simple Desktop Mode",
+                                    text = "Desktop Mode 1",
                                     color = colors.textPrimary,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Experimental minimal native architecture",
+                                    text = "Conservative simplification",
                                     color = colors.textSecondary,
                                     fontSize = 10.sp
                                 )
@@ -774,15 +776,131 @@ fun BrowserMenuSheet(
                         }
 
                         Switch(
-                            checked = uiState.isSimpleDesktopModeEnabled,
-                            onCheckedChange = onToggleSimpleDesktopMode,
+                            checked = uiState.isDesktopMode1Enabled,
+                            onCheckedChange = onToggleDesktopMode1,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
                                 uncheckedThumbColor = colors.textSecondary,
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
-                            modifier = Modifier.testTag("simple_desktop_mode_switch")
+                            modifier = Modifier.testTag("desktop_mode_1_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Desktop Mode 2 (Balanced Simplification)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("section_desktop_mode_2"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DesktopWindows,
+                                contentDescription = "Desktop Mode 2",
+                                tint = if (uiState.isDesktopMode2Enabled) colors.accent else colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Desktop Mode 2",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Balanced simplification",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = uiState.isDesktopMode2Enabled,
+                            onCheckedChange = onToggleDesktopMode2,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("desktop_mode_2_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Desktop Mode 3 (Maximum Simplification)
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("section_desktop_mode_3"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DesktopWindows,
+                                contentDescription = "Desktop Mode 3",
+                                tint = if (uiState.isDesktopMode3Enabled) colors.accent else colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Desktop Mode 3",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Maximum simplification",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = uiState.isDesktopMode3Enabled,
+                            onCheckedChange = onToggleDesktopMode3,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("desktop_mode_3_switch")
                         )
                     }
                 }

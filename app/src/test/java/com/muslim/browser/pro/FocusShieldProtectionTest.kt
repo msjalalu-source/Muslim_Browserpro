@@ -172,12 +172,19 @@ class FocusShieldProtectionTest {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val viewModel = com.muslim.browser.pro.browser.BrowserViewModel(app)
 
-        // Submit regular query
-        val allowed = viewModel.submitQueryOrUrl("learn jetpack compose")
-        assertTrue("Valid query must be allowed", allowed)
-        val target = viewModel.uiState.value.currentUrl
-        assertTrue("Must be directed to Google", target.startsWith("https://www.google.com/search?q="))
-        assertTrue("Must include safe=active", target.contains("safe=active"))
+        // Default fresh-install search engine is DuckDuckGo with safe search
+        val allowedDefault = viewModel.submitQueryOrUrl("learn jetpack compose")
+        assertTrue("Valid query must be allowed", allowedDefault)
+        val targetDefault = viewModel.uiState.value.currentUrl
+        assertTrue("Must be directed to safe DuckDuckGo", targetDefault.startsWith("https://safe.duckduckgo.com/?q="))
+
+        // When Google is selected, normalizes to Google SafeSearch
+        viewModel.selectSearchEngine(com.muslim.browser.pro.browser.SearchEngine.GOOGLE)
+        val allowedGoogle = viewModel.submitQueryOrUrl("learn kotlin coroutines")
+        assertTrue("Valid query must be allowed", allowedGoogle)
+        val targetGoogle = viewModel.uiState.value.currentUrl
+        assertTrue("Must be directed to Google", targetGoogle.startsWith("https://www.google.com/search?q="))
+        assertTrue("Must include safe=active", targetGoogle.contains("safe=active"))
     }
 
     @Test
