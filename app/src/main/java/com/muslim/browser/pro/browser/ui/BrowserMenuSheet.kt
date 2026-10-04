@@ -808,14 +808,14 @@ fun BrowserMenuSheet(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Windows 10 Touch",
+                                contentDescription = "Windows 10 Desktop",
                                 tint = if (uiState.isWindows10TouchEnabled) colors.accent else colors.textPrimary,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Windows 10 Touch",
+                                    text = "Windows 10 Desktop",
                                     color = colors.textPrimary,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Medium

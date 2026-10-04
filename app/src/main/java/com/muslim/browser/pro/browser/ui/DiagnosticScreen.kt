@@ -68,7 +68,7 @@ data class DiagnosticData(
     val navigatorMaxTouchPoints: String = "Fetching...",
     val viewportMetaContent: String = "Fetching...",
     val currentWebViewUrl: String = "",
-    val desktopModeState: String = "", // "MOBILE MODE", "DESKTOP MODE", or "WINDOWS 10 TOUCH PROFILE"
+    val desktopModeState: String = "", // "MOBILE MODE", "DESKTOP MODE", or "WINDOWS 10 DESKTOP PROFILE"
     val navigatorPlatform: String = "Fetching...",
     val navigatorAppVersion: String = "Fetching...",
     val navigatorVendor: String = "Fetching...",
@@ -142,6 +142,10 @@ fun collectLiveWebViewDiagnostics(
             )
         )
         return
+    }
+
+    if (isWindows10TouchEnabled) {
+        com.muslim.browser.pro.browser.WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
     }
 
     val uaSettings = try { webView.settings.userAgentString ?: "" } catch (_: Exception) { "" }

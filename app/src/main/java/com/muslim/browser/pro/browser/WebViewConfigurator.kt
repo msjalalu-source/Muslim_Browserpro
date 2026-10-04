@@ -33,20 +33,30 @@ object WebViewConfigurator {
 
     val WINDOWS_10_TOUCH_INJECTION_SCRIPT: String = """
         (function() {
-            if (window.__mb_win10_touch_active__) return;
-            window.__mb_win10_touch_active__ = true;
-
-            // 1. Navigator hardware & platform signals
+            // 1. Navigator hardware & platform signals (Windows 10 Desktop/Tablet)
             try {
-                Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true });
-                Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true });
-                Object.defineProperty(navigator, 'appVersion', { get: () => '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36', configurable: true });
-                Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 10, configurable: true });
-                Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
-                Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
+                var navProto = Object.getPrototypeOf(navigator) || (window.Navigator && window.Navigator.prototype);
+                var navProps = {
+                    platform: { get: function() { return 'Win32'; }, configurable: true },
+                    vendor: { get: function() { return 'Google Inc.'; }, configurable: true },
+                    userAgent: { get: function() { return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'; }, configurable: true },
+                    appVersion: { get: function() { return '5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'; }, configurable: true },
+                    maxTouchPoints: { get: function() { return 10; }, configurable: true },
+                    hardwareConcurrency: { get: function() { return 8; }, configurable: true },
+                    deviceMemory: { get: function() { return 8; }, configurable: true }
+                };
+                for (var key in navProps) {
+                    try { Object.defineProperty(navigator, key, navProps[key]); } catch(e) {}
+                    if (navProto) {
+                        try { Object.defineProperty(navProto, key, navProps[key]); } catch(e) {}
+                    }
+                    if (window.Navigator && window.Navigator.prototype) {
+                        try { Object.defineProperty(window.Navigator.prototype, key, navProps[key]); } catch(e) {}
+                    }
+                }
             } catch(e) {}
 
-            // 2. User-Agent Client Hints (navigator.userAgentData)
+            // 2. User-Agent Client Hints (navigator.userAgentData: platform 'Windows', mobile false)
             try {
                 var uaData = {
                     brands: [
@@ -80,10 +90,51 @@ object WebViewConfigurator {
                         return { brands: this.brands, mobile: this.mobile, platform: this.platform };
                     }
                 };
-                Object.defineProperty(navigator, 'userAgentData', { get: () => uaData, configurable: true });
+                var uadDescriptor = { get: function() { return uaData; }, configurable: true };
+                try { Object.defineProperty(navigator, 'userAgentData', uadDescriptor); } catch(e) {}
+                if (navProto) {
+                    try { Object.defineProperty(navProto, 'userAgentData', uadDescriptor); } catch(e) {}
+                }
+                if (window.Navigator && window.Navigator.prototype) {
+                    try { Object.defineProperty(window.Navigator.prototype, 'userAgentData', uadDescriptor); } catch(e) {}
+                }
             } catch(e) {}
 
-            // 3. WebGL GPU / Unmasked Renderer Signals
+            // 3. Screen Dimensions (Desktop-class Windows 10: 1920x1080)
+            try {
+                var screenProto = Object.getPrototypeOf(window.screen) || (window.Screen && window.Screen.prototype);
+                var screenProps = {
+                    width: { get: function() { return 1920; }, configurable: true },
+                    height: { get: function() { return 1080; }, configurable: true },
+                    availWidth: { get: function() { return 1920; }, configurable: true },
+                    availHeight: { get: function() { return 1040; }, configurable: true },
+                    colorDepth: { get: function() { return 24; }, configurable: true },
+                    pixelDepth: { get: function() { return 24; }, configurable: true }
+                };
+                for (var sKey in screenProps) {
+                    try { Object.defineProperty(window.screen, sKey, screenProps[sKey]); } catch(e) {}
+                    if (screenProto) {
+                        try { Object.defineProperty(screenProto, sKey, screenProps[sKey]); } catch(e) {}
+                    }
+                    if (window.Screen && window.Screen.prototype) {
+                        try { Object.defineProperty(window.Screen.prototype, sKey, screenProps[sKey]); } catch(e) {}
+                    }
+                }
+            } catch(e) {}
+
+            // 4. Window Outer Dimensions (Desktop-consistent: outerWidth/outerHeight)
+            try {
+                Object.defineProperty(window, 'outerWidth', {
+                    get: function() { return window.innerWidth ? Math.max(window.innerWidth, 1280) : 1280; },
+                    configurable: true
+                });
+                Object.defineProperty(window, 'outerHeight', {
+                    get: function() { return window.innerHeight ? Math.max(window.innerHeight, 720) : 1040; },
+                    configurable: true
+                });
+            } catch(e) {}
+
+            // 5. WebGL GPU / Unmasked Renderer Signals (Intel Direct3D11)
             try {
                 var UNMASKED_VENDOR_WEBGL = 0x9245;
                 var UNMASKED_RENDERER_WEBGL = 0x9246;
@@ -103,7 +154,7 @@ object WebViewConfigurator {
                 if (window.WebGL2RenderingContext) patchContext(WebGL2RenderingContext.prototype);
             } catch(e) {}
 
-            // 4. CSS Media Queries for Windows 10 Touch (fine pointer + coarse touch + hover)
+            // 6. CSS Media Queries for Windows 10 Touch (fine pointer + coarse touch + hover)
             try {
                 if (window.matchMedia) {
                     var origMm = window.matchMedia;
@@ -601,15 +652,80 @@ object WebViewConfigurator {
     fun applyWebPageDarkTheme(webView: WebView?, isDarkTheme: Boolean) {
         if (webView == null) return
         try {
-            val cleanupScript = """
-                (function() {
-                    try {
-                        var el = document.getElementById('__mb_dark_theme__');
-                        if (el) el.remove();
-                    } catch(e) {}
-                })();
-            """.trimIndent()
-            webView.evaluateJavascript(cleanupScript, null)
+            if (isDarkTheme) {
+                val script = """
+                    (function() {
+                        try {
+                            var style = document.getElementById('__mb_dark_theme__');
+                            if (!style) {
+                                style = document.createElement('style');
+                                style.id = '__mb_dark_theme__';
+                                (document.head || document.documentElement).appendChild(style);
+                            }
+                            style.textContent = `
+                                [data-mb-white-bg="true"] { background-color: gray !important; }
+                                [data-mb-white-color="true"] { color: gray !important; }
+                                [data-mb-white-border="true"] { border-color: gray !important; }
+                            `;
+
+                            function isPureWhite(colorStr) {
+                                if (!colorStr) return false;
+                                var s = colorStr.replace(/\s+/g, '').toLowerCase();
+                                return s === 'rgb(255,255,255)' ||
+                                       s === 'rgba(255,255,255,1)' ||
+                                       s === '#ffffff' ||
+                                       s === '#fff' ||
+                                       s === 'white';
+                            }
+
+                            var html = document.documentElement;
+                            var body = document.body;
+                            if (html) {
+                                var htmlBg = window.getComputedStyle(html).backgroundColor;
+                                var bodyBg = body ? window.getComputedStyle(body).backgroundColor : null;
+                                var isHtmlTrans = !htmlBg || htmlBg === 'rgba(0,0,0,0)' || htmlBg === 'transparent';
+                                var isBodyTrans = !bodyBg || bodyBg === 'rgba(0,0,0,0)' || bodyBg === 'transparent';
+                                if (isPureWhite(htmlBg) || (isHtmlTrans && (isBodyTrans || isPureWhite(bodyBg)))) {
+                                    html.setAttribute('data-mb-white-bg', 'true');
+                                }
+                            }
+
+                            var all = document.querySelectorAll('*');
+                            for (var i = 0; i < all.length; i++) {
+                                var node = all[i];
+                                if (node.id === '__mb_dark_theme__') continue;
+                                var cs = window.getComputedStyle(node);
+                                if (isPureWhite(cs.backgroundColor)) {
+                                    node.setAttribute('data-mb-white-bg', 'true');
+                                }
+                                if (isPureWhite(cs.color)) {
+                                    node.setAttribute('data-mb-white-color', 'true');
+                                }
+                                if (isPureWhite(cs.borderColor)) {
+                                    node.setAttribute('data-mb-white-border', 'true');
+                                }
+                            }
+                        } catch(e) {}
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(script, null)
+            } else {
+                val cleanupScript = """
+                    (function() {
+                        try {
+                            var el = document.getElementById('__mb_dark_theme__');
+                            if (el) el.remove();
+                            var nodes = document.querySelectorAll('[data-mb-white-bg],[data-mb-white-color],[data-mb-white-border]');
+                            for (var i = 0; i < nodes.length; i++) {
+                                nodes[i].removeAttribute('data-mb-white-bg');
+                                nodes[i].removeAttribute('data-mb-white-color');
+                                nodes[i].removeAttribute('data-mb-white-border');
+                            }
+                        } catch(e) {}
+                    })();
+                """.trimIndent()
+                webView.evaluateJavascript(cleanupScript, null)
+            }
         } catch (_: Throwable) {}
     }
 }

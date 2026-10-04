@@ -19,7 +19,9 @@ class SettingsRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    // In-memory cache of keywords to avoid disk reads on every URL evaluation
+    // In-memory cache of user-added keywords persisted in SharedPreferences
+    private val inMemoryUserKeywords = LinkedHashSet<String>()
+    // In-memory cache of all effective keywords (built-in protected defaults + user-added keywords)
     private val inMemoryKeywords = LinkedHashSet<String>()
     // Pre-normalized lowercased keywords cache for O(1) string checks without repeated allocation
     private val inMemoryNormalizedKeywords = ArrayList<String>()
@@ -41,9 +43,8 @@ class SettingsRepository(context: Context) {
 
     init {
         val savedKeywords = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
-        inMemoryKeywords.addAll(savedKeywords)
-        cachedKeywordsSet = inMemoryKeywords.toSet()
-        rebuildNormalizedKeywords()
+        inMemoryUserKeywords.addAll(savedKeywords)
+        rebuildEffectiveKeywords()
 
         // Load favorites once from disk into memory
         loadFavoritesFromDisk()
@@ -53,6 +54,14 @@ class SettingsRepository(context: Context) {
 
         // Load download history once from disk into memory
         loadDownloadHistoryFromDisk()
+    }
+
+    private fun rebuildEffectiveKeywords() {
+        inMemoryKeywords.clear()
+        inMemoryKeywords.addAll(DEFAULT_PROTECTED_KEYWORDS)
+        inMemoryKeywords.addAll(inMemoryUserKeywords)
+        cachedKeywordsSet = inMemoryKeywords.toSet()
+        rebuildNormalizedKeywords()
     }
 
     private fun rebuildNormalizedKeywords() {
@@ -180,7 +189,7 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Gets unmodifiable view of currently active custom keywords.
+     * Gets unmodifiable view of currently active custom keywords (built-in protected defaults + user-added).
      * Returns cached immutable set snapshot to eliminate per-call allocations.
      */
     fun getCustomKeywords(): Set<String> {
@@ -195,8 +204,16 @@ class SettingsRepository(context: Context) {
     }
 
     /**
-     * Adds a new protected keyword.
-     * Prevents empty entries and duplicate entries (case-insensitive).
+     * Checks if a keyword is one of the built-in protected defaults that cannot be deleted, removed, or overwritten.
+     */
+    fun isDefaultProtectedKeyword(keyword: String): Boolean {
+        val normalized = keyword.trim().lowercase(Locale.ROOT)
+        return DEFAULT_PROTECTED_KEYWORDS.any { it.trim().lowercase(Locale.ROOT) == normalized }
+    }
+
+    /**
+     * Adds a new user protected keyword.
+     * Prevents empty entries and duplicate entries (case-insensitive) against all effective keywords.
      * Returns true if successfully added, false if duplicate or blank.
      */
     fun addCustomKeyword(keyword: String): Boolean {
@@ -209,13 +226,43 @@ class SettingsRepository(context: Context) {
             return false
         }
 
+        inMemoryUserKeywords.add(trimmed)
         inMemoryKeywords.add(trimmed)
         inMemoryNormalizedKeywords.add(normalized)
         cachedKeywordsSet = inMemoryKeywords.toSet()
         prefs.edit()
-            .putStringSet(KEY_CUSTOM_KEYWORDS, cachedKeywordsSet)
+            .putStringSet(KEY_CUSTOM_KEYWORDS, inMemoryUserKeywords)
             .apply()
         return true
+    }
+
+    /**
+     * Removes a user-added keyword. Built-in protected defaults CANNOT be removed or deleted.
+     * Returns true if removed, false if not found or is a built-in protected default.
+     */
+    fun removeCustomKeyword(keyword: String): Boolean {
+        if (isDefaultProtectedKeyword(keyword)) {
+            return false
+        }
+        val removed = inMemoryUserKeywords.remove(keyword)
+        if (removed) {
+            rebuildEffectiveKeywords()
+            prefs.edit()
+                .putStringSet(KEY_CUSTOM_KEYWORDS, inMemoryUserKeywords)
+                .apply()
+        }
+        return removed
+    }
+
+    /**
+     * Clears user-added keywords. Built-in protected defaults are always retained.
+     */
+    fun clearUserKeywords() {
+        inMemoryUserKeywords.clear()
+        rebuildEffectiveKeywords()
+        prefs.edit()
+            .remove(KEY_CUSTOM_KEYWORDS)
+            .apply()
     }
 
     /**
@@ -628,6 +675,23 @@ class SettingsRepository(context: Context) {
         private const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
         private const val KEY_HISTORY = "key_browsing_history"
         private const val KEY_DOWNLOAD_HISTORY = "key_download_history"
+
+        val DEFAULT_PROTECTED_KEYWORDS: List<String> = listOf(
+            "Aashiq Banaya",
+            "hot",
+            "intimate",
+            "adult",
+            "kiss",
+            "online",
+            "video",
+            "anonymous",
+            "anonymity",
+            "18+",
+            "download",
+            "downloaded",
+            "downloading",
+            "downl"
+        )
 
         val DEFAULT_FAVORITES = listOf(
             FavoriteSite(id = "fav_moldovalive", name = "MoldovaLive", url = "https://moldovalive.md", iconLetter = "ML", badgeColor = 0xFF00796B),

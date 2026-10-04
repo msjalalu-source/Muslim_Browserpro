@@ -277,4 +277,22 @@ class Windows10TouchProfileTest {
         assertTrue("Must support pointer: fine", script.contains("(pointer: fine)"))
         assertTrue("Must support any-pointer: coarse", script.contains("(any-pointer: coarse)"))
     }
+
+    @Test
+    fun test12_windows10DesktopScreenAndOuterDimensionsIntegrity() {
+        val script = WebViewConfigurator.WINDOWS_10_TOUCH_INJECTION_SCRIPT
+
+        // Verify desktop screen dimensions (1920x1080)
+        assertTrue("Must spoof screen.width to 1920", script.contains("1920"))
+        assertTrue("Must spoof screen.height to 1080", script.contains("1080"))
+        assertTrue("Must spoof screen.availHeight to 1040", script.contains("1040"))
+
+        // Verify outer window dimensions
+        assertTrue("Must spoof window.outerWidth", script.contains("outerWidth"))
+        assertTrue("Must spoof window.outerHeight", script.contains("outerHeight"))
+
+        // Verify prototype patching
+        assertTrue("Must define properties on NavProto", script.contains("navProto"))
+        assertTrue("Must define properties on screenProto", script.contains("screenProto"))
+    }
 }
