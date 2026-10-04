@@ -139,6 +139,15 @@ class TabWebViewManager(
     }
 
     /**
+     * Checks if the given WebView is currently tracked in [liveWebViews].
+     */
+    fun hasLiveWebView(webView: WebView): Boolean {
+        synchronized(liveWebViews) {
+            return liveWebViews.containsValue(webView)
+        }
+    }
+
+    /**
      * Executes an action on all currently retained live WebViews.
      */
     fun forEachLiveWebView(action: (WebView) -> Unit) {

@@ -376,22 +376,10 @@ class SettingsRepository(context: Context) {
             desktopArchitecture = if (value) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
         }
 
-    var isDesktopMode1Enabled: Boolean
-        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_1
-        set(value) {
-            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE
-        }
-
     var isDesktopMode4Enabled: Boolean
         get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_4
         set(value) {
             desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
-        }
-
-    var isDesktopMode5Enabled: Boolean
-        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_5
-        set(value) {
-            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_5 else DesktopArchitecture.NONE
         }
 
     var appTheme: com.muslim.browser.pro.ui.theme.AppTheme

@@ -76,11 +76,6 @@ data class BrowserUiState(
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
     val desktopArchitecture: DesktopArchitecture = DesktopArchitecture.NONE,
-    val isDesktopModeEnabled: Boolean = false,
-    val isDesktopMode1Enabled: Boolean = false,
-    val isDesktopMode4Enabled: Boolean = false,
-    val isDesktopMode5Enabled: Boolean = false,
-    val isWindows10TouchEnabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE,
@@ -88,7 +83,16 @@ data class BrowserUiState(
     val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
     val isDiagnosticOpen: Boolean = false
-)
+) {
+    val isDesktopModeEnabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.STANDARD
+
+    val isDesktopMode4Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_4
+
+    val isWindows10TouchEnabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.WINDOWS_10_TOUCH
+}
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -117,11 +121,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 desktopArchitecture = repository.desktopArchitecture,
-                isDesktopModeEnabled = repository.isDesktopModeEnabled,
-                isDesktopMode1Enabled = repository.isDesktopMode1Enabled,
-                isDesktopMode4Enabled = repository.isDesktopMode4Enabled,
-                isDesktopMode5Enabled = repository.isDesktopMode5Enabled,
-                isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
                 appTheme = repository.appTheme,
@@ -643,14 +642,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun selectDesktopArchitecture(architecture: DesktopArchitecture) {
         repository.desktopArchitecture = architecture
         _uiState.update {
-            it.copy(
-                desktopArchitecture = architecture,
-                isDesktopModeEnabled = architecture == DesktopArchitecture.STANDARD,
-                isDesktopMode1Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_1,
-                isDesktopMode4Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_4,
-                isDesktopMode5Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_5,
-                isWindows10TouchEnabled = architecture == DesktopArchitecture.WINDOWS_10_TOUCH
-            )
+            it.copy(desktopArchitecture = architecture)
         }
     }
 
@@ -658,16 +650,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE)
     }
 
-    fun toggleDesktopMode1(enabled: Boolean) {
-        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
-    }
-
     fun toggleDesktopMode4(enabled: Boolean) {
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
-    }
-
-    fun toggleDesktopMode5(enabled: Boolean) {
-        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_5 else DesktopArchitecture.NONE)
     }
 
     fun toggleWindows10Touch(enabled: Boolean) {

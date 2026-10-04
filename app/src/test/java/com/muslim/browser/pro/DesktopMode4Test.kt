@@ -73,8 +73,6 @@ class DesktopMode4Test {
         viewModel.toggleDesktopMode4(true)
         assertTrue(viewModel.uiState.value.isDesktopMode4Enabled)
         assertFalse(viewModel.uiState.value.isDesktopModeEnabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode1Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode5Enabled)
         assertFalse(viewModel.uiState.value.isWindows10TouchEnabled)
         assertEquals(DesktopArchitecture.DESKTOP_MODE_4, viewModel.uiState.value.desktopArchitecture)
 
@@ -89,26 +87,6 @@ class DesktopMode4Test {
         assertTrue(viewModel.uiState.value.isDesktopMode4Enabled)
         assertFalse(viewModel.uiState.value.isDesktopModeEnabled)
         assertEquals(DesktopArchitecture.DESKTOP_MODE_4, viewModel.uiState.value.desktopArchitecture)
-
-        // Toggle Mode 1 ON -> Mode 4 must turn OFF
-        viewModel.toggleDesktopMode1(true)
-        assertTrue(viewModel.uiState.value.isDesktopMode1Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode4Enabled)
-
-        // Toggle Mode 4 ON again -> Mode 1 must turn OFF
-        viewModel.toggleDesktopMode4(true)
-        assertTrue(viewModel.uiState.value.isDesktopMode4Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode1Enabled)
-
-        // Toggle Mode 5 ON -> Mode 4 must turn OFF
-        viewModel.toggleDesktopMode5(true)
-        assertTrue(viewModel.uiState.value.isDesktopMode5Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode4Enabled)
-
-        // Toggle Mode 4 ON again
-        viewModel.toggleDesktopMode4(true)
-        assertTrue(viewModel.uiState.value.isDesktopMode4Enabled)
-        assertFalse(viewModel.uiState.value.isDesktopMode5Enabled)
 
         // Toggle Windows 10 Touch ON -> Mode 4 must turn OFF
         viewModel.toggleWindows10Touch(true)

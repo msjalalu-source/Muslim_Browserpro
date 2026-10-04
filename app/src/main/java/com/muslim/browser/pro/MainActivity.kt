@@ -332,9 +332,7 @@ class MainActivity : ComponentActivity() {
                     onClearAllData = { clearAllData() },
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
-                    onToggleDesktopMode1 = { enabled -> setDesktopMode1(enabled) },
                     onToggleDesktopMode4 = { enabled -> setDesktopMode4(enabled) },
-                    onToggleDesktopMode5 = { enabled -> setDesktopMode5(enabled) },
                     onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
                     onSslCancel = { host -> onSslPromptCancel(host) },
@@ -412,9 +410,7 @@ class MainActivity : ComponentActivity() {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
                             }
                             DesktopArchitecture.STANDARD,
-                            DesktopArchitecture.DESKTOP_MODE_1,
-                            DesktopArchitecture.DESKTOP_MODE_4,
-                            DesktopArchitecture.DESKTOP_MODE_5 -> {
+                            DesktopArchitecture.DESKTOP_MODE_4 -> {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.DESKTOP_USER_AGENT
                             }
                             DesktopArchitecture.NONE -> null
@@ -438,10 +434,7 @@ class MainActivity : ComponentActivity() {
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     val activeArch = viewModel.uiState.value.desktopArchitecture
                     if (view != null) {
-                        WebViewConfigurator.applyArchitectureViewport(view, activeArch)
-                        if (activeArch == DesktopArchitecture.WINDOWS_10_TOUCH && !WebViewConfigurator.isAuthenticationUrl(url)) {
-                            WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
-                        }
+                        com.muslim.browser.pro.browser.DesktopCore.handlePageLifecycle(view, activeArch, url)
                     }
                     viewModel.onPageCommitVisible()
                 }
@@ -450,10 +443,7 @@ class MainActivity : ComponentActivity() {
                     super.onPageFinished(view, url)
                     val activeArch = viewModel.uiState.value.desktopArchitecture
                     if (view != null) {
-                        WebViewConfigurator.applyArchitectureViewport(view, activeArch)
-                        if (activeArch == DesktopArchitecture.WINDOWS_10_TOUCH && !WebViewConfigurator.isAuthenticationUrl(url)) {
-                            WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
-                        }
+                        com.muslim.browser.pro.browser.DesktopCore.handlePageLifecycle(view, activeArch, url)
                     }
                     android.util.Log.d(
                         "DESKTOP_DEBUG",
@@ -966,12 +956,14 @@ class MainActivity : ComponentActivity() {
         viewModel.selectDesktopArchitecture(architecture)
         tabWebViewManager.syncAllLiveWebViewsArchitecture(architecture)
         val webView = webViewInstance ?: return
-        WebViewConfigurator.syncDesktopArchitecture(
-            webView = webView,
-            url = webView.url,
-            architecture = architecture,
-            updateUserAgent = true
-        )
+        if (!tabWebViewManager.hasLiveWebView(webView)) {
+            WebViewConfigurator.syncDesktopArchitecture(
+                webView = webView,
+                url = webView.url,
+                architecture = architecture,
+                updateUserAgent = true
+            )
+        }
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
@@ -995,16 +987,8 @@ class MainActivity : ComponentActivity() {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE)
     }
 
-    internal fun setDesktopMode1(enabled: Boolean) {
-        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
-    }
-
     internal fun setDesktopMode4(enabled: Boolean) {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
-    }
-
-    internal fun setDesktopMode5(enabled: Boolean) {
-        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_5 else DesktopArchitecture.NONE)
     }
 
     internal fun setWindows10Touch(enabled: Boolean) {
@@ -1209,9 +1193,7 @@ fun BrowserApp(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
-    onToggleDesktopMode1: (Boolean) -> Unit = {},
     onToggleDesktopMode4: (Boolean) -> Unit = {},
-    onToggleDesktopMode5: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onSslProceed: (String) -> Unit = {},
     onSslCancel: (String) -> Unit = {},
@@ -1424,9 +1406,7 @@ fun BrowserApp(
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
-                    onToggleDesktopMode1 = onToggleDesktopMode1,
                     onToggleDesktopMode4 = onToggleDesktopMode4,
-                    onToggleDesktopMode5 = onToggleDesktopMode5,
                     onToggleWindows10Touch = onToggleWindows10Touch,
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
