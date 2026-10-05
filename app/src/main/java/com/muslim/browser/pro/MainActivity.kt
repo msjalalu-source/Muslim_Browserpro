@@ -335,6 +335,7 @@ class MainActivity : ComponentActivity() {
                     onToggleDesktopMode1 = { enabled -> setDesktopMode1(enabled) },
                     onToggleDesktopMode2 = { enabled -> setDesktopMode2(enabled) },
                     onToggleDesktopMode3 = { enabled -> setDesktopMode3(enabled) },
+                    onToggleDesktopMode4 = { enabled -> setDesktopMode4(enabled) },
                     onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
                     onToggleWindows7 = { enabled -> setWindows7(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
@@ -416,6 +417,7 @@ class MainActivity : ComponentActivity() {
                             DesktopArchitecture.DESKTOP_MODE_1,
                             DesktopArchitecture.DESKTOP_MODE_2,
                             DesktopArchitecture.DESKTOP_MODE_3,
+                            DesktopArchitecture.DESKTOP_MODE_4,
                             DesktopArchitecture.WINDOWS_7 -> {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.DESKTOP_USER_AGENT
                             }
@@ -1007,6 +1009,10 @@ class MainActivity : ComponentActivity() {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
     }
 
+    internal fun setDesktopMode4(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
+    }
+
     internal fun setWindows10Touch(enabled: Boolean) {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE)
     }
@@ -1216,6 +1222,7 @@ fun BrowserApp(
     onToggleDesktopMode1: (Boolean) -> Unit = {},
     onToggleDesktopMode2: (Boolean) -> Unit = {},
     onToggleDesktopMode3: (Boolean) -> Unit = {},
+    onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onToggleWindows7: (Boolean) -> Unit = {},
     onSslProceed: (String) -> Unit = {},
@@ -1429,9 +1436,7 @@ fun BrowserApp(
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
-                    onToggleDesktopMode1 = onToggleDesktopMode1,
-                    onToggleDesktopMode2 = onToggleDesktopMode2,
-                    onToggleDesktopMode3 = onToggleDesktopMode3,
+                    onToggleDesktopMode4 = onToggleDesktopMode4,
                     onToggleWindows10Touch = onToggleWindows10Touch,
                     onToggleWindows7 = onToggleWindows7,
                     onTranslateToBengali = {

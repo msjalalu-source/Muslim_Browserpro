@@ -22,6 +22,7 @@ enum class DesktopArchitecture(val displayName: String) {
     DESKTOP_MODE_1("Desktop Mode 1"),
     DESKTOP_MODE_2("Desktop Mode 2"),
     DESKTOP_MODE_3("Desktop Mode 3"),
+    DESKTOP_MODE_4("Desktop Mode 4"),
     WINDOWS_10_TOUCH("Windows 10 Desktop"),
     WINDOWS_7("Windows 7");
 
@@ -39,6 +40,9 @@ enum class DesktopArchitecture(val displayName: String) {
 
     val isMode3: Boolean
         get() = this == DESKTOP_MODE_3
+
+    val isMode4: Boolean
+        get() = this == DESKTOP_MODE_4
 
     val isWindows10Touch: Boolean
         get() = this == WINDOWS_10_TOUCH

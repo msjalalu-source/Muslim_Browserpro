@@ -370,6 +370,24 @@ class SettingsRepository(context: Context) {
             desktopArchitecture = if (value) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
         }
 
+    var isDesktopMode1Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_1
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE
+        }
+
+    var isDesktopMode2Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_2
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE
+        }
+
+    var isDesktopMode3Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_3
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE
+        }
+
     var isWindows10TouchEnabled: Boolean
         get() = desktopArchitecture == DesktopArchitecture.WINDOWS_10_TOUCH
         set(value) {

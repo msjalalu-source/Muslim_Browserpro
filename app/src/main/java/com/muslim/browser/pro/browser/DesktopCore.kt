@@ -75,7 +75,11 @@ object DesktopCore {
                     WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
                 }
             }
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.DESKTOP_MODE_1,
+            DesktopArchitecture.DESKTOP_MODE_2,
+            DesktopArchitecture.DESKTOP_MODE_3,
+            DesktopArchitecture.DESKTOP_MODE_4,
+            DesktopArchitecture.WINDOWS_7 -> {
                 WebViewConfigurator.applyArchitectureViewport(webView, architecture)
             }
             DesktopArchitecture.NONE -> {}
@@ -101,7 +105,11 @@ object DesktopCore {
                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
             }
             DesktopArchitecture.STANDARD,
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.DESKTOP_MODE_1,
+            DesktopArchitecture.DESKTOP_MODE_2,
+            DesktopArchitecture.DESKTOP_MODE_3,
+            DesktopArchitecture.DESKTOP_MODE_4,
+            DesktopArchitecture.WINDOWS_7 -> {
                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.DESKTOP_USER_AGENT
             }
             DesktopArchitecture.NONE -> null
@@ -126,7 +134,11 @@ object DesktopCore {
                 }
                 applyCommonDesktopViewport(webView)
             }
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.DESKTOP_MODE_1,
+            DesktopArchitecture.DESKTOP_MODE_2,
+            DesktopArchitecture.DESKTOP_MODE_3,
+            DesktopArchitecture.DESKTOP_MODE_4,
+            DesktopArchitecture.WINDOWS_7 -> {
                 WebViewConfigurator.applyArchitectureViewport(webView, architecture)
             }
             DesktopArchitecture.NONE -> {

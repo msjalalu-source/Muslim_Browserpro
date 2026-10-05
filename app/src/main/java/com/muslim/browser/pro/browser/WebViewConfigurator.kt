@@ -955,12 +955,180 @@ object WebViewConfigurator {
         })();
     """.trimIndent()
 
+    val DESKTOP_MODE_4_GUARD_SCRIPT: String = """
+        (function() {
+            var TARGET_CONTENT = '$DESKTOP_VIEWPORT_CONTENT';
+            var GUARD_KEY = '__mb_desktop_mode4__';
+
+            function applyViewport() {
+                try {
+                    var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+                    if (!head) return;
+                    var meta = document.querySelector('meta[name="viewport"]');
+                    if (!meta) {
+                        meta = document.createElement('meta');
+                        meta.name = 'viewport';
+                        meta.setAttribute('data-mb4-created', 'true');
+                        head.appendChild(meta);
+                    }
+                    if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                        if (meta.getAttribute('data-mb4-orig') === null && !meta.hasAttribute('data-mb4-created')) {
+                            meta.setAttribute('data-mb4-orig', meta.getAttribute('content') || '');
+                        }
+                        meta.setAttribute('content', TARGET_CONTENT);
+                    }
+                    ensureMetaObserver(meta);
+                } catch(e) {}
+            }
+
+            function patchDesktopClientHints() {
+                try {
+                    if (navigator.userAgentData) {
+                        var origUaData = navigator.userAgentData;
+                        var fakeUaData = {
+                            brands: origUaData.brands || [
+                                { brand: 'Google Chrome', version: '131' },
+                                { brand: 'Chromium', version: '131' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ],
+                            mobile: false,
+                            platform: 'Linux',
+                            getHighEntropyValues: function(hints) {
+                                return origUaData.getHighEntropyValues ?
+                                    origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                        vals.mobile = false;
+                                        vals.platform = 'Linux';
+                                        return vals;
+                                    }) :
+                                    Promise.resolve({ mobile: false, platform: 'Linux' });
+                            },
+                            toJSON: function() {
+                                return { brands: this.brands, mobile: false, platform: 'Linux' };
+                            }
+                        };
+                        Object.defineProperty(navigator, 'userAgentData', {
+                            get: function() { return fakeUaData; },
+                            configurable: true
+                        });
+                    }
+                } catch(e) {}
+                try {
+                    Object.defineProperty(navigator, 'platform', {
+                        get: function() { return 'Linux x86_64'; },
+                        configurable: true
+                    });
+                } catch(e) {}
+            }
+
+            if (window[GUARD_KEY]) {
+                window[GUARD_KEY].ensureViewport();
+                return;
+            }
+
+            var metaObserver = null;
+            function ensureMetaObserver(meta) {
+                try {
+                    if (!metaObserver) {
+                        metaObserver = new MutationObserver(function(mutations) {
+                            for (var i = 0; i < mutations.length; i++) {
+                                var m = mutations[i];
+                                if (m.type === 'attributes' && m.attributeName === 'content') {
+                                    applyViewport();
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                    metaObserver.disconnect();
+                    if (meta) {
+                        metaObserver.observe(meta, {
+                            attributes: true,
+                            attributeFilter: ['content']
+                        });
+                    }
+                } catch(e) {}
+            }
+
+            applyViewport();
+            patchDesktopClientHints();
+
+            var headObserver = null;
+            try {
+                headObserver = new MutationObserver(function(mutations) {
+                    for (var i = 0; i < mutations.length; i++) {
+                        var m = mutations[i];
+                        if (m.type === 'childList') {
+                            var shouldApply = false;
+                            for (var j = 0; j < m.addedNodes.length; j++) {
+                                var node = m.addedNodes[j];
+                                if (node.name === 'viewport' || (node.getAttribute && node.getAttribute('name') === 'viewport')) {
+                                    shouldApply = true;
+                                    break;
+                                }
+                            }
+                            if (!shouldApply) {
+                                for (var k = 0; k < m.removedNodes.length; k++) {
+                                    var rnode = m.removedNodes[k];
+                                    if (rnode.name === 'viewport' || (rnode.getAttribute && rnode.getAttribute('name') === 'viewport')) {
+                                        shouldApply = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (shouldApply) {
+                                applyViewport();
+                                break;
+                            }
+                        }
+                    }
+                });
+                if (document.head) {
+                    headObserver.observe(document.head, {
+                        childList: true,
+                        subtree: false
+                    });
+                }
+            } catch(e) {}
+
+            var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+            function onNav() { applyViewport(); }
+            navEvents.forEach(function(evt) {
+                window.addEventListener(evt, onNav, { passive: true });
+            });
+
+            window[GUARD_KEY] = {
+                ensureViewport: applyViewport,
+                cleanup: function() {
+                    try {
+                        if (headObserver) headObserver.disconnect();
+                        if (metaObserver) metaObserver.disconnect();
+                        navEvents.forEach(function(evt) {
+                            window.removeEventListener(evt, onNav);
+                        });
+                        var meta = document.querySelector('meta[name="viewport"]');
+                        if (meta) {
+                            if (meta.hasAttribute('data-mb4-created')) {
+                                meta.remove();
+                            } else if (meta.hasAttribute('data-mb4-orig')) {
+                                var orig = meta.getAttribute('data-mb4-orig');
+                                if (orig) meta.setAttribute('content', orig);
+                                else meta.removeAttribute('content');
+                                meta.removeAttribute('data-mb4-orig');
+                            }
+                        }
+                    } catch(e) {}
+                    delete window[GUARD_KEY];
+                }
+            };
+        })();
+    """.trimIndent()
+
     /**
      * Unified cleanup script that cleans up whichever desktop guard scripts were active.
      */
     val CLEANUP_ALL_DESKTOP_SCRIPTS: String = """
         (function() {
-            var keys = ['__mb_desktop_guard__', '__mb_desktop_mode1__', '__mb_desktop_mode2__', '__mb_desktop_w7__'];
+            var keys = ['__mb_desktop_guard__', '__mb_desktop_mode1__', '__mb_desktop_mode2__', '__mb_desktop_mode4__', '__mb_desktop_w7__'];
             for (var i = 0; i < keys.length; i++) {
                 var k = keys[i];
                 if (window[k] && typeof window[k].cleanup === 'function') {
@@ -970,15 +1138,16 @@ object WebViewConfigurator {
             try {
                 var meta = document.querySelector('meta[name="viewport"]');
                 if (meta) {
-                    if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb1-created') || meta.hasAttribute('data-mb2-created') || meta.hasAttribute('data-mb-w7-created')) {
+                    if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb1-created') || meta.hasAttribute('data-mb2-created') || meta.hasAttribute('data-mb4-created') || meta.hasAttribute('data-mb-w7-created')) {
                         meta.remove();
-                    } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb1-orig') || meta.hasAttribute('data-mb2-orig') || meta.hasAttribute('data-mb-w7-orig')) {
-                        var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb1-orig') || meta.getAttribute('data-mb2-orig') || meta.getAttribute('data-mb-w7-orig');
+                    } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb1-orig') || meta.hasAttribute('data-mb2-orig') || meta.hasAttribute('data-mb4-orig') || meta.hasAttribute('data-mb-w7-orig')) {
+                        var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb1-orig') || meta.getAttribute('data-mb2-orig') || meta.getAttribute('data-mb4-orig') || meta.getAttribute('data-mb-w7-orig');
                         if (orig) meta.setAttribute('content', orig);
                         else meta.removeAttribute('content');
                         meta.removeAttribute('data-mb-orig');
                         meta.removeAttribute('data-mb1-orig');
                         meta.removeAttribute('data-mb2-orig');
+                        meta.removeAttribute('data-mb4-orig');
                         meta.removeAttribute('data-mb-w7-orig');
                     }
                 }
@@ -1017,6 +1186,9 @@ object WebViewConfigurator {
                 DesktopArchitecture.DESKTOP_MODE_2 -> {
                     webView.evaluateJavascript(DESKTOP_MODE_2_EVENT_SCRIPT, null)
                 }
+                DesktopArchitecture.DESKTOP_MODE_4 -> {
+                    webView.evaluateJavascript(DESKTOP_MODE_4_GUARD_SCRIPT, null)
+                }
                 DesktopArchitecture.WINDOWS_7 -> {
                     webView.evaluateJavascript(WINDOWS_7_VIEWPORT_GUARD_SCRIPT, null)
                 }
@@ -1051,6 +1223,7 @@ object WebViewConfigurator {
             DesktopArchitecture.DESKTOP_MODE_1,
             DesktopArchitecture.DESKTOP_MODE_2,
             DesktopArchitecture.DESKTOP_MODE_3,
+            DesktopArchitecture.DESKTOP_MODE_4,
             DesktopArchitecture.WINDOWS_7 -> {
                 if (isAuthenticationUrl(url)) null else DESKTOP_USER_AGENT
             }
