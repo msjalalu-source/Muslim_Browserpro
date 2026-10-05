@@ -80,6 +80,7 @@ data class BrowserUiState(
     val isDesktopMode1Enabled: Boolean = false,
     val isDesktopMode2Enabled: Boolean = false,
     val isDesktopMode3Enabled: Boolean = false,
+    val isDesktopMode4Enabled: Boolean = false,
     val isWindows10TouchEnabled: Boolean = false,
     val isWindows7Enabled: Boolean = false,
     val isPageTranslated: Boolean = false,
@@ -122,6 +123,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isDesktopMode1Enabled = repository.isDesktopMode1Enabled,
                 isDesktopMode2Enabled = repository.isDesktopMode2Enabled,
                 isDesktopMode3Enabled = repository.isDesktopMode3Enabled,
+                isDesktopMode4Enabled = repository.isDesktopMode4Enabled,
                 isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
                 isWindows7Enabled = repository.isWindows7Enabled,
                 browsingHistory = repository.getHistory(),
@@ -643,6 +645,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isDesktopMode1Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_1,
                 isDesktopMode2Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_2,
                 isDesktopMode3Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_3,
+                isDesktopMode4Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_4,
                 isWindows10TouchEnabled = architecture == DesktopArchitecture.WINDOWS_10_TOUCH,
                 isWindows7Enabled = architecture == DesktopArchitecture.WINDOWS_7
             )
@@ -663,6 +666,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleDesktopMode3(enabled: Boolean) {
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
+    }
+
+    fun toggleDesktopMode4(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
     }
 
     fun toggleWindows10Touch(enabled: Boolean) {
@@ -764,7 +771,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                                         isTranslating = false
                                     )
                                 }
-                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
+                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
                             }
                         }
                     } else {
