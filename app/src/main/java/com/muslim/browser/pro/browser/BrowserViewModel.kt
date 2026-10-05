@@ -76,6 +76,12 @@ data class BrowserUiState(
     val isPopupBlockingEnabled: Boolean = true,
     val isAdBlockingEnabled: Boolean = true,
     val desktopArchitecture: DesktopArchitecture = DesktopArchitecture.NONE,
+    val isDesktopModeEnabled: Boolean = false,
+    val isDesktopMode1Enabled: Boolean = false,
+    val isDesktopMode2Enabled: Boolean = false,
+    val isDesktopMode3Enabled: Boolean = false,
+    val isWindows10TouchEnabled: Boolean = false,
+    val isWindows7Enabled: Boolean = false,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
     val appTheme: com.muslim.browser.pro.ui.theme.AppTheme = com.muslim.browser.pro.ui.theme.AppTheme.BLACK_WHITE,
@@ -83,16 +89,7 @@ data class BrowserUiState(
     val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
     val isDiagnosticOpen: Boolean = false
-) {
-    val isDesktopModeEnabled: Boolean
-        get() = desktopArchitecture == DesktopArchitecture.STANDARD
-
-    val isDesktopMode4Enabled: Boolean
-        get() = desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_4
-
-    val isWindows10TouchEnabled: Boolean
-        get() = desktopArchitecture == DesktopArchitecture.WINDOWS_10_TOUCH
-}
+)
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -121,6 +118,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPopupBlockingEnabled = repository.isPopupBlockingEnabled,
                 isAdBlockingEnabled = repository.isAdBlockingEnabled,
                 desktopArchitecture = repository.desktopArchitecture,
+                isDesktopModeEnabled = repository.isDesktopModeEnabled,
+                isDesktopMode1Enabled = repository.isDesktopMode1Enabled,
+                isDesktopMode2Enabled = repository.isDesktopMode2Enabled,
+                isDesktopMode3Enabled = repository.isDesktopMode3Enabled,
+                isWindows10TouchEnabled = repository.isWindows10TouchEnabled,
+                isWindows7Enabled = repository.isWindows7Enabled,
                 browsingHistory = repository.getHistory(),
                 downloadHistory = repository.getDownloadHistory(),
                 appTheme = repository.appTheme,
@@ -342,11 +345,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
         val normalizedKws = repository.getNormalizedKeywords()
         val customKws = _uiState.value.customKeywords
+        val currentEngine = _uiState.value.selectedSearchEngine
 
-        // Check if input is a search engine URL with a query parameter
-        val queryFromUrl = ProtectionEngine.extractSearchEngineQuery(trimmed)
-        if (queryFromUrl != null) {
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(queryFromUrl, customKws, normalizedKws)
+        // 1. Search Query Handling (either extracted from an incoming search engine URL or submitted as raw search query)
+        val query = ProtectionEngine.extractSearchEngineQuery(trimmed) ?: if (!isWebUrl(trimmed)) trimmed else null
+        if (query != null) {
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(query, customKws, normalizedKws)
             if (blockedKw != null) {
                 setBlockedUrl(
                     url = trimmed,
@@ -355,51 +359,42 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 )
                 return false
             }
-            val currentEngine = _uiState.value.selectedSearchEngine
-            val safeUrl = ProtectionEngine.buildSafeSearchUrl(queryFromUrl, currentEngine)
+            val safeUrl = ProtectionEngine.buildSafeSearchUrl(query, currentEngine)
             loadTargetUrl(safeUrl)
             return true
         }
 
-        // Check if input is a direct URL or search query
-        val isDirectUrl = isWebUrl(trimmed)
-        if (!isDirectUrl) {
-            // Raw search query -> SafeSearch with safe=active
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(trimmed, customKws, normalizedKws)
-            if (blockedKw != null) {
-                setBlockedUrl(
-                    url = trimmed,
-                    reason = "Custom Keyword Protection",
-                    detail = "Search query blocked due to protected keyword: \"$blockedKw\""
-                )
-                return false
-            }
-            val currentEngine = _uiState.value.selectedSearchEngine
-            val safeUrl = ProtectionEngine.buildSafeSearchUrl(trimmed, currentEngine)
-            loadTargetUrl(safeUrl)
-            return true
-        }
-
-        // Direct URL Navigation
+        // 2. Direct Web URL Navigation: route through centralized NavigationController
         val formattedUrl = formatDirectUrl(trimmed)
-        val check = ProtectionEngine.checkDirectUrl(formattedUrl, customKws, normalizedKws)
-        if (check is ProtectionEngine.FilterResult.Blocked) {
-            setBlockedUrl(
-                url = formattedUrl,
-                reason = check.reason,
-                detail = check.detail
-            )
-            return false
+        val decision = NavigationController.evaluate(
+            url = formattedUrl,
+            customKeywords = customKws,
+            normalizedKeywords = normalizedKws,
+            searchEngine = currentEngine
+        )
+        return when (decision) {
+            is NavigationDecision.Blocked -> {
+                if (decision.reason == "Download Blocked" || decision.reason == "File Type Blocked") {
+                    showToast(decision.detail)
+                } else {
+                    setBlockedUrl(
+                        url = formattedUrl,
+                        reason = decision.reason,
+                        detail = decision.detail
+                    )
+                }
+                false
+            }
+            is NavigationDecision.Redirect -> {
+                loadTargetUrl(decision.url)
+                true
+            }
+            is NavigationDecision.Allowed,
+            is NavigationDecision.Download -> {
+                loadTargetUrl(formattedUrl)
+                true
+            }
         }
-
-        // Check if direct download of blocked file types via centralized DownloadPolicy
-        if (DownloadPolicy.shouldBlockUrlNavigation(formattedUrl)) {
-            showToast("This file type is blocked.")
-            return false
-        }
-
-        loadTargetUrl(formattedUrl)
-        return true
     }
 
 
@@ -642,7 +637,15 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun selectDesktopArchitecture(architecture: DesktopArchitecture) {
         repository.desktopArchitecture = architecture
         _uiState.update {
-            it.copy(desktopArchitecture = architecture)
+            it.copy(
+                desktopArchitecture = architecture,
+                isDesktopModeEnabled = architecture == DesktopArchitecture.STANDARD,
+                isDesktopMode1Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_1,
+                isDesktopMode2Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_2,
+                isDesktopMode3Enabled = architecture == DesktopArchitecture.DESKTOP_MODE_3,
+                isWindows10TouchEnabled = architecture == DesktopArchitecture.WINDOWS_10_TOUCH,
+                isWindows7Enabled = architecture == DesktopArchitecture.WINDOWS_7
+            )
         }
     }
 
@@ -650,12 +653,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE)
     }
 
-    fun toggleDesktopMode4(enabled: Boolean) {
-        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
+    fun toggleDesktopMode1(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
+    }
+
+    fun toggleDesktopMode2(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE)
+    }
+
+    fun toggleDesktopMode3(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
     }
 
     fun toggleWindows10Touch(enabled: Boolean) {
         selectDesktopArchitecture(if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE)
+    }
+
+    fun toggleWindows7(enabled: Boolean) {
+        selectDesktopArchitecture(if (enabled) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE)
     }
 
     /**

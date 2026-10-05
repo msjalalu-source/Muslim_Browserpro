@@ -1,6 +1,7 @@
 package com.muslim.browser.pro.browser
 
 import android.net.Uri
+import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -164,6 +165,80 @@ object ProtectionEngine {
     }
 
     /**
+     * Checks if a URL is a Google search request (excluding outbound redirect wrappers).
+     */
+    fun isGoogleSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return false
+        }
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        if (!isGoogleHost(host)) return false
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+        if (path.startsWith("/url")) return false
+        return path.contains("/search") || path.contains("/webhp") || ((path == "/" || path.isEmpty()) && uri.getQueryParameter("q") != null)
+    }
+
+    /**
+     * Checks if a URL is a DuckDuckGo search request (excluding outbound redirect wrappers).
+     */
+    fun isDuckDuckGoSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return false
+        }
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        if (!host.contains("duckduckgo.com")) return false
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+        if (path.startsWith("/l/") || path == "/l") return false
+        return uri.getQueryParameter("q") != null
+    }
+
+    /**
+     * Extracts the real destination URL from search engine outbound redirection wrappers
+     * (such as Google's /url?q=... or /url?url=... and DuckDuckGo's /l/?uddg=...).
+     * Returns null if the URL is not an outbound redirection wrapper.
+     */
+    fun extractOutboundDestinationUrl(url: String): String? {
+        if (url.isBlank()) return null
+        val uri = try {
+            Uri.parse(url)
+        } catch (_: Exception) {
+            return null
+        }
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+
+        val rawCandidate = when {
+            isGoogleHost(host) && path.startsWith("/url") -> {
+                uri.getQueryParameter("q") ?: uri.getQueryParameter("url")
+            }
+            host.contains("duckduckgo.com") && (path.startsWith("/l/") || path == "/l") -> {
+                uri.getQueryParameter("uddg")
+            }
+            else -> null
+        } ?: return null
+
+        var candidate = rawCandidate.trim()
+        if (candidate.startsWith("http%3A", ignoreCase = true) || candidate.startsWith("https%3A", ignoreCase = true)) {
+            candidate = try {
+                URLDecoder.decode(candidate, StandardCharsets.UTF_8.name())
+            } catch (_: Exception) {
+                candidate
+            }
+        }
+        return if (candidate.startsWith("http://", ignoreCase = true) || candidate.startsWith("https://", ignoreCase = true)) {
+            candidate
+        } else {
+            null
+        }
+    }
+
+    /**
      * Checks whether the host represents a Google search domain.
      */
     fun isGoogleHost(host: String): Boolean {
@@ -281,6 +356,15 @@ object ProtectionEngine {
     ): FilterResult {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
+
+        // Unpack outbound search engine redirects to prevent bypassing destination protection
+        val outboundDest = extractOutboundDestinationUrl(trimmed)
+        if (outboundDest != null && outboundDest != trimmed) {
+            val destCheck = checkDirectUrl(outboundDest, customKeywords, normalizedKeywords)
+            if (destCheck is FilterResult.Blocked) {
+                return destCheck
+            }
+        }
 
         android.util.Log.d("DIAGNOSTIC", "DIRECT_URL_CHECK=checkDirectUrl")
         android.util.Log.d("DIAGNOSTIC", "URL=$trimmed")

@@ -294,4 +294,79 @@ class SslSecurityPolicyTest {
         // Preliminary check returns null (not approved)
         assertEquals(null, SslSecurityPolicy.preliminaryCheck(error))
     }
+
+    @Test
+    fun `navigationFromDuckDuckGoToIncompleteChainHostValidatesTargetHostNotDuckDuckGo`() {
+        val leafCert = loadCert("ictbd_leaf.der")
+        val intermediateCert = loadCert("sectigo_intermediate.der")
+        val cert = SslCertificate(leafCert)
+        val error = SslError(SslError.SSL_UNTRUSTED, cert, "https://ictbdinvestigation.gov.bd")
+
+        val acceptingTrustManager = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        }
+
+        // Simulating the user clicking from safe.duckduckgo.com search result
+        // currentHost in WebView before navigation commit is "safe.duckduckgo.com"
+        val decision = SslSecurityPolicy.validateIncompleteChain(
+            error = error,
+            currentHost = "safe.duckduckgo.com",
+            overrideLeafCert = leafCert,
+            intermediateFetcher = { intermediateCert },
+            trustManagerOverride = acceptingTrustManager
+        )
+
+        // Must NOT reject due to "Hostname 'safe.duckduckgo.com' does not match..."
+        // Must validate the target host (ictbdinvestigation.gov.bd) and prompt user
+        assertTrue("Must succeed with PromptUser for target host", decision is SslSecurityPolicy.Decision.PromptUser)
+        val prompt = decision as SslSecurityPolicy.Decision.PromptUser
+        assertEquals("Target host must be ictbdinvestigation.gov.bd, not safe.duckduckgo.com", "ictbdinvestigation.gov.bd", prompt.host)
+    }
+
+    @Test
+    fun `navigationFromGoogleSearchToIncompleteChainHostValidatesTargetHostNotGoogle`() {
+        val leafCert = loadCert("ictbd_leaf.der")
+        val intermediateCert = loadCert("sectigo_intermediate.der")
+        val cert = SslCertificate(leafCert)
+        val error = SslError(SslError.SSL_UNTRUSTED, cert, "https://ictbdinvestigation.gov.bd")
+
+        val acceptingTrustManager = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
+            override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+        }
+
+        // Simulating navigation from Google search results page (currentHost = "www.google.com")
+        val decision = SslSecurityPolicy.validateIncompleteChain(
+            error = error,
+            currentHost = "www.google.com",
+            overrideLeafCert = leafCert,
+            intermediateFetcher = { intermediateCert },
+            trustManagerOverride = acceptingTrustManager
+        )
+
+        assertTrue("Must succeed with PromptUser for target host", decision is SslSecurityPolicy.Decision.PromptUser)
+        val prompt = decision as SslSecurityPolicy.Decision.PromptUser
+        assertEquals("Target host must be ictbdinvestigation.gov.bd, not www.google.com", "ictbdinvestigation.gov.bd", prompt.host)
+    }
+
+    @Test
+    fun `genuineHostnameMismatchForTargetHostIsStrictlyRejectedRegardlessOfPreviousPage`() {
+        val leafCert = loadCert("ictbd_leaf.der")
+        val cert = SslCertificate(leafCert)
+        // Request URL points to a domain not present in the certificate SANs
+        val error = SslError(SslError.SSL_UNTRUSTED, cert, "https://spoof-site.com")
+
+        val decision = SslSecurityPolicy.validateIncompleteChain(
+            error = error,
+            currentHost = "safe.duckduckgo.com",
+            overrideLeafCert = leafCert
+        )
+
+        assertTrue("Target host mismatch must be strictly rejected", decision is SslSecurityPolicy.Decision.Reject)
+        val reject = decision as SslSecurityPolicy.Decision.Reject
+        assertTrue("Reject reason must indicate target host mismatch: ${reject.reason}", reject.reason.contains("spoof-site.com"))
+    }
 }

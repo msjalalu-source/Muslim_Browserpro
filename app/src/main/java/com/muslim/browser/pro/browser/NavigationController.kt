@@ -46,24 +46,42 @@ object NavigationController {
                 )
             }
 
-            if (ProtectionEngine.isSafeSearchUrl(trimmed)) {
-                return NavigationDecision.Allowed
+            // Identify engine and apply minimal engine-specific SafeSearch policy
+            return when {
+                ProtectionEngine.isGoogleSearchUrl(trimmed) -> {
+                    if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
+                        NavigationDecision.Allowed
+                    } else {
+                        NavigationDecision.Redirect(ProtectionEngine.buildGoogleSafeSearchUrl(searchEngineQuery))
+                    }
+                }
+                ProtectionEngine.isDuckDuckGoSearchUrl(trimmed) -> {
+                    if (ProtectionEngine.isDuckDuckGoSafeSearchUrl(trimmed)) {
+                        NavigationDecision.Allowed
+                    } else {
+                        NavigationDecision.Redirect(ProtectionEngine.buildDuckDuckGoSafeSearchUrl(searchEngineQuery))
+                    }
+                }
+                else -> {
+                    val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
+                    NavigationDecision.Redirect(safeUrl)
+                }
             }
-
-            val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
-            return NavigationDecision.Redirect(safeUrl)
         }
 
+        // Determine effective target if this is an outbound redirect wrapper (e.g. Google /url?q=...)
+        val targetUrl = ProtectionEngine.extractOutboundDestinationUrl(trimmed) ?: trimmed
+
         // 2. Direct audio link check
-        if (DownloadPolicy.isAudio(trimmed)) {
-            return NavigationDecision.Download(trimmed, "audio/mpeg")
+        if (DownloadPolicy.isAudio(targetUrl)) {
+            return NavigationDecision.Download(targetUrl, "audio/mpeg")
         }
 
         // 3. Early download interception for unified downloadable files (documents, archives, APKs)
-        if (DownloadPolicy.isDownloadableFileUrl(trimmed)) {
-            val decision = DownloadPolicy.evaluate(trimmed)
+        if (DownloadPolicy.isDownloadableFileUrl(targetUrl)) {
+            val decision = DownloadPolicy.evaluate(targetUrl)
             return when (decision) {
-                is DownloadPolicy.Result.Allowed -> NavigationDecision.Download(trimmed, null)
+                is DownloadPolicy.Result.Allowed -> NavigationDecision.Download(targetUrl, null)
                 is DownloadPolicy.Result.Blocked -> NavigationDecision.Blocked(
                     reason = "Download Blocked",
                     detail = decision.reason
@@ -71,14 +89,14 @@ object NavigationController {
             }
         }
 
-        // 4. Direct URL Protection Check (Adult content, custom keywords in URL)
+        // 4. Centralized Destination URL Protection Check (Adult content, custom keywords in URL)
         val check = ProtectionEngine.checkDirectUrl(trimmed, customKeywords, normalizedKeywords)
         if (check is ProtectionEngine.FilterResult.Blocked) {
             return NavigationDecision.Blocked(check.reason, check.detail)
         }
 
         // 5. Direct navigation check for blocked file types (e.g. video links, unauthorized APKs)
-        if (DownloadPolicy.shouldBlockUrlNavigation(trimmed)) {
+        if (DownloadPolicy.shouldBlockUrlNavigation(targetUrl)) {
             return NavigationDecision.Blocked(
                 reason = "File Type Blocked",
                 detail = "This file type is blocked."

@@ -332,8 +332,11 @@ class MainActivity : ComponentActivity() {
                     onClearAllData = { clearAllData() },
                     onClearCacheAndCookies = { clearCacheAndCookies() },
                     onToggleDesktopMode = { enabled -> setDesktopMode(enabled) },
-                    onToggleDesktopMode4 = { enabled -> setDesktopMode4(enabled) },
+                    onToggleDesktopMode1 = { enabled -> setDesktopMode1(enabled) },
+                    onToggleDesktopMode2 = { enabled -> setDesktopMode2(enabled) },
+                    onToggleDesktopMode3 = { enabled -> setDesktopMode3(enabled) },
                     onToggleWindows10Touch = { enabled -> setWindows10Touch(enabled) },
+                    onToggleWindows7 = { enabled -> setWindows7(enabled) },
                     onSslProceed = { host -> onSslPromptProceed(host) },
                     onSslCancel = { host -> onSslPromptCancel(host) },
                     onHandleUrlNavigation = { url ->
@@ -410,7 +413,10 @@ class MainActivity : ComponentActivity() {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
                             }
                             DesktopArchitecture.STANDARD,
-                            DesktopArchitecture.DESKTOP_MODE_4 -> {
+                            DesktopArchitecture.DESKTOP_MODE_1,
+                            DesktopArchitecture.DESKTOP_MODE_2,
+                            DesktopArchitecture.DESKTOP_MODE_3,
+                            DesktopArchitecture.WINDOWS_7 -> {
                                 if (WebViewConfigurator.isAuthenticationUrl(url)) null else WebViewConfigurator.DESKTOP_USER_AGENT
                             }
                             DesktopArchitecture.NONE -> null
@@ -434,7 +440,10 @@ class MainActivity : ComponentActivity() {
                     view?.settings?.cacheMode = WebSettings.LOAD_DEFAULT
                     val activeArch = viewModel.uiState.value.desktopArchitecture
                     if (view != null) {
-                        com.muslim.browser.pro.browser.DesktopCore.handlePageLifecycle(view, activeArch, url)
+                        WebViewConfigurator.applyArchitectureViewport(view, activeArch)
+                        if (activeArch == DesktopArchitecture.WINDOWS_10_TOUCH && !WebViewConfigurator.isAuthenticationUrl(url)) {
+                            WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
+                        }
                     }
                     viewModel.onPageCommitVisible()
                 }
@@ -443,7 +452,10 @@ class MainActivity : ComponentActivity() {
                     super.onPageFinished(view, url)
                     val activeArch = viewModel.uiState.value.desktopArchitecture
                     if (view != null) {
-                        com.muslim.browser.pro.browser.DesktopCore.handlePageLifecycle(view, activeArch, url)
+                        WebViewConfigurator.applyArchitectureViewport(view, activeArch)
+                        if (activeArch == DesktopArchitecture.WINDOWS_10_TOUCH && !WebViewConfigurator.isAuthenticationUrl(url)) {
+                            WebViewConfigurator.injectWindows10TouchProfileIfEnabled(view, true)
+                        }
                     }
                     android.util.Log.d(
                         "DESKTOP_DEBUG",
@@ -498,8 +510,10 @@ class MainActivity : ComponentActivity() {
                         return
                     }
 
-                    val currentHost = view?.url?.let { SslSecurityPolicy.extractHostFromUrl(it) }
-                    val prelimDecision = SslSecurityPolicy.preliminaryCheck(error, currentHost)
+                    val requestHost = SslSecurityPolicy.extractHostFromUrl(error.url ?: "")
+                    val fallbackHost = view?.url?.let { SslSecurityPolicy.extractHostFromUrl(it) }
+                    val host = (requestHost ?: fallbackHost)?.let { SslSecurityPolicy.normalizeHost(it) } ?: ""
+                    val prelimDecision = SslSecurityPolicy.preliminaryCheck(error, host)
 
                     when (prelimDecision) {
                         is SslSecurityPolicy.Decision.Reject -> {
@@ -518,10 +532,6 @@ class MainActivity : ComponentActivity() {
                             // Proceed to asynchronous cryptographic AIA validation
                         }
                     }
-
-                    val host = (currentHost ?: SslSecurityPolicy.extractHostFromUrl(error.url ?: ""))?.let {
-                        SslSecurityPolicy.normalizeHost(it)
-                    } ?: ""
 
                     if (host.isBlank()) {
                         handler.cancel()
@@ -956,14 +966,12 @@ class MainActivity : ComponentActivity() {
         viewModel.selectDesktopArchitecture(architecture)
         tabWebViewManager.syncAllLiveWebViewsArchitecture(architecture)
         val webView = webViewInstance ?: return
-        if (!tabWebViewManager.hasLiveWebView(webView)) {
-            WebViewConfigurator.syncDesktopArchitecture(
-                webView = webView,
-                url = webView.url,
-                architecture = architecture,
-                updateUserAgent = true
-            )
-        }
+        WebViewConfigurator.syncDesktopArchitecture(
+            webView = webView,
+            url = webView.url,
+            architecture = architecture,
+            updateUserAgent = true
+        )
         val currentUrl = webView.url?.takeIf { it.isNotBlank() && it != "about:blank" }
             ?: viewModel.uiState.value.currentUrl.takeIf { it.isNotBlank() && it != "about:blank" }
 
@@ -987,12 +995,24 @@ class MainActivity : ComponentActivity() {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE)
     }
 
-    internal fun setDesktopMode4(enabled: Boolean) {
-        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE)
+    internal fun setDesktopMode1(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_1 else DesktopArchitecture.NONE)
+    }
+
+    internal fun setDesktopMode2(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_2 else DesktopArchitecture.NONE)
+    }
+
+    internal fun setDesktopMode3(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.DESKTOP_MODE_3 else DesktopArchitecture.NONE)
     }
 
     internal fun setWindows10Touch(enabled: Boolean) {
         setDesktopArchitecture(if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE)
+    }
+
+    internal fun setWindows7(enabled: Boolean) {
+        setDesktopArchitecture(if (enabled) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE)
     }
 
     override fun onPause() {
@@ -1193,8 +1213,11 @@ fun BrowserApp(
     onClearAllData: () -> Unit,
     onClearCacheAndCookies: () -> Unit,
     onToggleDesktopMode: (Boolean) -> Unit,
-    onToggleDesktopMode4: (Boolean) -> Unit = {},
+    onToggleDesktopMode1: (Boolean) -> Unit = {},
+    onToggleDesktopMode2: (Boolean) -> Unit = {},
+    onToggleDesktopMode3: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
+    onToggleWindows7: (Boolean) -> Unit = {},
     onSslProceed: (String) -> Unit = {},
     onSslCancel: (String) -> Unit = {},
     onHandleUrlNavigation: (String) -> Boolean = { false },
@@ -1406,8 +1429,11 @@ fun BrowserApp(
                     onClearAllData = onClearAllData,
                     onClearCacheAndCookies = onClearCacheAndCookies,
                     onToggleDesktopMode = onToggleDesktopMode,
-                    onToggleDesktopMode4 = onToggleDesktopMode4,
+                    onToggleDesktopMode1 = onToggleDesktopMode1,
+                    onToggleDesktopMode2 = onToggleDesktopMode2,
+                    onToggleDesktopMode3 = onToggleDesktopMode3,
                     onToggleWindows10Touch = onToggleWindows10Touch,
+                    onToggleWindows7 = onToggleWindows7,
                     onTranslateToBengali = {
                         viewModel.translateCurrentPage(
                             evaluateJs = { script, cb -> activeWebView.evaluateJavascript(script, cb) },

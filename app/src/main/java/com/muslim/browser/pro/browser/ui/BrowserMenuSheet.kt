@@ -87,6 +87,7 @@ fun BrowserMenuSheet(
     onToggleDesktopMode: (Boolean) -> Unit,
     onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
+    onToggleWindows7: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
@@ -838,6 +839,64 @@ fun BrowserMenuSheet(
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
                             modifier = Modifier.testTag("windows_10_touch_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Experimental Desktop Architecture: Windows 7
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("item_windows_7"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DesktopWindows,
+                                contentDescription = "Windows 7",
+                                tint = if (uiState.isWindows7Enabled) colors.accent else colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Windows 7",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Experimental desktop architecture",
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = uiState.isWindows7Enabled,
+                            onCheckedChange = onToggleWindows7,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = colors.buttonText,
+                                checkedTrackColor = colors.accent,
+                                uncheckedThumbColor = colors.textSecondary,
+                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("windows_7_switch")
                         )
                     }
                 }

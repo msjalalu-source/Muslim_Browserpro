@@ -213,4 +213,165 @@ class SearchEngineSelectionTest {
         )
         assertEquals("google.com with safe=active must be Allowed", NavigationDecision.Allowed, googleCheck)
     }
+
+    @Test
+    fun test12_googleSearchWithSafeOffCannotBypassIntendedPolicy() {
+        val unsafeGoogleUrl = "https://www.google.com/search?q=astronomy&safe=off"
+        val decision = NavigationController.evaluate(
+            url = unsafeGoogleUrl,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("safe=off must be redirected", decision is NavigationDecision.Redirect)
+        val redirectUrl = (decision as NavigationDecision.Redirect).url
+        assertTrue("Redirect must enforce safe=active: $redirectUrl", redirectUrl.contains("safe=active"))
+        assertFalse("Redirect must not contain safe=off", redirectUrl.contains("safe=off"))
+    }
+
+    @Test
+    fun test13_googleSearchWithMissingSafeParameterCannotBypassIntendedPolicy() {
+        val missingSafeUrl = "https://www.google.com/search?q=astronomy"
+        val decision = NavigationController.evaluate(
+            url = missingSafeUrl,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("Missing safe parameter must be redirected", decision is NavigationDecision.Redirect)
+        val redirectUrl = (decision as NavigationDecision.Redirect).url
+        assertTrue("Redirect must add safe=active: $redirectUrl", redirectUrl.contains("safe=active"))
+    }
+
+    @Test
+    fun test14_googleSearchPageAllowedWithSafeActive() {
+        val validSearchPage = "https://www.google.com/search?q=space+science&safe=active"
+        val decision = NavigationController.evaluate(
+            url = validSearchPage,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertEquals("Valid Google search page with safe=active must be Allowed", NavigationDecision.Allowed, decision)
+    }
+
+    @Test
+    fun test15_safeActiveDoesNotBypassDestinationProtectionForBlockedDomain() {
+        // Direct navigation to adult domain even with safe=active parameter appended
+        val maliciousUrlWithSafeParam = "https://brazzers.com/landing?safe=active"
+        val decision = NavigationController.evaluate(
+            url = maliciousUrlWithSafeParam,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("safe=active parameter must not bypass adult content protection", decision is NavigationDecision.Blocked)
+        assertEquals("Adult Content Protection", (decision as NavigationDecision.Blocked).reason)
+    }
+
+    @Test
+    fun test16_googleOutboundRedirectToLegitimateResultAllowed() {
+        val googleOutboundLegit = "https://www.google.com/url?q=https://en.wikipedia.org/wiki/Science&sa=U&ved=0ahU"
+        val decision = NavigationController.evaluate(
+            url = googleOutboundLegit,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertEquals("Outbound Google link to legitimate site must be Allowed", NavigationDecision.Allowed, decision)
+    }
+
+    @Test
+    fun test17_googleOutboundRedirectToBlockedDestinationIsBlocked() {
+        // Google outbound redirect wrapping a blocked adult domain
+        val googleOutboundBlocked = "https://www.google.com/url?q=https://brazzers.com/gallery&sa=U&ved=0ahU"
+        val decision = NavigationController.evaluate(
+            url = googleOutboundBlocked,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("Outbound redirect to adult domain must be Blocked", decision is NavigationDecision.Blocked)
+        assertEquals("Adult Content Protection", (decision as NavigationDecision.Blocked).reason)
+
+        // Even if someone appends safe=active to the Google redirect URL
+        val googleOutboundWithSafeActive = "https://www.google.com/url?q=https://brazzers.com/gallery&safe=active"
+        val decisionWithSafe = NavigationController.evaluate(
+            url = googleOutboundWithSafeActive,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("Outbound redirect to adult domain with safe=active must still be Blocked", decisionWithSafe is NavigationDecision.Blocked)
+        assertEquals("Adult Content Protection", (decisionWithSafe as NavigationDecision.Blocked).reason)
+    }
+
+    @Test
+    fun test18_duckDuckGoSearchPreservesSafeEndpointAndDestinationProtection() {
+        // Normal DuckDuckGo search without safe endpoint redirects to safe.duckduckgo.com
+        val unsafeDdg = "https://duckduckgo.com/?q=quantum+physics"
+        val redirectDecision = NavigationController.evaluate(
+            url = unsafeDdg,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.DUCKDUCKGO
+        )
+        assertTrue(redirectDecision is NavigationDecision.Redirect)
+        assertEquals("https://safe.duckduckgo.com/?q=quantum+physics", (redirectDecision as NavigationDecision.Redirect).url)
+
+        // DuckDuckGo outbound redirect to adult domain is Blocked
+        val ddgOutboundBlocked = "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fbrazzers.com%2Fgallery"
+        val blockedDecision = NavigationController.evaluate(
+            url = ddgOutboundBlocked,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.DUCKDUCKGO
+        )
+        assertTrue("DDG outbound redirect to adult site must be Blocked", blockedDecision is NavigationDecision.Blocked)
+        assertEquals("Adult Content Protection", (blockedDecision as NavigationDecision.Blocked).reason)
+
+        // DuckDuckGo outbound redirect to legitimate site is Allowed
+        val ddgOutboundLegit = "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org"
+        val allowedDecision = NavigationController.evaluate(
+            url = ddgOutboundLegit,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.DUCKDUCKGO
+        )
+        assertEquals("DDG outbound redirect to legitimate site must be Allowed", NavigationDecision.Allowed, allowedDecision)
+    }
+
+    @Test
+    fun test19_separationBetweenSearchPageAndDestinationProtection() {
+        // Search page itself for "astronomy" on Google with safe=active is allowed
+        val searchPage = "https://www.google.com/search?q=astronomy&safe=active"
+        val searchPageDecision = NavigationController.evaluate(
+            url = searchPage,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertEquals("Search results page is Allowed", NavigationDecision.Allowed, searchPageDecision)
+
+        // Result 1: Legitimate clicked result navigates normally
+        val legitResult = "https://www.nasa.gov/missions"
+        val legitDecision = NavigationController.evaluate(
+            url = legitResult,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertEquals("Legitimate result navigates normally", NavigationDecision.Allowed, legitDecision)
+
+        // Result 2: Adult destination clicked from the results is intercepted by centralized destination protection
+        val adultResult = "https://brazzers.com/astronomy-spoof"
+        val adultDecision = NavigationController.evaluate(
+            url = adultResult,
+            customKeywords = repository.getCustomKeywords(),
+            normalizedKeywords = repository.getNormalizedKeywords(),
+            searchEngine = SearchEngine.GOOGLE
+        )
+        assertTrue("Adult destination from search results is Blocked", adultDecision is NavigationDecision.Blocked)
+        assertEquals("Adult Content Protection", (adultDecision as NavigationDecision.Blocked).reason)
+    }
 }

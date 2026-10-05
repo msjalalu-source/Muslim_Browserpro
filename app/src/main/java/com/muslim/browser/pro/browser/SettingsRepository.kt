@@ -382,6 +382,12 @@ class SettingsRepository(context: Context) {
             desktopArchitecture = if (value) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
         }
 
+    var isWindows7Enabled: Boolean
+        get() = desktopArchitecture == DesktopArchitecture.WINDOWS_7
+        set(value) {
+            desktopArchitecture = if (value) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
+        }
+
     var appTheme: com.muslim.browser.pro.ui.theme.AppTheme
         get() {
             val rawName = prefs.getString(KEY_APP_THEME, null)

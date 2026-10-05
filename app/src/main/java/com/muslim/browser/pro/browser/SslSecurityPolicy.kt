@@ -100,8 +100,8 @@ object SslSecurityPolicy {
         }
 
         val errorUrl = error.url ?: ""
-        val hostFromUrl = extractHostFromUrl(errorUrl)
-        val host = (if (!currentHost.isNullOrBlank()) currentHost else hostFromUrl)?.let { normalizeHost(it) } ?: ""
+        val hostFromErrorUrl = extractHostFromUrl(errorUrl)
+        val host = (if (!hostFromErrorUrl.isNullOrBlank()) hostFromErrorUrl else currentHost)?.let { normalizeHost(it) } ?: ""
 
         if (host.isBlank()) {
             return Decision.Reject("Missing host in SSL error")
@@ -145,12 +145,12 @@ object SslSecurityPolicy {
         intermediateFetcher: ((String) -> X509Certificate?)? = null,
         trustManagerOverride: X509TrustManager? = null
     ): Decision {
-        val prelim = preliminaryCheck(error, currentHost)
-        if (prelim != null) return prelim
-
         val errorUrl = error?.url ?: ""
-        val hostFromUrl = extractHostFromUrl(errorUrl)
-        val host = (if (!currentHost.isNullOrBlank()) currentHost else hostFromUrl)?.let { normalizeHost(it) } ?: ""
+        val hostFromErrorUrl = extractHostFromUrl(errorUrl)
+        val host = (if (!hostFromErrorUrl.isNullOrBlank()) hostFromErrorUrl else currentHost)?.let { normalizeHost(it) } ?: ""
+
+        val prelim = preliminaryCheck(error, host)
+        if (prelim != null) return prelim
 
         // 1. Extract leaf X.509 certificate
         val leafCert = overrideLeafCert ?: getX509Certificate(error?.certificate)
