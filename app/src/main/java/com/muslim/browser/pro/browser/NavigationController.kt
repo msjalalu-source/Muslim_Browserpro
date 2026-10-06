@@ -35,59 +35,58 @@ object NavigationController {
         // SMART FAST-PATH for application-generated validated Google Search
         if (isSearchUrlValidated(trimmed)) {
             clearSearchUrlValidation()
-            // Verify safe=active is indeed present on the Google URL before fast-pathing
-            if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
+            // Verify safe=active is present on the Google URL before fast-pathing
+            if (trimmed.contains("safe=active")) {
                 return NavigationDecision.Allowed
             }
         }
 
         // Focused Google SafeSearch evaluation (single-pass, zero duplicate processing):
-        try {
-            val uri = Uri.parse(trimmed)
-            val host = uri.host?.lowercase(Locale.ROOT)
-            if (host != null && ProtectionEngine.isGoogleHost(host)) {
-                val path = uri.path?.lowercase(Locale.ROOT) ?: ""
-                if (path.contains("/search") || path.contains("/webhp") || path == "/" || path.isEmpty()) {
-                    val query = uri.getQueryParameter("q")
-                    if (!query.isNullOrBlank()) {
-                        // Check custom keywords on untrusted Google search
-                        val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(query, customKeywords, normalizedKeywords)
-                        if (blockedKw != null) {
-                            return NavigationDecision.Blocked(
-                                "Custom Keyword Protection",
-                                "Search query blocked due to protected keyword: \"$blockedKw\""
-                            )
-                        }
-                        // Enforce SafeSearch parameter (safe=active)
-                        val isSafeActive = uri.getQueryParameter("safe")?.equals("active", ignoreCase = true) == true
-                        return if (isSafeActive) {
-                            NavigationDecision.Allowed
-                        } else {
-                            val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(query)
-                            NavigationDecision.Redirect(safeUrl)
-                        }
+        val uri = try { Uri.parse(trimmed) } catch (_: Exception) { null }
+        val host = uri?.host?.lowercase(Locale.ROOT)
+        val isGoogle = host != null && ProtectionEngine.isGoogleHost(host)
+
+        if (isGoogle && uri != null) {
+            val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+            if (path.contains("/search") || path.contains("/webhp") || path == "/" || path.isEmpty()) {
+                val query = uri.getQueryParameter("q")
+                if (!query.isNullOrBlank()) {
+                    // Check custom keywords on untrusted Google search
+                    val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(query, customKeywords, normalizedKeywords)
+                    if (blockedKw != null) {
+                        return NavigationDecision.Blocked(
+                            "Custom Keyword Protection",
+                            "Search query blocked due to protected keyword: \"$blockedKw\""
+                        )
+                    }
+                    // Enforce SafeSearch parameter (safe=active)
+                    val isSafeActive = uri.getQueryParameter("safe")?.equals("active", ignoreCase = true) == true
+                    return if (isSafeActive) {
+                        NavigationDecision.Allowed
+                    } else {
+                        val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(query)
+                        NavigationDecision.Redirect(safeUrl)
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Non-fatal, continue with standard navigation evaluation
-        }
-
-        // Search engine evaluation for non-Google engines (e.g. DuckDuckGo - untouched as required by scope)
-        val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
-        if (searchEngineQuery != null) {
-            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)
-            if (blockedKw != null) {
-                return NavigationDecision.Blocked(
-                    "Custom Keyword Protection",
-                    "Search query blocked due to protected keyword: \"$blockedKw\""
-                )
+            // Non-search Google navigation proceeds to destination checks without re-querying
+        } else {
+            // Search engine evaluation for non-Google engines (e.g. DuckDuckGo - untouched as required by scope)
+            val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
+            if (searchEngineQuery != null) {
+                val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)
+                if (blockedKw != null) {
+                    return NavigationDecision.Blocked(
+                        "Custom Keyword Protection",
+                        "Search query blocked due to protected keyword: \"$blockedKw\""
+                    )
+                }
+                if (ProtectionEngine.isSafeSearchUrl(trimmed)) {
+                    return NavigationDecision.Allowed
+                }
+                val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
+                return NavigationDecision.Redirect(safeUrl)
             }
-            if (ProtectionEngine.isSafeSearchUrl(trimmed)) {
-                return NavigationDecision.Allowed
-            }
-            val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
-            return NavigationDecision.Redirect(safeUrl)
         }
 
         // Audio & Download policies

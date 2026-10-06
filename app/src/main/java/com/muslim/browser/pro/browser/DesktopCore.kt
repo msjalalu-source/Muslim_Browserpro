@@ -22,6 +22,7 @@ object DesktopCore {
     }
 
     fun cleanupCommonDesktopState(webView: WebView) {
+        DesktopMode12Engine.cleanupState(webView)
         try {
             webView.evaluateJavascript(WebViewConfigurator.CLEANUP_ALL_DESKTOP_SCRIPTS, null)
         } catch (_: Throwable) {}
@@ -36,12 +37,18 @@ object DesktopCore {
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopViewport(webView)
-                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
+                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
                     WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
                 }
             }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 WebViewConfigurator.applyArchitectureViewport(webView, architecture)
+            }
+            DesktopArchitecture.DESKTOP_MODE_11 -> {
+                DesktopMode11Engine.handleLifecycle(webView, url)
+            }
+            DesktopArchitecture.DESKTOP_MODE_12 -> {
+                DesktopMode12Engine.handleLifecycle(webView, url)
             }
         }
     }
@@ -54,12 +61,15 @@ object DesktopCore {
     ) {
         val targetUa = when (architecture) {
             DesktopArchitecture.NONE -> null
-            DesktopArchitecture.STANDARD, DesktopArchitecture.DESKTOP_MODE_4 -> {
-                if (WebViewConfigurator.isAuthenticationUrl(url)) null
+            DesktopArchitecture.STANDARD,
+            DesktopArchitecture.DESKTOP_MODE_4,
+            DesktopArchitecture.DESKTOP_MODE_11,
+            DesktopArchitecture.DESKTOP_MODE_12 -> {
+                if (DesktopMode11Engine.isAuthenticationUrl(url)) null
                 else WebViewConfigurator.DESKTOP_USER_AGENT
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                if (WebViewConfigurator.isAuthenticationUrl(url)) null
+                if (DesktopMode11Engine.isAuthenticationUrl(url)) null
                 else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
             }
         }
@@ -69,23 +79,36 @@ object DesktopCore {
             settings.userAgentString = targetUa
         }
 
-        applyCommonDesktopWebViewSettings(webView)
-
         when (architecture) {
             DesktopArchitecture.NONE -> {
                 cleanupCommonDesktopState(webView)
             }
             DesktopArchitecture.STANDARD -> {
+                applyCommonDesktopWebViewSettings(webView)
                 applyCommonDesktopViewport(webView)
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
+                applyCommonDesktopWebViewSettings(webView)
+                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
                     WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
                 }
                 applyCommonDesktopViewport(webView)
             }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
+                applyCommonDesktopWebViewSettings(webView)
                 WebViewConfigurator.applyArchitectureViewport(webView, architecture)
+            }
+            DesktopArchitecture.DESKTOP_MODE_11 -> {
+                DesktopMode11Engine.applySettings(webView)
+                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                    DesktopMode11Engine.applyViewport(webView)
+                }
+            }
+            DesktopArchitecture.DESKTOP_MODE_12 -> {
+                DesktopMode12Engine.applySettings(webView)
+                if (!DesktopMode12Engine.isAuthenticationUrl(url)) {
+                    DesktopMode12Engine.applyViewport(webView)
+                }
             }
         }
     }

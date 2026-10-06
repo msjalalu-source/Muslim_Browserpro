@@ -78,7 +78,7 @@ object ProtectionEngine {
     }
 
     fun isGoogleSafeSearchUrl(url: String): Boolean {
-        if (url.isBlank()) return false
+        if (url.isBlank() || !url.contains("safe=active", ignoreCase = true)) return false
         return try {
             val uri = Uri.parse(url)
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
