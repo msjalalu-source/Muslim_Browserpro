@@ -88,14 +88,11 @@ fun BrowserMenuSheet(
     onToggleDesktopMode: (Boolean) -> Unit = {},
     onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
-    onToggleWindows7: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
-    modifier: Modifier = Modifier,
-    onToggleDesktopMode11: (Boolean) -> Unit = {},
-    onToggleDesktopMode12: (Boolean) -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val colors = LocalAppColors.current
@@ -791,7 +788,6 @@ fun BrowserMenuSheet(
                             onCheckedChange = { checked ->
                                 val target = if (checked) DesktopArchitecture.DESKTOP_MODE_11 else DesktopArchitecture.NONE
                                 notifyArchitectureChange(context, target)
-                                onToggleDesktopMode11(checked)
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
@@ -853,7 +849,6 @@ fun BrowserMenuSheet(
                             onCheckedChange = { checked ->
                                 val target = if (checked) DesktopArchitecture.DESKTOP_MODE_12 else DesktopArchitecture.NONE
                                 notifyArchitectureChange(context, target)
-                                onToggleDesktopMode12(checked)
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
@@ -967,7 +962,7 @@ fun BrowserMenuSheet(
 
                         Switch(
                             checked = false,
-                            onCheckedChange = onToggleWindows7,
+                            onCheckedChange = { /* Windows 7 placeholder */ },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
