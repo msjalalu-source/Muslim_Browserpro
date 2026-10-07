@@ -6,6 +6,7 @@ public final class WebViewConfigurator$WhenMappings {
 
     static {
         // Mapping for BrowserIdentityMode
+        int[] m0;
         try {
             Class<?> identityModeClass = Class.forName("com.muslim.browser.pro.browser.WebViewConfigurator$BrowserIdentityMode");
             Object[] identityValues = (Object[]) identityModeClass.getMethod("values").invoke(null);
@@ -27,10 +28,11 @@ public final class WebViewConfigurator$WhenMappings {
                         break;
                 }
             }
-            $EnumSwitchMapping$0 = mapping0;
+            m0 = mapping0;
         } catch (Throwable t) {
-            $EnumSwitchMapping$0 = new int[4];
+            m0 = new int[4];
         }
+        $EnumSwitchMapping$0 = m0;
 
         // Mapping for DesktopArchitecture
         DesktopArchitecture[] values = DesktopArchitecture.values();
