@@ -745,7 +745,12 @@ fun BrowserMenuSheet(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_11"),
+                        .testTag("section_desktop_mode_11")
+                        .clickable {
+                            val isChecked = uiState.desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_11
+                            val target = if (!isChecked) DesktopArchitecture.DESKTOP_MODE_11 else DesktopArchitecture.NONE
+                            notifyArchitectureChange(context, target)
+                        },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surfaceVariant,
                     border = BorderStroke(1.dp, colors.border)
@@ -806,7 +811,12 @@ fun BrowserMenuSheet(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_12"),
+                        .testTag("section_desktop_mode_12")
+                        .clickable {
+                            val isChecked = uiState.desktopArchitecture == DesktopArchitecture.DESKTOP_MODE_12
+                            val target = if (!isChecked) DesktopArchitecture.DESKTOP_MODE_12 else DesktopArchitecture.NONE
+                            notifyArchitectureChange(context, target)
+                        },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surfaceVariant,
                     border = BorderStroke(1.dp, colors.border)
@@ -1496,9 +1506,20 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
 
 private fun notifyArchitectureChange(context: android.content.Context, architecture: DesktopArchitecture) {
     try {
-        val method = context.javaClass.methods.firstOrNull {
+        var currentContext: android.content.Context? = context
+        while (currentContext is android.content.ContextWrapper) {
+            val method = currentContext.javaClass.methods.firstOrNull {
+                it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
+            }
+            if (method != null) {
+                method.invoke(currentContext, architecture)
+                return
+            }
+            currentContext = currentContext.baseContext
+        }
+        val method = currentContext?.javaClass?.methods?.firstOrNull {
             it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
         }
-        method?.invoke(context, architecture)
+        method?.invoke(currentContext, architecture)
     } catch (_: Throwable) {}
 }

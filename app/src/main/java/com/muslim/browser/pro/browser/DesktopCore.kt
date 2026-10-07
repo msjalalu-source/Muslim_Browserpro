@@ -75,7 +75,7 @@ object DesktopCore {
         }
 
         val settings = webView.settings
-        if (updateUserAgent && settings.userAgentString != targetUa && targetUa != null) {
+        if (updateUserAgent && settings.userAgentString != targetUa) {
             settings.userAgentString = targetUa
         }
 
