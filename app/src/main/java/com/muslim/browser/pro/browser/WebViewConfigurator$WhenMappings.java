@@ -47,6 +47,7 @@ public final class WebViewConfigurator$WhenMappings {
                     mapping1[i] = 2;
                     break;
                 case "DESKTOP_MODE_4":
+                case "WINDOWS_7":
                     mapping1[i] = 3;
                     break;
                 case "NONE":

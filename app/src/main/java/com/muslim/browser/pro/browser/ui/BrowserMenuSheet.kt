@@ -88,6 +88,7 @@ fun BrowserMenuSheet(
     onToggleDesktopMode: (Boolean) -> Unit = {},
     onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
+    onToggleWindows7: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
@@ -932,7 +933,13 @@ fun BrowserMenuSheet(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("item_windows_7"),
+                        .testTag("item_windows_7")
+                        .clickable {
+                            val isChecked = uiState.desktopArchitecture == DesktopArchitecture.WINDOWS_7
+                            val target = if (!isChecked) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
+                            notifyArchitectureChange(context, target)
+                            onToggleWindows7(!isChecked)
+                        },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surface,
                     border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
@@ -951,7 +958,7 @@ fun BrowserMenuSheet(
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
                                 contentDescription = "Windows 7",
-                                tint = if (false) colors.accent else colors.iconTint,
+                                tint = if (uiState.desktopArchitecture == DesktopArchitecture.WINDOWS_7) colors.accent else colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -971,8 +978,12 @@ fun BrowserMenuSheet(
                         }
 
                         Switch(
-                            checked = false,
-                            onCheckedChange = { /* Windows 7 placeholder */ },
+                            checked = uiState.desktopArchitecture == DesktopArchitecture.WINDOWS_7,
+                            onCheckedChange = { checked ->
+                                val target = if (checked) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
+                                notifyArchitectureChange(context, target)
+                                onToggleWindows7(checked)
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,

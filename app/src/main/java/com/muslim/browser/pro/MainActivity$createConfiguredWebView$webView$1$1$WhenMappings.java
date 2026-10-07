@@ -18,6 +18,7 @@ public final class MainActivity$createConfiguredWebView$webView$1$1$WhenMappings
                     mapping[i] = 2;
                     break;
                 case "DESKTOP_MODE_4":
+                case "WINDOWS_7":
                     mapping[i] = 3;
                     break;
                 case "DESKTOP_MODE_11":

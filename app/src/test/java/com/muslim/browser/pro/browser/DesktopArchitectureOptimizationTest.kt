@@ -134,5 +134,6 @@ class DesktopArchitectureOptimizationTest {
         assertTrue(names.contains("STANDARD"))
         assertTrue(names.contains("DESKTOP_MODE_4"))
         assertTrue(names.contains("WINDOWS_10_TOUCH"))
+        assertTrue(names.contains("WINDOWS_7"))
     }
 }
