@@ -62,7 +62,6 @@ object DesktopCore {
     }
 
     fun cleanupCommonDesktopState(webView: WebView) {
-        DesktopMode12Engine.cleanupState(webView)
         try {
             webView.evaluateJavascript(WebViewConfigurator.CLEANUP_ALL_DESKTOP_SCRIPTS, null)
         } catch (_: Throwable) {}
@@ -77,25 +76,15 @@ object DesktopCore {
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopViewport(webView)
-                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
                     WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
                 }
             }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 applyDesktopMode4Settings(webView)
-                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
                     applyDesktopMode4Viewport(webView)
                 }
-            }
-            DesktopArchitecture.WINDOWS_7 -> {
-                applyCommonDesktopWebViewSettings(webView)
-                WebViewConfigurator.applyArchitectureViewport(webView, architecture)
-            }
-            DesktopArchitecture.DESKTOP_MODE_11 -> {
-                DesktopMode11Engine.handleLifecycle(webView, url)
-            }
-            DesktopArchitecture.DESKTOP_MODE_12 -> {
-                DesktopMode12Engine.handleLifecycle(webView, url)
             }
         }
     }
@@ -109,15 +98,12 @@ object DesktopCore {
         val targetUa = when (architecture) {
             DesktopArchitecture.NONE -> null
             DesktopArchitecture.STANDARD,
-            DesktopArchitecture.DESKTOP_MODE_4,
-            DesktopArchitecture.WINDOWS_7,
-            DesktopArchitecture.DESKTOP_MODE_11,
-            DesktopArchitecture.DESKTOP_MODE_12 -> {
-                if (DesktopMode11Engine.isAuthenticationUrl(url)) null
+            DesktopArchitecture.DESKTOP_MODE_4 -> {
+                if (url != null && WebViewConfigurator.isAuthenticationUrl(url)) null
                 else WebViewConfigurator.DESKTOP_USER_AGENT
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                if (DesktopMode11Engine.isAuthenticationUrl(url)) null
+                if (url != null && WebViewConfigurator.isAuthenticationUrl(url)) null
                 else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
             }
         }
@@ -137,31 +123,15 @@ object DesktopCore {
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopWebViewSettings(webView)
-                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                if (url != null && !WebViewConfigurator.isAuthenticationUrl(url)) {
                     WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
                 }
                 applyCommonDesktopViewport(webView)
             }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 applyDesktopMode4Settings(webView)
-                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                if (url != null && !WebViewConfigurator.isAuthenticationUrl(url)) {
                     applyDesktopMode4Viewport(webView)
-                }
-            }
-            DesktopArchitecture.WINDOWS_7 -> {
-                applyCommonDesktopWebViewSettings(webView)
-                WebViewConfigurator.applyArchitectureViewport(webView, architecture)
-            }
-            DesktopArchitecture.DESKTOP_MODE_11 -> {
-                DesktopMode11Engine.applySettings(webView)
-                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
-                    DesktopMode11Engine.applyViewport(webView)
-                }
-            }
-            DesktopArchitecture.DESKTOP_MODE_12 -> {
-                DesktopMode12Engine.applySettings(webView)
-                if (!DesktopMode12Engine.isAuthenticationUrl(url)) {
-                    DesktopMode12Engine.applyViewport(webView)
                 }
             }
         }
