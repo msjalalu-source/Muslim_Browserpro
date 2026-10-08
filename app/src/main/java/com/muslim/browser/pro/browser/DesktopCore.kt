@@ -7,12 +7,12 @@ object DesktopCore {
     const val VIEWPORT_CONTENT: String = "width=1280"
 
     /**
-     * Optimized Desktop Mode 4 Viewport Script:
+     * Ultra-lightweight Desktop Mode 4 Viewport Script:
      * - Idempotent one-time execution flag (__mb_desktop_mode4_applied__)
-     * - Enforces width=1280 desktop viewport
-     * - Zero permanent MutationObservers (eliminates background CPU/memory observer loops)
-     * - Listens to PJAX / Turbo / pageshow navigation events for seamless dynamic page transitions
-     * - Preserves desktop Client Hints (navigator.userAgentData and navigator.platform)
+     * - Directly configures target viewport (width=1280) once
+     * - Zero MutationObservers (eliminates background CPU/memory observer loops)
+     * - Zero navigation event listeners (no turbo/pjax/pageshow listener overhead)
+     * - Relies strictly on native WebSettings for User-Agent (no navigator spoofing overhead)
      */
     const val DESKTOP_MODE_4_SCRIPT: String = """(function() {
     if (window.__mb_desktop_mode4_applied__) return;
@@ -29,48 +29,6 @@ object DesktopCore {
             meta.setAttribute('content', TARGET);
         }
     } catch(e) {}
-    try {
-        if (navigator.userAgentData) {
-            var origUaData = navigator.userAgentData;
-            var fakeUaData = {
-                brands: origUaData.brands || [
-                    { brand: 'Google Chrome', version: '131' },
-                    { brand: 'Chromium', version: '131' },
-                    { brand: 'Not_A Brand', version: '24' }
-                ],
-                mobile: false,
-                platform: 'Linux',
-                getHighEntropyValues: function(hints) {
-                    return Promise.resolve({ mobile: false, platform: 'Linux' });
-                },
-                toJSON: function() {
-                    return { brands: this.brands, mobile: false, platform: 'Linux' };
-                }
-            };
-            Object.defineProperty(navigator, 'userAgentData', {
-                get: function() { return fakeUaData; },
-                configurable: true
-            });
-        }
-    } catch(e) {}
-    try {
-        Object.defineProperty(navigator, 'platform', {
-            get: function() { return 'Linux x86_64'; },
-            configurable: true
-        });
-    } catch(e) {}
-    var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
-    function onNav() {
-        try {
-            var m = document.querySelector('meta[name="viewport"]');
-            if (m && m.getAttribute('content') !== 'width=1280') {
-                m.setAttribute('content', 'width=1280');
-            }
-        } catch(e) {}
-    }
-    navEvents.forEach(function(evt) {
-        window.addEventListener(evt, onNav, { passive: true });
-    });
 })();"""
 
     fun applyDesktopMode4Settings(webView: WebView) {
@@ -186,7 +144,9 @@ object DesktopCore {
             }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 applyDesktopMode4Settings(webView)
-                applyDesktopMode4Viewport(webView)
+                if (!DesktopMode11Engine.isAuthenticationUrl(url)) {
+                    applyDesktopMode4Viewport(webView)
+                }
             }
             DesktopArchitecture.WINDOWS_7 -> {
                 applyCommonDesktopWebViewSettings(webView)

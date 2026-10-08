@@ -157,11 +157,13 @@ class DesktopArchitectureOptimizationTest {
         assertTrue(script.contains("__mb_desktop_mode4_applied__"))
         // Viewport 1280
         assertTrue(script.contains("width=1280"))
-        // Zero permanent MutationObservers for low CPU/memory overhead
+        // Ultra-lightweight: Zero MutationObservers, zero event listeners, zero navigator tampering
         assertFalse("Mode 4 must not contain MutationObserver", script.contains("MutationObserver"))
-        // Supports dynamic PJAX / Turbo navigation
-        assertTrue(script.contains("turbo:load"))
-        assertTrue(script.contains("pjax:end"))
+        assertFalse("Mode 4 must not contain turbo:load", script.contains("turbo:load"))
+        assertFalse("Mode 4 must not contain pjax:end", script.contains("pjax:end"))
+        assertFalse("Mode 4 must not contain userAgentData", script.contains("userAgentData"))
+        assertFalse("Mode 4 must not contain platform spoofing", script.contains("platform"))
+        assertTrue("Mode 4 script must be ultra-lightweight (< 600 chars)", script.length < 600)
     }
 
     @Test
