@@ -687,7 +687,11 @@ fun BrowserMenuSheet(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_4"),
+                        .testTag("section_desktop_mode_4")
+                        .clickable {
+                            val target = if (!uiState.isDesktopMode4Enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
+                            notifyArchitectureChange(context, target)
+                        },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surfaceVariant,
                     border = BorderStroke(1.dp, colors.border)
@@ -727,7 +731,10 @@ fun BrowserMenuSheet(
 
                         Switch(
                             checked = uiState.isDesktopMode4Enabled,
-                            onCheckedChange = onToggleDesktopMode4,
+                            onCheckedChange = { checked ->
+                                val target = if (checked) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
+                                notifyArchitectureChange(context, target)
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
@@ -1515,16 +1522,98 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
 private fun notifyArchitectureChange(context: android.content.Context, architecture: DesktopArchitecture) {
     try {
         var currentContext: android.content.Context? = context
-        while (currentContext is android.content.ContextWrapper) {
-            val method = currentContext.javaClass.methods.firstOrNull {
-                it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
+        while (currentContext != null) {
+            if (currentContext is com.muslim.browser.pro.MainActivity) {
+                break
             }
-            if (method != null) {
-                method.invoke(currentContext, architecture)
-                return
+            if (currentContext is android.content.ContextWrapper) {
+                currentContext = currentContext.baseContext
+            } else {
+                break
             }
-            currentContext = currentContext.baseContext
         }
+
+        if (currentContext is com.muslim.browser.pro.MainActivity && architecture == DesktopArchitecture.WINDOWS_7) {
+            // Windows 7 targeted activation:
+            // Prepare and apply desktop configuration (settings, User-Agent, and viewport guard)
+            // directly to the live WebViews and update state BEFORE any transition,
+            // avoiding unnecessary destructive reload() that causes the intermediate mobile-layout flash.
+            val twm = try {
+                currentContext.tabWebViewManager
+            } catch (_: Throwable) {
+                null
+            }
+            twm?.syncAllLiveWebViewsArchitecture(DesktopArchitecture.WINDOWS_7)
+
+            val currentWebView = try {
+                val field = currentContext.javaClass.getDeclaredField("webViewInstance")
+                field.isAccessible = true
+                field.get(currentContext) as? android.webkit.WebView
+            } catch (_: Throwable) {
+                null
+            }
+            if (currentWebView != null) {
+                com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
+                    currentWebView,
+                    currentWebView.url,
+                    DesktopArchitecture.WINDOWS_7,
+                    true
+                )
+            }
+
+            val viewModel = try {
+                val m = currentContext.javaClass.getDeclaredMethod("getViewModel")
+                m.isAccessible = true
+                m.invoke(currentContext) as? com.muslim.browser.pro.browser.BrowserViewModel
+            } catch (_: Throwable) {
+                null
+            }
+            viewModel?.selectDesktopArchitecture(DesktopArchitecture.WINDOWS_7)
+            return
+        }
+
+        if (currentContext is com.muslim.browser.pro.MainActivity && architecture == DesktopArchitecture.DESKTOP_MODE_4) {
+            // Optimized Desktop Mode 4 targeted activation:
+            // 1. Configure the WebView's desktop settings before triggering any navigation/reload that could expose mobile layout
+            // 2. Apply desktop User-Agent
+            // 3. Apply required native WebView desktop settings
+            // 4. Apply Desktop Mode 4 viewport configuration (width=1280)
+            // 5. Update state smoothly with NO visible intermediate mobile layout flash.
+            val twm = try {
+                currentContext.tabWebViewManager
+            } catch (_: Throwable) {
+                null
+            }
+            twm?.syncAllLiveWebViewsArchitecture(DesktopArchitecture.DESKTOP_MODE_4)
+
+            val currentWebView = try {
+                val field = currentContext.javaClass.getDeclaredField("webViewInstance")
+                field.isAccessible = true
+                field.get(currentContext) as? android.webkit.WebView
+            } catch (_: Throwable) {
+                null
+            }
+            if (currentWebView != null) {
+                com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
+                    currentWebView,
+                    currentWebView.url,
+                    DesktopArchitecture.DESKTOP_MODE_4,
+                    true
+                )
+            }
+
+            val viewModel = try {
+                val m = currentContext.javaClass.getDeclaredMethod("getViewModel")
+                m.isAccessible = true
+                m.invoke(currentContext) as? com.muslim.browser.pro.browser.BrowserViewModel
+            } catch (_: Throwable) {
+                null
+            }
+            viewModel?.selectDesktopArchitecture(DesktopArchitecture.DESKTOP_MODE_4)
+            return
+        }
+
+        // Standard path for other architectures or when disabling desktop modes
         val method = currentContext?.javaClass?.methods?.firstOrNull {
             it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
         }

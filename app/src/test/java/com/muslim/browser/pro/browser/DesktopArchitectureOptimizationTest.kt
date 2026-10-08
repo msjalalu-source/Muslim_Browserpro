@@ -136,4 +136,44 @@ class DesktopArchitectureOptimizationTest {
         assertTrue(names.contains("WINDOWS_10_TOUCH"))
         assertTrue(names.contains("WINDOWS_7"))
     }
+
+    @Test
+    fun test7_desktopMode4OptimizedScriptAndSettings() {
+        val webView = WebView(context)
+        val instance = DesktopCore::class.java.getField("INSTANCE").get(null)
+        val method = DesktopCore::class.java.getMethod("applyDesktopMode4Settings", WebView::class.java)
+        method.invoke(instance, webView)
+
+        val settings = webView.settings
+        assertEquals(true, settings.useWideViewPort)
+        assertEquals(true, settings.loadWithOverviewMode)
+        assertEquals(100, settings.textZoom)
+        assertEquals(true, settings.builtInZoomControls)
+        assertEquals(false, settings.displayZoomControls)
+
+        val scriptField = DesktopCore::class.java.getField("DESKTOP_MODE_4_SCRIPT")
+        val script = scriptField.get(null) as String
+        // Idempotent flag
+        assertTrue(script.contains("__mb_desktop_mode4_applied__"))
+        // Viewport 1280
+        assertTrue(script.contains("width=1280"))
+        // Zero permanent MutationObservers for low CPU/memory overhead
+        assertFalse("Mode 4 must not contain MutationObserver", script.contains("MutationObserver"))
+        // Supports dynamic PJAX / Turbo navigation
+        assertTrue(script.contains("turbo:load"))
+        assertTrue(script.contains("pjax:end"))
+    }
+
+    @Test
+    fun test8_desktopMode4LifecycleHandling() {
+        val webView = WebView(context)
+        DesktopCore.applyCommonDesktopWebViewSettings(webView)
+        DesktopCore.applyCommonDesktopViewport(webView)
+        assertEquals(true, webView.settings.useWideViewPort)
+        assertEquals(true, webView.settings.loadWithOverviewMode)
+
+        // Auth url bypass check with DesktopMode11Engine
+        val authUrl = "https://accounts.google.com/signin"
+        assertTrue(DesktopMode11Engine.isAuthenticationUrl(authUrl))
+    }
 }

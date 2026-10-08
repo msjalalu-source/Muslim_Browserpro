@@ -79,4 +79,22 @@ class Windows7DesktopModeTest {
         val matchingMethod = methods.firstOrNull { it.parameterCount == 21 }
         assertNotNull("BrowserMenuSheet must have exactly 21 parameters for binary compatibility with MainActivityKt", matchingMethod)
     }
+
+    @Test
+    fun test7_windows7SettingsAlignment() {
+        val webView = WebView(context)
+        DesktopCore.applyCommonDesktopWebViewSettings(webView)
+        assertEquals(true, webView.settings.useWideViewPort)
+        assertEquals(true, webView.settings.loadWithOverviewMode)
+        assertEquals(100, webView.settings.textZoom)
+    }
+
+    @Test
+    fun test8_windows7LifecycleSettings() {
+        val webView = WebView(context)
+        DesktopCore.applyCommonDesktopWebViewSettings(webView)
+        DesktopCore.applyCommonDesktopViewport(webView)
+        assertEquals(true, webView.settings.useWideViewPort)
+        assertEquals(true, webView.settings.loadWithOverviewMode)
+    }
 }
