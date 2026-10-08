@@ -69,4 +69,14 @@ class Windows7DesktopModeTest {
         DesktopCore.applyCommonDesktopViewport(webView)
         assertNotNull(webView)
     }
+
+    @Test
+    fun test6_browserMenuSheetSignatureBinaryCompatibility() {
+        val menuSheetClass = Class.forName("com.muslim.browser.pro.browser.ui.BrowserMenuSheetKt")
+        assertNotNull(menuSheetClass)
+        val methods = menuSheetClass.methods.filter { it.name == "BrowserMenuSheet" }
+        assertTrue("BrowserMenuSheet must exist", methods.isNotEmpty())
+        val matchingMethod = methods.firstOrNull { it.parameterCount == 21 }
+        assertNotNull("BrowserMenuSheet must have exactly 21 parameters for binary compatibility with MainActivityKt", matchingMethod)
+    }
 }

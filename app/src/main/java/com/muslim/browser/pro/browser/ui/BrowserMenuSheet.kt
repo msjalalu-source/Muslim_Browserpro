@@ -88,7 +88,6 @@ fun BrowserMenuSheet(
     onToggleDesktopMode: (Boolean) -> Unit = {},
     onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
-    onToggleWindows7: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
@@ -938,7 +937,6 @@ fun BrowserMenuSheet(
                             val isChecked = uiState.desktopArchitecture == DesktopArchitecture.WINDOWS_7
                             val target = if (!isChecked) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
                             notifyArchitectureChange(context, target)
-                            onToggleWindows7(!isChecked)
                         },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surface,
@@ -980,9 +978,8 @@ fun BrowserMenuSheet(
                         Switch(
                             checked = uiState.desktopArchitecture == DesktopArchitecture.WINDOWS_7,
                             onCheckedChange = { checked ->
-                                val target = if (checked) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
-                                notifyArchitectureChange(context, target)
-                                onToggleWindows7(checked)
+                                 val target = if (checked) DesktopArchitecture.WINDOWS_7 else DesktopArchitecture.NONE
+                                 notifyArchitectureChange(context, target)
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
