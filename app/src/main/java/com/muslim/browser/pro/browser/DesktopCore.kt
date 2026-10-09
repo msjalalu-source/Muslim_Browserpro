@@ -1,22 +1,31 @@
 package com.muslim.browser.pro.browser
 
+import android.content.Context
+import android.net.Uri
 import android.webkit.WebView
+import java.util.Locale
 
 object DesktopCore {
     const val TARGET_WIDTH: Int = 1280
     const val VIEWPORT_CONTENT: String = "width=1280"
 
+    const val DESKTOP_USER_AGENT: String =
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+    const val WINDOWS_10_TOUCH_USER_AGENT: String =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
     /**
-     * Ultra-lightweight Desktop Mode 4 Viewport Script:
-     * - Idempotent one-time execution flag (__mb_desktop_mode4_applied__)
+     * Ultra-lightweight Desktop Viewport Script:
+     * - Idempotent one-time execution flag (__mb_desktop_applied__)
      * - Directly configures target viewport (width=1280) once
      * - Zero MutationObservers (eliminates background CPU/memory observer loops)
      * - Zero navigation event listeners (no turbo/pjax/pageshow listener overhead)
      * - Relies strictly on native WebSettings for User-Agent (no navigator spoofing overhead)
      */
-    const val DESKTOP_MODE_4_SCRIPT: String = """(function() {
-    if (window.__mb_desktop_mode4_applied__) return;
-    window.__mb_desktop_mode4_applied__ = true;
+    const val DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
+    if (window.__mb_desktop_applied__) return;
+    window.__mb_desktop_applied__ = true;
     var TARGET = 'width=1280';
     try {
         var meta = document.querySelector('meta[name="viewport"]');
@@ -31,7 +40,30 @@ object DesktopCore {
     } catch(e) {}
 })();"""
 
-    fun applyDesktopMode4Settings(webView: WebView) {
+    private const val CLEANUP_DESKTOP_SCRIPT: String = """(function() {
+    try {
+        delete window.__mb_desktop_applied__;
+    } catch(e) {}
+})();"""
+
+    fun isAuthenticationUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val host = try {
+            Uri.parse(url).host?.lowercase(Locale.ROOT)
+        } catch (_: Throwable) {
+            null
+        } ?: return false
+
+        val authHosts = listOf(
+            "accounts.google.com",
+            "appleid.apple.com",
+            "login.microsoftonline.com",
+            "login.live.com"
+        )
+        return authHosts.any { host == it || host.endsWith(".$it") }
+    }
+
+    fun applyCommonDesktopWebViewSettings(webView: WebView) {
         val settings = webView.settings
         if (!settings.useWideViewPort) settings.useWideViewPort = true
         if (!settings.loadWithOverviewMode) settings.loadWithOverviewMode = true
@@ -40,30 +72,15 @@ object DesktopCore {
         if (settings.displayZoomControls) settings.displayZoomControls = false
     }
 
-    fun applyDesktopMode4Viewport(webView: WebView) {
-        try {
-            webView.evaluateJavascript(DESKTOP_MODE_4_SCRIPT, null)
-        } catch (_: Throwable) {}
-    }
-
     fun applyCommonDesktopViewport(webView: WebView) {
         try {
-            webView.evaluateJavascript(WebViewConfigurator.DESKTOP_VIEWPORT_GUARD_SCRIPT, null)
+            webView.evaluateJavascript(DESKTOP_VIEWPORT_SCRIPT, null)
         } catch (_: Throwable) {}
-    }
-
-    fun applyCommonDesktopWebViewSettings(webView: WebView) {
-        val settings = webView.settings
-        settings.useWideViewPort = true
-        settings.loadWithOverviewMode = true
-        settings.textZoom = 100
-        settings.builtInZoomControls = true
-        settings.displayZoomControls = false
     }
 
     fun cleanupCommonDesktopState(webView: WebView) {
         try {
-            webView.evaluateJavascript(WebViewConfigurator.CLEANUP_ALL_DESKTOP_SCRIPTS, null)
+            webView.evaluateJavascript(CLEANUP_DESKTOP_SCRIPT, null)
         } catch (_: Throwable) {}
     }
 
@@ -72,18 +89,18 @@ object DesktopCore {
         when (architecture) {
             DesktopArchitecture.NONE -> {}
             DesktopArchitecture.STANDARD -> {
-                applyCommonDesktopViewport(webView)
-            }
-            DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                applyCommonDesktopViewport(webView)
-                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
-                    WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
+                applyCommonDesktopWebViewSettings(webView)
+                if (!isAuthenticationUrl(url)) {
+                    applyCommonDesktopViewport(webView)
                 }
             }
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                applyDesktopMode4Settings(webView)
-                if (!WebViewConfigurator.isAuthenticationUrl(url)) {
-                    applyDesktopMode4Viewport(webView)
+            DesktopArchitecture.WINDOWS_10_TOUCH -> {
+                applyCommonDesktopWebViewSettings(webView)
+                if (!isAuthenticationUrl(url)) {
+                    try {
+                        WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
+                    } catch (_: Throwable) {}
+                    applyCommonDesktopViewport(webView)
                 }
             }
         }
@@ -97,14 +114,13 @@ object DesktopCore {
     ) {
         val targetUa = when (architecture) {
             DesktopArchitecture.NONE -> null
-            DesktopArchitecture.STANDARD,
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                if (url != null && WebViewConfigurator.isAuthenticationUrl(url)) null
-                else WebViewConfigurator.DESKTOP_USER_AGENT
+            DesktopArchitecture.STANDARD -> {
+                if (url != null && isAuthenticationUrl(url)) null
+                else DESKTOP_USER_AGENT
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                if (url != null && WebViewConfigurator.isAuthenticationUrl(url)) null
-                else WebViewConfigurator.WINDOWS_10_TOUCH_USER_AGENT
+                if (url != null && isAuthenticationUrl(url)) null
+                else WINDOWS_10_TOUCH_USER_AGENT
             }
         }
 
@@ -119,21 +135,34 @@ object DesktopCore {
             }
             DesktopArchitecture.STANDARD -> {
                 applyCommonDesktopWebViewSettings(webView)
-                applyCommonDesktopViewport(webView)
+                if (url != null && !isAuthenticationUrl(url)) {
+                    applyCommonDesktopViewport(webView)
+                }
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopWebViewSettings(webView)
-                if (url != null && !WebViewConfigurator.isAuthenticationUrl(url)) {
-                    WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
-                }
-                applyCommonDesktopViewport(webView)
-            }
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                applyDesktopMode4Settings(webView)
-                if (url != null && !WebViewConfigurator.isAuthenticationUrl(url)) {
-                    applyDesktopMode4Viewport(webView)
+                if (url != null && !isAuthenticationUrl(url)) {
+                    try {
+                        WebViewConfigurator.injectWindows10TouchProfileIfEnabled(webView, true)
+                    } catch (_: Throwable) {}
+                    applyCommonDesktopViewport(webView)
                 }
             }
         }
+    }
+
+    @JvmStatic
+    fun migrateSavedArchitecture(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences("focus_shield_prefs", Context.MODE_PRIVATE)
+            val saved = prefs.getString("key_desktop_architecture", null)
+            if (saved != null) {
+                when (saved) {
+                    "DESKTOP_MODE_4", "DESKTOP_MODE_11", "DESKTOP_MODE_12", "WINDOWS_7" -> {
+                        prefs.edit().putString("key_desktop_architecture", DesktopArchitecture.STANDARD.name).apply()
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.ui.platform.LocalContext
 import com.muslim.browser.pro.browser.DesktopArchitecture
+import com.muslim.browser.pro.browser.DesktopCore
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CleaningServices
@@ -683,13 +684,13 @@ fun BrowserMenuSheet(
                 Spacer(modifier = Modifier.height(6.dp))
 
 
-                // Desktop Mode 4 (Targeted Viewport Guard)
+                // Main Desktop / Standard Desktop Mode
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("section_desktop_mode_4")
+                        .testTag("section_desktop_mode")
                         .clickable {
-                            val target = if (!uiState.isDesktopMode4Enabled) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
+                            val target = if (!uiState.isDesktopModeEnabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
                             notifyArchitectureChange(context, target)
                         },
                     shape = RoundedCornerShape(8.dp),
@@ -709,20 +710,20 @@ fun BrowserMenuSheet(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Desktop Mode 4",
-                                tint = if (uiState.isDesktopMode4Enabled) colors.accent else colors.iconTint,
+                                contentDescription = "Desktop Mode",
+                                tint = if (uiState.isDesktopModeEnabled) colors.accent else colors.iconTint,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Desktop Mode 4",
+                                    text = "Desktop Mode",
                                     color = colors.textPrimary,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Targeted viewport guard",
+                                    text = "Desktop view for all websites",
                                     color = colors.textSecondary,
                                     fontSize = 10.sp
                                 )
@@ -730,9 +731,9 @@ fun BrowserMenuSheet(
                         }
 
                         Switch(
-                            checked = uiState.isDesktopMode4Enabled,
+                            checked = uiState.isDesktopModeEnabled,
                             onCheckedChange = { checked ->
-                                val target = if (checked) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
+                                val target = if (checked) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
                                 notifyArchitectureChange(context, target)
                             },
                             colors = SwitchDefaults.colors(
@@ -741,7 +742,7 @@ fun BrowserMenuSheet(
                                 uncheckedThumbColor = colors.textSecondary,
                                 uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
                             ),
-                            modifier = Modifier.testTag("desktop_mode_4_switch")
+                            modifier = Modifier.testTag("desktop_mode_switch")
                         )
                     }
                 }
@@ -1339,19 +1340,21 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
 
 
 
-        if (currentContext is com.muslim.browser.pro.MainActivity && architecture == DesktopArchitecture.DESKTOP_MODE_4) {
-            // Optimized Desktop Mode 4 targeted activation:
-            // 1. Configure the WebView's desktop settings before triggering any navigation/reload that could expose mobile layout
+        DesktopCore.migrateSavedArchitecture(context)
+
+        if (currentContext is com.muslim.browser.pro.MainActivity) {
+            // Optimized Main Desktop targeted activation:
+            // 1. Configure the WebView's desktop settings before triggering any navigation/reload
             // 2. Apply desktop User-Agent
             // 3. Apply required native WebView desktop settings
-            // 4. Apply Desktop Mode 4 viewport configuration (width=1280)
-            // 5. Update state smoothly with NO visible intermediate mobile layout flash.
+            // 4. Apply desktop viewport configuration (width=1280)
+            // 5. Update state smoothly with NO reload of the active WebView
             val twm = try {
                 currentContext.tabWebViewManager
             } catch (_: Throwable) {
                 null
             }
-            twm?.syncAllLiveWebViewsArchitecture(DesktopArchitecture.DESKTOP_MODE_4)
+            twm?.syncAllLiveWebViewsArchitecture(architecture)
 
             val currentWebView = try {
                 val field = currentContext.javaClass.getDeclaredField("webViewInstance")
@@ -1364,7 +1367,7 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
                 com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
                     currentWebView,
                     currentWebView.url,
-                    DesktopArchitecture.DESKTOP_MODE_4,
+                    architecture,
                     true
                 )
             }
@@ -1376,11 +1379,11 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             } catch (_: Throwable) {
                 null
             }
-            viewModel?.selectDesktopArchitecture(DesktopArchitecture.DESKTOP_MODE_4)
+            viewModel?.selectDesktopArchitecture(architecture)
             return
         }
 
-        // Standard path for other architectures or when disabling desktop modes
+        // Standard path fallback
         val method = currentContext?.javaClass?.methods?.firstOrNull {
             it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
         }
