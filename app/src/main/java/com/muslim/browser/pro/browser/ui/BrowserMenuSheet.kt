@@ -1343,12 +1343,8 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
         DesktopCore.migrateSavedArchitecture(context)
 
         if (currentContext is com.muslim.browser.pro.MainActivity) {
-            // Optimized Main Desktop targeted activation:
-            // 1. Configure the WebView's desktop settings before triggering any navigation/reload
-            // 2. Apply desktop User-Agent
-            // 3. Apply required native WebView desktop settings
-            // 4. Apply desktop viewport configuration (width=1280)
-            // 5. Update state smoothly with NO reload of the active WebView
+            // Main Desktop targeted activation:
+            // 1. Configure all live WebViews with the desktop settings and User-Agent
             val twm = try {
                 currentContext.tabWebViewManager
             } catch (_: Throwable) {
@@ -1380,6 +1376,14 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
                 null
             }
             viewModel?.selectDesktopArchitecture(architecture)
+
+            // 2. Reload active webpage so server receives desktop User-Agent header (matching reference Desktop Mode 4 behavior)
+            // Do NOT reload if on the home page or about:blank.
+            val activeUrl = currentWebView?.url ?: viewModel?.uiState?.value?.currentUrl
+            val isHomePage = viewModel?.uiState?.value?.isHomePage ?: true
+            if (currentWebView != null && !activeUrl.isNullOrBlank() && activeUrl != "about:blank" && !isHomePage) {
+                currentWebView.reload()
+            }
             return
         }
 

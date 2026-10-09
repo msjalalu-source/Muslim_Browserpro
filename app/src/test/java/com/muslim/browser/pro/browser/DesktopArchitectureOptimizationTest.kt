@@ -84,7 +84,7 @@ class DesktopArchitectureOptimizationTest {
     }
 
     @Test
-    fun test4_mainDesktopOptimizedScriptAndSettings() {
+    fun test4_mainDesktopRestoredScriptAndSettings() {
         val webView = WebView(context)
         DesktopCore.applyCommonDesktopWebViewSettings(webView)
 
@@ -97,17 +97,28 @@ class DesktopArchitectureOptimizationTest {
 
         val scriptField = DesktopCore::class.java.getField("DESKTOP_VIEWPORT_SCRIPT")
         val script = scriptField.get(null) as String
-        // Idempotent flag
-        assertTrue(script.contains("__mb_desktop_applied__"))
+
+        // Guard key and idempotent manager
+        assertTrue(script.contains("__mb_desktop_guard__"))
+        assertTrue(script.contains("ensureViewport"))
+        assertTrue(script.contains("cleanup"))
+
         // Viewport 1280
         assertTrue(script.contains("width=1280"))
-        // Ultra-lightweight: Zero MutationObservers, zero event listeners, zero navigator tampering
-        assertFalse("Main Desktop script must not contain MutationObserver", script.contains("MutationObserver"))
-        assertFalse("Main Desktop script must not contain turbo:load", script.contains("turbo:load"))
-        assertFalse("Main Desktop script must not contain pjax:end", script.contains("pjax:end"))
-        assertFalse("Main Desktop script must not contain userAgentData", script.contains("userAgentData"))
-        assertFalse("Main Desktop script must not contain platform spoofing", script.contains("platform"))
-        assertTrue("Main Desktop script must be ultra-lightweight (< 600 chars)", script.length < 600)
+
+        // Restored Desktop Mode 4: Client hints spoofing
+        assertTrue("Main Desktop script must patch userAgentData", script.contains("userAgentData"))
+        assertTrue("Main Desktop script must patch platform", script.contains("platform"))
+        assertTrue("Main Desktop script must set Linux x86_64", script.contains("Linux x86_64"))
+
+        // Restored Desktop Mode 4: MutationObserver for viewport meta and head
+        assertTrue("Main Desktop script must include MutationObserver", script.contains("MutationObserver"))
+        assertTrue("Main Desktop script must attach meta observer", script.contains("attachMetaObserver"))
+
+        // Restored Desktop Mode 4: SPA navigation event listeners
+        assertTrue("Main Desktop script must listen to turbo:load", script.contains("turbo:load"))
+        assertTrue("Main Desktop script must listen to pjax:end", script.contains("pjax:end"))
+        assertTrue("Main Desktop script must listen to popstate", script.contains("popstate"))
     }
 
     @Test
@@ -151,5 +162,17 @@ class DesktopArchitectureOptimizationTest {
 
         val migrated = prefs.getString("key_desktop_architecture", null)
         assertEquals("STANDARD", migrated)
+    }
+
+    @Test
+    fun test8_cleanupScriptRestoresState() {
+        val cleanupField = DesktopCore::class.java.getDeclaredField("CLEANUP_DESKTOP_SCRIPT")
+        cleanupField.isAccessible = true
+        val cleanupScript = cleanupField.get(null) as String
+
+        assertTrue(cleanupScript.contains("__mb_desktop_guard__"))
+        assertTrue(cleanupScript.contains("cleanup"))
+        assertTrue(cleanupScript.contains("delete navigator.userAgentData"))
+        assertTrue(cleanupScript.contains("delete navigator.platform"))
     }
 }
