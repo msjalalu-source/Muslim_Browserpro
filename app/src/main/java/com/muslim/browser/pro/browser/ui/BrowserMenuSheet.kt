@@ -1338,9 +1338,7 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
 
         if (currentContext is com.muslim.browser.pro.MainActivity &&
             (architecture == DesktopArchitecture.STANDARD ||
-             architecture == DesktopArchitecture.NONE ||
-             architecture == DesktopArchitecture.DESKTOP_MODE_4 ||
-             architecture == DesktopArchitecture.WINDOWS_7)
+             architecture == DesktopArchitecture.NONE)
         ) {
             // Direct no-reload architecture synchronization for Main Desktop and supported modes:
             // 1. Synchronize architecture across live WebViews using TabWebViewManager
