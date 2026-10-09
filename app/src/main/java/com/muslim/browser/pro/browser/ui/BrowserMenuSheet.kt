@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.ui.platform.LocalContext
 import com.muslim.browser.pro.browser.DesktopArchitecture
-import com.muslim.browser.pro.browser.DesktopCore
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CleaningServices
@@ -684,13 +683,14 @@ fun BrowserMenuSheet(
                 Spacer(modifier = Modifier.height(6.dp))
 
 
-                // Main Desktop / Standard Desktop Mode
+                // Main Desktop Mode (STANDARD) - Lightweight, No-Reload Switching
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("section_desktop_mode")
                         .clickable {
-                            val target = if (!uiState.isDesktopModeEnabled) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
+                            val isChecked = uiState.isDesktopModeEnabled
+                            val target = if (!isChecked) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
                             notifyArchitectureChange(context, target)
                         },
                     shape = RoundedCornerShape(8.dp),
@@ -723,7 +723,7 @@ fun BrowserMenuSheet(
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "Desktop view for all websites",
+                                    text = "Request desktop website",
                                     color = colors.textSecondary,
                                     fontSize = 10.sp
                                 )
@@ -801,8 +801,6 @@ fun BrowserMenuSheet(
                         )
                     }
                 }
-
-
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -1338,13 +1336,17 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             }
         }
 
-
-
-        DesktopCore.migrateSavedArchitecture(context)
-
-        if (currentContext is com.muslim.browser.pro.MainActivity) {
-            // Main Desktop targeted activation:
-            // 1. Configure all live WebViews with the desktop settings and User-Agent
+        if (currentContext is com.muslim.browser.pro.MainActivity &&
+            (architecture == DesktopArchitecture.STANDARD ||
+             architecture == DesktopArchitecture.NONE ||
+             architecture == DesktopArchitecture.DESKTOP_MODE_4 ||
+             architecture == DesktopArchitecture.WINDOWS_7)
+        ) {
+            // Direct no-reload architecture synchronization for Main Desktop and supported modes:
+            // 1. Synchronize architecture across live WebViews using TabWebViewManager
+            // 2. Apply required settings/viewport to active WebView through DesktopCore.synchronizeDesktopWebView
+            // 3. Update BrowserViewModel state
+            // 4. Return before invoking reflection-based MainActivity.setDesktopArchitecture$app(...) that triggers WebView.reload()
             val twm = try {
                 currentContext.tabWebViewManager
             } catch (_: Throwable) {
@@ -1376,18 +1378,10 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
                 null
             }
             viewModel?.selectDesktopArchitecture(architecture)
-
-            // 2. Reload active webpage so server receives desktop User-Agent header (matching reference Desktop Mode 4 behavior)
-            // Do NOT reload if on the home page or about:blank.
-            val activeUrl = currentWebView?.url ?: viewModel?.uiState?.value?.currentUrl
-            val isHomePage = viewModel?.uiState?.value?.isHomePage ?: true
-            if (currentWebView != null && !activeUrl.isNullOrBlank() && activeUrl != "about:blank" && !isHomePage) {
-                currentWebView.reload()
-            }
             return
         }
 
-        // Standard path fallback
+        // Standard path for other architectures or when disabling desktop modes
         val method = currentContext?.javaClass?.methods?.firstOrNull {
             it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
         }
