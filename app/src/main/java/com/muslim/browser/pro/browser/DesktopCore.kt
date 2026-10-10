@@ -12,17 +12,24 @@ object DesktopCore {
     const val WINDOWS_10_TOUCH_USER_AGENT: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     /**
-     * Desktop Viewport Script:
+     * Desktop Viewport Script (Recovered & Optimized Desktop Mode 4):
      * - Idempotent one-time execution guard (__mb_desktop_guard__)
      * - Saves original viewport in data-mb-orig for clean zero-reload restoration to Mobile
      * - Directly configures target viewport (width=1280) once via ensureViewport
      * - Patches userAgentData and platform (Linux x86_64) for client hints spoofing
-     * - Meta observer (attachMetaObserver) and SPA event listeners (turbo:load, pjax:end, popstate)
+     * - Focused meta observer (attachMetaObserver) observing only attributes on the viewport meta tag
+     * - SPA event listeners (turbo:load, pjax:end, popstate)
+     * - Clean unregistration of listeners and observer disconnect on Mobile restoration
      */
     const val DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
-    if (window.__mb_desktop_guard__) return;
-    window.__mb_desktop_guard__ = true;
+    if (window.__mb_desktop_guard__) {
+        if (typeof window.__mb_desktop_guard__.ensureViewport === 'function') {
+            window.__mb_desktop_guard__.ensureViewport();
+        }
+        return;
+    }
     var TARGET = 'width=1280';
+    var metaObs = null;
     function ensureViewport() {
         var meta = document.querySelector('meta[name="viewport"]');
         if (!meta) {
@@ -42,10 +49,15 @@ object DesktopCore {
         if (!window.MutationObserver) return;
         var meta = document.querySelector('meta[name="viewport"]');
         if (meta) {
-            var obs = new MutationObserver(function() { ensureViewport(); });
-            obs.observe(meta, { attributes: true, attributeFilter: ['content'] });
+            if (metaObs) {
+                try { metaObs.disconnect(); } catch(e) {}
+            }
+            metaObs = new MutationObserver(function() { ensureViewport(); });
+            metaObs.observe(meta, { attributes: true, attributeFilter: ['content'] });
         }
     }
+    function onNav() { ensureViewport(); }
+    var navEvents = ['turbo:load', 'pjax:end', 'popstate'];
     try {
         ensureViewport();
         attachMetaObserver();
@@ -73,13 +85,20 @@ object DesktopCore {
                 configurable: true
             });
         } catch(e) {}
-        window.addEventListener('turbo:load', ensureViewport);
-        window.addEventListener('pjax:end', ensureViewport);
-        window.addEventListener('popstate', ensureViewport);
+        navEvents.forEach(function(evt) {
+            window.addEventListener(evt, onNav, { passive: true });
+        });
     } catch(e) {}
     window.__mb_desktop_guard__ = {
         ensureViewport: ensureViewport,
-        cleanup: function() {}
+        cleanup: function() {
+            try {
+                if (metaObs) metaObs.disconnect();
+                navEvents.forEach(function(evt) {
+                    window.removeEventListener(evt, onNav);
+                });
+            } catch(e) {}
+        }
     };
 })();"""
 
