@@ -61,26 +61,34 @@ class DesktopArchitectureOptimizationTest {
 
         assertTrue(names.contains("NONE"))
         assertTrue(names.contains("STANDARD"))
+        assertTrue(names.contains("DESKTOP_MODE_4"))
         assertTrue(names.contains("WINDOWS_10_TOUCH"))
-        assertFalse(names.contains("DESKTOP_MODE_4"))
         assertFalse(names.contains("DESKTOP_MODE_11"))
         assertFalse(names.contains("DESKTOP_MODE_12"))
         assertFalse(names.contains("WINDOWS_7"))
 
-        assertEquals(3, names.size)
+        assertEquals(4, names.size)
 
         val standard = java.lang.Enum.valueOf(archClass as Class<out Enum<*>>, "STANDARD")
         val isStandardMethod = archClass.getMethod("isStandard")
         val isAnyDesktopMethod = archClass.getMethod("isAnyDesktop")
         val isWindows10TouchMethod = archClass.getMethod("isWindows10Touch")
+        val isMode4Method = archClass.getMethod("isMode4")
 
         assertTrue(isStandardMethod.invoke(standard) as Boolean)
         assertTrue(isAnyDesktopMethod.invoke(standard) as Boolean)
         assertFalse(isWindows10TouchMethod.invoke(standard) as Boolean)
+        assertFalse(isMode4Method.invoke(standard) as Boolean)
+
+        val mode4 = java.lang.Enum.valueOf(archClass, "DESKTOP_MODE_4")
+        assertTrue(isMode4Method.invoke(mode4) as Boolean)
+        assertTrue(isAnyDesktopMethod.invoke(mode4) as Boolean)
+        assertFalse(isStandardMethod.invoke(mode4) as Boolean)
 
         val none = java.lang.Enum.valueOf(archClass, "NONE")
         assertFalse(isAnyDesktopMethod.invoke(none) as Boolean)
         assertFalse(isStandardMethod.invoke(none) as Boolean)
+        assertFalse(isMode4Method.invoke(none) as Boolean)
     }
 
     @Test
@@ -154,7 +162,9 @@ class DesktopArchitectureOptimizationTest {
     @Test
     fun test7_preferenceMigration() {
         val prefs = context.getSharedPreferences("focus_shield_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putString("key_desktop_architecture", "DESKTOP_MODE_4").commit()
+
+        // Legacy mode 11 must be migrated to STANDARD
+        prefs.edit().putString("key_desktop_architecture", "DESKTOP_MODE_11").commit()
 
         val instance = DesktopCore::class.java.getField("INSTANCE").get(null)
         val migrateMethod = DesktopCore::class.java.getMethod("migrateSavedArchitecture", Context::class.java)
@@ -162,6 +172,12 @@ class DesktopArchitectureOptimizationTest {
 
         val migrated = prefs.getString("key_desktop_architecture", null)
         assertEquals("STANDARD", migrated)
+
+        // DESKTOP_MODE_4 is now a distinct valid selectable mode and must NOT be migrated
+        prefs.edit().putString("key_desktop_architecture", "DESKTOP_MODE_4").commit()
+        migrateMethod.invoke(instance, context)
+        val preservedMode4 = prefs.getString("key_desktop_architecture", null)
+        assertEquals("DESKTOP_MODE_4", preservedMode4)
     }
 
     @Test
