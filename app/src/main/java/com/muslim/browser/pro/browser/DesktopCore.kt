@@ -12,7 +12,7 @@ object DesktopCore {
     const val WINDOWS_10_TOUCH_USER_AGENT: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     /**
-     * Desktop Viewport Script (Recovered & Optimized Desktop Mode 4):
+     * Desktop Viewport Script (Main STANDARD Desktop Mode):
      * - Idempotent one-time execution guard (__mb_desktop_guard__)
      * - Saves original viewport in data-mb-orig for clean zero-reload restoration to Mobile
      * - Directly configures target viewport (width=1280) once via ensureViewport
@@ -102,17 +102,187 @@ object DesktopCore {
     };
 })();"""
 
-    const val DESKTOP_MODE_4_SCRIPT: String = DESKTOP_VIEWPORT_SCRIPT
+    /**
+     * Desktop Mode 4 Dedicated Script:
+     * Recovered verbatim from prebuilt bytecode (DESKTOP_MODE_4_GUARD_SCRIPT).
+     * - Isolated guard key: __mb_desktop_mode4__
+     * - Dedicated meta tags: data-mb4-orig, data-mb4-created
+     * - Dynamic client hints high entropy values resolution
+     * - Head and meta observers with complete unregistration on cleanup
+     */
+    const val DESKTOP_MODE_4_SCRIPT: String = """(function() {
+    var TARGET_CONTENT = 'width=1280';
+    var GUARD_KEY = '__mb_desktop_mode4__';
+    var metaObserver = null;
+    var headObserver = null;
+    function attachMetaObserver(metaEl) {
+        if (!metaEl || !window.MutationObserver) return;
+        if (metaObserver) {
+            try { metaObserver.disconnect(); } catch(e) {}
+        }
+        metaObserver = new MutationObserver(function(mutations) {
+            for (var i = 0; i < mutations.length; i++) {
+                if (mutations[i].attributeName === 'content') {
+                    if (metaEl.getAttribute('content') !== TARGET_CONTENT) {
+                        applyViewport();
+                    }
+                    break;
+                }
+            }
+        });
+        try {
+            metaObserver.observe(metaEl, {
+                attributes: true,
+                attributeFilter: ['content']
+            });
+        } catch(e) {}
+    }
+    function applyViewport() {
+        try {
+            var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+            if (!head) return;
+            var meta = document.querySelector('meta[name="viewport"]');
+            if (!meta) {
+                meta = document.createElement('meta');
+                meta.name = 'viewport';
+                meta.setAttribute('data-mb4-created', 'true');
+                head.appendChild(meta);
+            }
+            if (meta.getAttribute('content') !== TARGET_CONTENT) {
+                if (meta.getAttribute('data-mb4-orig') === null && !meta.hasAttribute('data-mb4-created')) {
+                    meta.setAttribute('data-mb4-orig', meta.getAttribute('content') || '');
+                }
+                meta.setAttribute('content', TARGET_CONTENT);
+            }
+            attachMetaObserver(meta);
+        } catch(e) {}
+    }
+    function patchDesktopClientHints() {
+        try {
+            if (navigator.userAgentData) {
+                var origUaData = navigator.userAgentData;
+                var fakeUaData = {
+                    brands: origUaData.brands || [
+                        { brand: 'Google Chrome', version: '131' },
+                        { brand: 'Chromium', version: '131' },
+                        { brand: 'Not_A Brand', version: '24' }
+                    ],
+                    mobile: false,
+                    platform: 'Linux',
+                    getHighEntropyValues: function(hints) {
+                        return origUaData.getHighEntropyValues ?
+                            origUaData.getHighEntropyValues(hints).then(function(vals) {
+                                vals.mobile = false;
+                                vals.platform = 'Linux';
+                                return vals;
+                            }) :
+                            Promise.resolve({ mobile: false, platform: 'Linux' });
+                    },
+                    toJSON: function() {
+                        return { brands: this.brands, mobile: false, platform: 'Linux' };
+                    }
+                };
+                Object.defineProperty(navigator, 'userAgentData', {
+                    get: function() { return fakeUaData; },
+                    configurable: true
+                });
+            }
+        } catch(e) {}
+        try {
+            Object.defineProperty(navigator, 'platform', {
+                get: function() { return 'Linux x86_64'; },
+                configurable: true
+            });
+        } catch(e) {}
+    }
+    if (window[GUARD_KEY]) {
+        window[GUARD_KEY].ensureViewport();
+        return;
+    }
+    applyViewport();
+    patchDesktopClientHints();
+    try {
+        var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
+        if (head && window.MutationObserver) {
+            headObserver = new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    var m = mutations[i];
+                    if (m.type === 'childList') {
+                        var changed = false;
+                        for (var j = 0; j < m.addedNodes.length; j++) {
+                            var node = m.addedNodes[j];
+                            if (node.nodeType === 1 && node.nodeName === 'META' && (node.name === 'viewport' || node.getAttribute('name') === 'viewport')) {
+                                changed = true;
+                                break;
+                            }
+                        }
+                        if (!changed) {
+                            for (var k = 0; k < m.removedNodes.length; k++) {
+                                var rNode = m.removedNodes[k];
+                                if (rNode.nodeType === 1 && rNode.nodeName === 'META' && (rNode.name === 'viewport' || rNode.getAttribute('name') === 'viewport')) {
+                                    changed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (changed) {
+                            applyViewport();
+                            break;
+                        }
+                    }
+                }
+            });
+            headObserver.observe(head, {
+                childList: true,
+                subtree: false
+            });
+        }
+    } catch(e) {}
+    var navEvents = ['turbo:load', 'turbo:render', 'pjax:end', 'pageshow', 'popstate'];
+    function onNav() { applyViewport(); }
+    navEvents.forEach(function(evt) {
+        window.addEventListener(evt, onNav, { passive: true });
+    });
+    window[GUARD_KEY] = {
+        ensureViewport: applyViewport,
+        cleanup: function() {
+            try {
+                if (headObserver) headObserver.disconnect();
+                if (metaObserver) metaObserver.disconnect();
+                navEvents.forEach(function(evt) {
+                    window.removeEventListener(evt, onNav);
+                });
+                var meta = document.querySelector('meta[name="viewport"]');
+                if (meta) {
+                    if (meta.hasAttribute('data-mb4-created')) {
+                        meta.remove();
+                    } else if (meta.hasAttribute('data-mb4-orig')) {
+                        var orig = meta.getAttribute('data-mb4-orig');
+                        if (orig) meta.setAttribute('content', orig);
+                        else meta.removeAttribute('content');
+                        meta.removeAttribute('data-mb4-orig');
+                    }
+                }
+            } catch(e) {}
+            delete window[GUARD_KEY];
+        }
+    };
+})();"""
 
     private const val CLEANUP_DESKTOP_SCRIPT: String = """(function() {
-    try {
-        if (window.__mb_desktop_guard__ && window.__mb_desktop_guard__.cleanup) {
-            window.__mb_desktop_guard__.cleanup();
+    var keys = ['__mb_desktop_guard__', '__mb_desktop_mode4__'];
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (window[k] && typeof window[k].cleanup === 'function') {
+            try { window[k].cleanup(); } catch(e) {}
         }
-        delete window.__mb_desktop_guard__;
-        delete window.__mb_desktop_mode4_applied__;
-        try { delete navigator.userAgentData; } catch(e) {}
-        try { delete navigator.platform; } catch(e) {}
+    }
+    delete window.__mb_desktop_guard__;
+    delete window.__mb_desktop_mode4__;
+    delete window.__mb_desktop_mode4_applied__;
+    try { delete navigator.userAgentData; } catch(e) {}
+    try { delete navigator.platform; } catch(e) {}
+    try {
         var meta = document.querySelector('meta[name="viewport"]');
         if (meta) {
             if (meta.hasAttribute('data-mb-created') || meta.hasAttribute('data-mb4-created')) {
@@ -120,7 +290,7 @@ object DesktopCore {
             } else if (meta.hasAttribute('data-mb-orig') || meta.hasAttribute('data-mb4-orig')) {
                 var orig = meta.getAttribute('data-mb-orig') || meta.getAttribute('data-mb4-orig');
                 if (orig) meta.setAttribute('content', orig);
-                else meta.setAttribute('content', 'width=device-width, initial-scale=1.0');
+                else meta.removeAttribute('content');
                 meta.removeAttribute('data-mb-orig');
                 meta.removeAttribute('data-mb4-orig');
             } else {
@@ -159,7 +329,9 @@ object DesktopCore {
     }
 
     fun applyDesktopMode4Viewport(webView: WebView) {
-        applyCommonDesktopViewport(webView)
+        try {
+            webView.evaluateJavascript(DESKTOP_MODE_4_SCRIPT, null)
+        } catch (_: Throwable) {}
     }
 
     fun applyCommonDesktopViewport(webView: WebView) {
@@ -193,6 +365,12 @@ object DesktopCore {
                     applyCommonDesktopViewport(webView)
                 }
             }
+            DesktopArchitecture.DESKTOP_MODE_4 -> {
+                applyCommonDesktopWebViewSettings(webView)
+                if (!isAuthenticationUrl(url)) {
+                    applyDesktopMode4Viewport(webView)
+                }
+            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopViewport(webView)
                 if (!isAuthenticationUrl(url)) {
@@ -214,6 +392,10 @@ object DesktopCore {
                 if (isAuthenticationUrl(url)) null
                 else DESKTOP_USER_AGENT
             }
+            DesktopArchitecture.DESKTOP_MODE_4 -> {
+                if (isAuthenticationUrl(url)) null
+                else DESKTOP_USER_AGENT
+            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 if (isAuthenticationUrl(url)) null
                 else WINDOWS_10_TOUCH_USER_AGENT
@@ -230,12 +412,21 @@ object DesktopCore {
                 cleanupCommonDesktopState(webView)
             }
             DesktopArchitecture.STANDARD -> {
+                cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
                     applyCommonDesktopViewport(webView)
                 }
             }
+            DesktopArchitecture.DESKTOP_MODE_4 -> {
+                cleanupCommonDesktopState(webView)
+                applyCommonDesktopWebViewSettings(webView)
+                if (!isAuthenticationUrl(url)) {
+                    applyDesktopMode4Viewport(webView)
+                }
+            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
+                cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
                     // Windows 10 Touch profile injection
@@ -249,7 +440,8 @@ object DesktopCore {
         try {
             val prefs = context.getSharedPreferences("focus_shield_prefs", Context.MODE_PRIVATE)
             val saved = prefs.getString("key_desktop_architecture", null) ?: return
-            if (saved == "DESKTOP_MODE_4" || saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
+            // DESKTOP_MODE_4 is now a distinct valid selectable architecture and must NOT be migrated away!
+            if (saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
                 prefs.edit().putString("key_desktop_architecture", "STANDARD").apply()
             }
         } catch (_: Throwable) {}
