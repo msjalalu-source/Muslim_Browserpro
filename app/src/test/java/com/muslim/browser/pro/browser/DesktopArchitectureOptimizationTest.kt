@@ -60,19 +60,19 @@ class DesktopArchitectureOptimizationTest {
         val names = enumConstants.map { (it as Enum<*>).name }
 
         assertTrue(names.contains("NONE"))
+        assertTrue(names.contains("STANDARD"))
         assertTrue(names.contains("DESKTOP_MODE_4"))
         assertTrue(names.contains("WINDOWS_10_TOUCH"))
-        // Legacy main Desktop Mode STANDARD removed
-        assertFalse(names.contains("STANDARD"))
         assertFalse(names.contains("DESKTOP_MODE_11"))
         assertFalse(names.contains("DESKTOP_MODE_12"))
         assertFalse(names.contains("WINDOWS_7"))
 
-        assertEquals(3, names.size)
+        assertEquals(4, names.size)
 
         val mode4 = java.lang.Enum.valueOf(archClass as Class<out Enum<*>>, "DESKTOP_MODE_4")
         val isAnyDesktopMethod = archClass.getMethod("isAnyDesktop")
         val isWindows10TouchMethod = archClass.getMethod("isWindows10Touch")
+        val isStandardMethod = archClass.getMethod("isStandard")
         val isMode4Method = archClass.getMethod("isMode4")
 
         assertTrue(isMode4Method.invoke(mode4) as Boolean)
