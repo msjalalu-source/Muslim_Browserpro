@@ -683,72 +683,6 @@ fun BrowserMenuSheet(
                 Spacer(modifier = Modifier.height(6.dp))
 
 
-                // Main Desktop Mode (STANDARD) - Lightweight, No-Reload Switching
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_desktop_mode")
-                        .clickable {
-                            val isChecked = uiState.isDesktopModeEnabled
-                            val target = if (!isChecked) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
-                            notifyArchitectureChange(context, target)
-                        },
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Desktop Mode",
-                                tint = if (uiState.isDesktopModeEnabled) colors.accent else colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Desktop Mode",
-                                    color = colors.textPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Request desktop website",
-                                    color = colors.textSecondary,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-
-                        Switch(
-                            checked = uiState.isDesktopModeEnabled,
-                            onCheckedChange = { checked ->
-                                val target = if (checked) DesktopArchitecture.STANDARD else DesktopArchitecture.NONE
-                                notifyArchitectureChange(context, target)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = colors.buttonText,
-                                checkedTrackColor = colors.accent,
-                                uncheckedThumbColor = colors.textSecondary,
-                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("desktop_mode_switch")
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
                 // Desktop Mode 4 - Targeted Viewport Guard
                 Surface(
                     modifier = Modifier
@@ -819,7 +753,12 @@ fun BrowserMenuSheet(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("item_windows_10_touch"),
+                        .testTag("item_windows_10_touch")
+                        .clickable {
+                            val isChecked = uiState.isWindows10TouchEnabled
+                            val target = if (!isChecked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                            notifyArchitectureChange(context, target)
+                        },
                     shape = RoundedCornerShape(8.dp),
                     color = colors.surface,
                     border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
@@ -856,7 +795,10 @@ fun BrowserMenuSheet(
 
                         Switch(
                             checked = uiState.isWindows10TouchEnabled,
-                            onCheckedChange = onToggleWindows10Touch,
+                            onCheckedChange = { checked ->
+                                val target = if (checked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                                notifyArchitectureChange(context, target)
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = colors.buttonText,
                                 checkedTrackColor = colors.accent,
@@ -1403,11 +1345,11 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
         }
 
         if (currentContext is com.muslim.browser.pro.MainActivity &&
-            (architecture == DesktopArchitecture.STANDARD ||
-             architecture == DesktopArchitecture.DESKTOP_MODE_4 ||
+            (architecture == DesktopArchitecture.DESKTOP_MODE_4 ||
+             architecture == DesktopArchitecture.WINDOWS_10_TOUCH ||
              architecture == DesktopArchitecture.NONE)
         ) {
-            // Direct no-reload architecture synchronization for Main Desktop and supported modes:
+            // Direct no-reload architecture synchronization for Desktop Mode 4, Windows 10 Touch, and Mobile (NONE):
             // 1. Synchronize architecture across live WebViews using TabWebViewManager
             // 2. Apply required settings/viewport to active WebView through DesktopCore.synchronizeDesktopWebView
             // 3. Update BrowserViewModel state

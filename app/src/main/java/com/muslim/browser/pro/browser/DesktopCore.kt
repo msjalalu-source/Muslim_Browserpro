@@ -11,96 +11,7 @@ object DesktopCore {
     const val DESKTOP_USER_AGENT: String = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     const val WINDOWS_10_TOUCH_USER_AGENT: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
-    /**
-     * Desktop Viewport Script (Main STANDARD Desktop Mode):
-     * - Idempotent one-time execution guard (__mb_desktop_guard__)
-     * - Saves original viewport in data-mb-orig for clean zero-reload restoration to Mobile
-     * - Directly configures target viewport (width=1280) once via ensureViewport
-     * - Patches userAgentData and platform (Linux x86_64) for client hints spoofing
-     * - Focused meta observer (attachMetaObserver) observing only attributes on the viewport meta tag
-     * - SPA event listeners (turbo:load, pjax:end, popstate)
-     * - Clean unregistration of listeners and observer disconnect on Mobile restoration
-     */
-    const val DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
-    if (window.__mb_desktop_guard__) {
-        if (typeof window.__mb_desktop_guard__.ensureViewport === 'function') {
-            window.__mb_desktop_guard__.ensureViewport();
-        }
-        return;
-    }
-    var TARGET = 'width=1280';
-    var metaObs = null;
-    function ensureViewport() {
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (!meta) {
-            meta = document.createElement('meta');
-            meta.name = 'viewport';
-            meta.setAttribute('data-mb-created', 'true');
-            (document.head || document.documentElement).appendChild(meta);
-        }
-        if (meta.getAttribute('content') !== TARGET) {
-            if (!meta.hasAttribute('data-mb-orig') && !meta.hasAttribute('data-mb-created')) {
-                meta.setAttribute('data-mb-orig', meta.getAttribute('content') || '');
-            }
-            meta.setAttribute('content', TARGET);
-        }
-    }
-    function attachMetaObserver() {
-        if (!window.MutationObserver) return;
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (meta) {
-            if (metaObs) {
-                try { metaObs.disconnect(); } catch(e) {}
-            }
-            metaObs = new MutationObserver(function() { ensureViewport(); });
-            metaObs.observe(meta, { attributes: true, attributeFilter: ['content'] });
-        }
-    }
-    function onNav() { ensureViewport(); }
-    var navEvents = ['turbo:load', 'pjax:end', 'popstate'];
-    try {
-        ensureViewport();
-        attachMetaObserver();
-        if (navigator.userAgentData) {
-            try {
-                Object.defineProperty(navigator, 'userAgentData', {
-                    get: function() {
-                        return {
-                            brands: [
-                                { brand: 'Chromium', version: '131' },
-                                { brand: 'Google Chrome', version: '131' },
-                                { brand: 'Not_A Brand', version: '24' }
-                            ],
-                            mobile: false,
-                            platform: 'Linux x86_64'
-                        };
-                    },
-                    configurable: true
-                });
-            } catch(e) {}
-        }
-        try {
-            Object.defineProperty(navigator, 'platform', {
-                get: function() { return 'Linux x86_64'; },
-                configurable: true
-            });
-        } catch(e) {}
-        navEvents.forEach(function(evt) {
-            window.addEventListener(evt, onNav, { passive: true });
-        });
-    } catch(e) {}
-    window.__mb_desktop_guard__ = {
-        ensureViewport: ensureViewport,
-        cleanup: function() {
-            try {
-                if (metaObs) metaObs.disconnect();
-                navEvents.forEach(function(evt) {
-                    window.removeEventListener(evt, onNav);
-                });
-            } catch(e) {}
-        }
-    };
-})();"""
+
 
     /**
      * Desktop Mode 4 Dedicated Script:
@@ -334,12 +245,6 @@ object DesktopCore {
         } catch (_: Throwable) {}
     }
 
-    fun applyCommonDesktopViewport(webView: WebView) {
-        try {
-            webView.evaluateJavascript(DESKTOP_VIEWPORT_SCRIPT, null)
-        } catch (_: Throwable) {}
-    }
-
     fun applyCommonDesktopWebViewSettings(webView: WebView) {
         val settings = webView.settings
         if (!settings.useWideViewPort) settings.useWideViewPort = true
@@ -359,12 +264,6 @@ object DesktopCore {
         if (!architecture.isAnyDesktop()) return
         when (architecture) {
             DesktopArchitecture.NONE -> {}
-            DesktopArchitecture.STANDARD -> {
-                applyCommonDesktopWebViewSettings(webView)
-                if (!isAuthenticationUrl(url)) {
-                    applyCommonDesktopViewport(webView)
-                }
-            }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
@@ -372,9 +271,14 @@ object DesktopCore {
                 }
             }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                applyCommonDesktopViewport(webView)
+                applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
-                    // Windows 10 Touch profile injection
+                    try {
+                        val configuratorClass = Class.forName("com.muslim.browser.pro.browser.WebViewConfigurator")
+                        val configuratorInstance = configuratorClass.getField("INSTANCE").get(null)
+                        val injectMethod = configuratorClass.getMethod("injectWindows10TouchProfileIfEnabled", WebView::class.java, Boolean::class.javaPrimitiveType)
+                        injectMethod.invoke(configuratorInstance, webView, true)
+                    } catch (_: Throwable) {}
                 }
             }
         }
@@ -388,10 +292,6 @@ object DesktopCore {
     ) {
         val targetUa = when (architecture) {
             DesktopArchitecture.NONE -> null
-            DesktopArchitecture.STANDARD -> {
-                if (isAuthenticationUrl(url)) null
-                else DESKTOP_USER_AGENT
-            }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 if (isAuthenticationUrl(url)) null
                 else DESKTOP_USER_AGENT
@@ -411,13 +311,6 @@ object DesktopCore {
             DesktopArchitecture.NONE -> {
                 cleanupCommonDesktopState(webView)
             }
-            DesktopArchitecture.STANDARD -> {
-                cleanupCommonDesktopState(webView)
-                applyCommonDesktopWebViewSettings(webView)
-                if (!isAuthenticationUrl(url)) {
-                    applyCommonDesktopViewport(webView)
-                }
-            }
             DesktopArchitecture.DESKTOP_MODE_4 -> {
                 cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
@@ -429,9 +322,13 @@ object DesktopCore {
                 cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
-                    // Windows 10 Touch profile injection
+                    try {
+                        val configuratorClass = Class.forName("com.muslim.browser.pro.browser.WebViewConfigurator")
+                        val configuratorInstance = configuratorClass.getField("INSTANCE").get(null)
+                        val injectMethod = configuratorClass.getMethod("injectWindows10TouchProfileIfEnabled", WebView::class.java, Boolean::class.javaPrimitiveType)
+                        injectMethod.invoke(configuratorInstance, webView, true)
+                    } catch (_: Throwable) {}
                 }
-                applyCommonDesktopViewport(webView)
             }
         }
     }
@@ -440,9 +337,9 @@ object DesktopCore {
         try {
             val prefs = context.getSharedPreferences("focus_shield_prefs", Context.MODE_PRIVATE)
             val saved = prefs.getString("key_desktop_architecture", null) ?: return
-            // DESKTOP_MODE_4 is now a distinct valid selectable architecture and must NOT be migrated away!
-            if (saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
-                prefs.edit().putString("key_desktop_architecture", "STANDARD").apply()
+            // Legacy STANDARD and old modes are migrated to DESKTOP_MODE_4 as the replacement main desktop architecture
+            if (saved == "STANDARD" || saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
+                prefs.edit().putString("key_desktop_architecture", "DESKTOP_MODE_4").apply()
             }
         } catch (_: Throwable) {}
     }
