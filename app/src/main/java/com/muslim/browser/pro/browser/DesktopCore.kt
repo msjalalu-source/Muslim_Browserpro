@@ -264,7 +264,7 @@ object DesktopCore {
         if (!architecture.isAnyDesktop()) return
         when (architecture) {
             DesktopArchitecture.NONE -> {}
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.STANDARD, DesktopArchitecture.DESKTOP_MODE_4 -> {
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
                     applyDesktopMode4Viewport(webView)
@@ -292,7 +292,7 @@ object DesktopCore {
     ) {
         val targetUa = when (architecture) {
             DesktopArchitecture.NONE -> null
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.STANDARD, DesktopArchitecture.DESKTOP_MODE_4 -> {
                 if (isAuthenticationUrl(url)) null
                 else DESKTOP_USER_AGENT
             }
@@ -311,7 +311,7 @@ object DesktopCore {
             DesktopArchitecture.NONE -> {
                 cleanupCommonDesktopState(webView)
             }
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
+            DesktopArchitecture.STANDARD, DesktopArchitecture.DESKTOP_MODE_4 -> {
                 cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
