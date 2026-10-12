@@ -47,7 +47,7 @@ object DownloadPolicy {
         } catch (_: Exception) {
             name
         }
-        return decoded.trim().lowercase(Locale.ROOT)
+        return decoded.trim()
     }
 
     private fun extractDispositionFromQuery(url: String): String? {
