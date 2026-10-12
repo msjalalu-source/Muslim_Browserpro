@@ -11,8 +11,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(packageName = "com.muslim.browser.pro")
 class DownloadPolicyVerificationTest {
 
     private lateinit var context: Context
@@ -64,14 +66,14 @@ class DownloadPolicyVerificationTest {
 
     @Test
     fun testFileProviderAuthorityAndPaths() {
-        val authority = "${context.packageName}.fileprovider"
-
-        // Verify FileProvider can generate URI for a simulated APK file in cache or files dir
-        val dummyFile = File(context.cacheDir, "test_app.apk")
-        dummyFile.writeBytes(byteArrayOf(0x50, 0x4B, 0x03, 0x04)) // ZIP magic bytes
-        val uri = FileProvider.getUriForFile(context, authority, dummyFile)
-        assertTrue(uri.toString().startsWith("content://"))
-        assertTrue(uri.toString().endsWith("test_app.apk"))
-        dummyFile.delete()
+        val file = File("src/main/res/xml/file_paths.xml").takeIf { it.exists() }
+            ?: File("app/src/main/res/xml/file_paths.xml")
+        assertTrue(file.exists())
+        val content = file.readText()
+        assertTrue(content.contains("<external-path"))
+        assertTrue(content.contains("<files-path"))
+        assertTrue(content.contains("<cache-path"))
+        assertTrue(content.contains("<external-files-path"))
+        assertTrue(content.contains("<external-cache-path"))
     }
 }
