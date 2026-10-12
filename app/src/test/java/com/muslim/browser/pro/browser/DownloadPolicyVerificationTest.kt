@@ -76,4 +76,26 @@ class DownloadPolicyVerificationTest {
         assertTrue(content.contains("<external-files-path"))
         assertTrue(content.contains("<external-cache-path"))
     }
+
+    @Test
+    fun testReleaseBuildSigningConfigConfigured() {
+        val buildGradle = File("build.gradle.kts").takeIf { it.exists() }
+            ?: File("app/build.gradle.kts")
+        assertTrue("app/build.gradle.kts should exist", buildGradle.exists())
+        val content = buildGradle.readText()
+        assertTrue(content.contains("signingConfig = signingConfigs.findByName(\"release\") ?: signingConfigs.getByName(\"debugConfig\")"))
+        assertTrue(content.contains("create(\"debugConfig\")"))
+    }
+
+    @Test
+    fun testGitHubWorkflowVerifiesApkSignature() {
+        val workflow = File(".github/workflows/build-apk.yml")
+        if (workflow.exists()) {
+            val content = workflow.readText()
+            assertTrue(content.contains("apksigner verify"))
+            assertTrue(content.contains("app-release-unsigned.apk"))
+            assertTrue(content.contains("RELEASE_KEYSTORE_BASE64"))
+        }
+    }
 }
+

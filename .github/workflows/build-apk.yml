@@ -82,9 +82,29 @@ jobs:
           ./gradlew --version
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace --no-daemon --no-configuration-cache
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_STORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
+            echo "Configuring production release keystore from secrets..."
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+            export RELEASE_STORE_FILE="$GITHUB_WORKSPACE/release.keystore"
+            export RELEASE_STORE_PASSWORD="$RELEASE_STORE_PASSWORD"
+            export RELEASE_KEY_ALIAS="$RELEASE_KEY_ALIAS"
+            export RELEASE_KEY_PASSWORD="$RELEASE_KEY_PASSWORD"
+          else
+            echo "Production secrets not configured. Using repository debug.keystore as stable release key..."
+            export RELEASE_STORE_FILE="$GITHUB_WORKSPACE/debug.keystore"
+            export RELEASE_STORE_PASSWORD="android"
+            export RELEASE_KEY_ALIAS="androiddebugkey"
+            export RELEASE_KEY_PASSWORD="android"
+          fi
+          ./gradlew assembleRelease --stacktrace --no-daemon --no-configuration-cache
 
-      - name: Verify the APK
+      - name: Verify the APK signature
         id: find_apk
         run: |
           RELEASE_APK_DIR="app/build/outputs/apk/release"
@@ -94,11 +114,21 @@ jobs:
             exit 1
           fi
 
-          # Locate built release APK (either app-release.apk if signed or app-release-unsigned.apk)
-          RELEASE_APK=$(find "$RELEASE_APK_DIR" -maxdepth 1 -name "*.apk" | head -n 1)
+          # Fail if an unsigned APK was produced
+          if [ -f "$RELEASE_APK_DIR/app-release-unsigned.apk" ]; then
+            echo "Error: Build produced app-release-unsigned.apk! Signing configuration was not applied."
+            exit 1
+          fi
+
+          # Locate built release APK
+          RELEASE_APK="$RELEASE_APK_DIR/app-release.apk"
+          if [ ! -f "$RELEASE_APK" ]; then
+            RELEASE_APK=$(find "$RELEASE_APK_DIR" -maxdepth 1 -name "*.apk" ! -name "*unsigned*" | head -n 1)
+          fi
+
           if [ -z "$RELEASE_APK" ] || [ ! -f "$RELEASE_APK" ]; then
-            echo "Error: No release APK found under $RELEASE_APK_DIR."
-            find "$RELEASE_APK_DIR" -maxdepth 2 || true
+            echo "Error: No signed release APK found under $RELEASE_APK_DIR."
+            ls -la "$RELEASE_APK_DIR" || true
             exit 1
           fi
 
@@ -107,8 +137,17 @@ jobs:
             exit 1
           fi
 
+          # Verify signature using Android SDK apksigner
+          APKSIGNER_BIN=$(command -v apksigner || find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$APKSIGNER_BIN" ] && [ -x "$APKSIGNER_BIN" ]; then
+            echo "Running apksigner verification on $RELEASE_APK..."
+            "$APKSIGNER_BIN" verify --verbose --print-certs "$RELEASE_APK"
+          else
+            echo "::warning::apksigner binary not found in PATH or ANDROID_HOME; skipping CLI verification."
+          fi
+
           APK_FILENAME=$(basename "$RELEASE_APK")
-          echo "Found release APK: $RELEASE_APK ($APK_FILENAME)"
+          echo "Found signed release APK: $RELEASE_APK ($APK_FILENAME)"
           echo "release_apk_path=$RELEASE_APK" >> "$GITHUB_OUTPUT"
           echo "release_apk_name=$APK_FILENAME" >> "$GITHUB_OUTPUT"
 
