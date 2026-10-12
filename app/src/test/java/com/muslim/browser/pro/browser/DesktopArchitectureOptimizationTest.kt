@@ -215,8 +215,60 @@ class DesktopArchitectureOptimizationTest {
         val cleanupScript = cleanupField.get(null) as String
 
         assertTrue(cleanupScript.contains("__mb_desktop_mode4__"))
+        assertTrue(cleanupScript.contains("__mb_win10_touch__"))
         assertTrue(cleanupScript.contains("cleanup"))
         assertTrue(cleanupScript.contains("delete navigator.userAgentData"))
         assertTrue(cleanupScript.contains("delete navigator.platform"))
+    }
+
+    @Test
+    fun test9_windows10DesktopArchitectureActivationAndScript() {
+        val webView = WebView(context)
+
+        // Windows 10 Desktop shares common base settings
+        DesktopCore.applyCommonDesktopWebViewSettings(webView)
+        val settings = webView.settings
+        assertEquals(true, settings.useWideViewPort)
+        assertEquals(true, settings.loadWithOverviewMode)
+        assertEquals(100, settings.textZoom)
+        assertEquals(true, settings.builtInZoomControls)
+        assertEquals(false, settings.displayZoomControls)
+
+        // Windows 10 Touch Script verification
+        val scriptField = DesktopCore::class.java.getField("WINDOWS_10_TOUCH_SCRIPT")
+        val script = scriptField.get(null) as String
+
+        // Windows 10 Touch specific profile signals
+        assertTrue("Win10 script must emulate Win32 platform", script.contains("platform: { get: function() { return 'Win32'; }"))
+        assertTrue("Win10 script must emulate Windows 10 User-Agent", script.contains("Windows NT 10.0"))
+        assertTrue("Win10 script must configure 1920x1080 screen dimensions", script.contains("1920") && script.contains("1080"))
+        assertTrue("Win10 script must emulate desktop inner viewport", script.contains("desktopInnerW = 1280") && script.contains("desktopInnerH = 720"))
+        assertTrue("Win10 script must emulate Intel Direct3D11 WebGL renderer", script.contains("Intel") && script.contains("Direct3D11"))
+        assertTrue("Win10 script must match Windows 10 touch/hover media queries", script.contains("any-pointer: coarse") && script.contains("hover: hover"))
+        assertTrue("Win10 script must have idempotent guard key to prevent duplication", script.contains("__mb_win10_touch__"))
+
+        // Common desktop viewport method availability for shared engine
+        val applyCommonMethod = DesktopCore::class.java.getMethod("applyCommonDesktopViewport", WebView::class.java)
+        assertNotNull(applyCommonMethod)
+
+        // Windows 10 Touch profile injection method availability
+        val applyWin10Method = DesktopCore::class.java.getMethod("applyWindows10TouchProfile", WebView::class.java)
+        assertNotNull(applyWin10Method)
+
+        // Synchronize to Windows 10 Desktop and verify User-Agent
+        DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.WINDOWS_10_TOUCH, true)
+        val winUaField = DesktopCore::class.java.getField("WINDOWS_10_TOUCH_USER_AGENT")
+        val expectedWinUa = winUaField.get(null) as String
+        assertEquals(expectedWinUa, webView.settings.userAgentString)
+
+        // Switch to Desktop Mode 4 without reload
+        DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.DESKTOP_MODE_4, true)
+        val mode4UaField = DesktopCore::class.java.getField("DESKTOP_USER_AGENT")
+        val expectedMode4Ua = mode4UaField.get(null) as String
+        assertEquals(expectedMode4Ua, webView.settings.userAgentString)
+
+        // Switch back to mobile
+        DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.NONE, true)
+        assertNull(webView.settings.userAgentString)
     }
 }
