@@ -77,11 +77,44 @@ object ProtectionEngine {
         }
     }
 
+    val SUPPORTED_GOOGLE_DOMAINS: Set<String> = hashSetOf(
+        "google.com",
+        "google.ad", "google.ae", "google.al", "google.am", "google.as", "google.at", "google.az",
+        "google.ba", "google.be", "google.bf", "google.bg", "google.bi", "google.bj", "google.bs", "google.bt", "google.by",
+        "google.ca", "google.cat", "google.cd", "google.cf", "google.cg", "google.ch", "google.ci", "google.cl", "google.cm", "google.cn",
+        "google.co.ao", "google.co.bw", "google.co.ck", "google.co.cr", "google.co.id", "google.co.il", "google.co.in", "google.co.jp",
+        "google.co.ke", "google.co.kr", "google.co.ls", "google.co.ma", "google.co.mz", "google.co.nz", "google.co.th", "google.co.tz",
+        "google.co.ug", "google.co.uk", "google.co.uz", "google.co.ve", "google.co.vi", "google.co.za", "google.co.zm", "google.co.zw",
+        "google.com.af", "google.com.ag", "google.com.ai", "google.com.ar", "google.com.au", "google.com.bd", "google.com.bh", "google.com.bn",
+        "google.com.bo", "google.com.br", "google.com.bz", "google.com.co", "google.com.cu", "google.com.cy", "google.com.do", "google.com.ec",
+        "google.com.eg", "google.com.et", "google.com.fj", "google.com.gh", "google.com.gi", "google.com.gt", "google.com.gy", "google.com.hk",
+        "google.com.jm", "google.com.jo", "google.com.kh", "google.com.kw", "google.com.lb", "google.com.lc", "google.com.ly", "google.com.mm",
+        "google.com.mt", "google.com.mx", "google.com.my", "google.com.na", "google.com.ng", "google.com.ni", "google.com.np", "google.com.om",
+        "google.com.pa", "google.com.pe", "google.com.pg", "google.com.ph", "google.com.pk", "google.com.pr", "google.com.py", "google.com.qa",
+        "google.com.sa", "google.com.sb", "google.com.sg", "google.com.sl", "google.com.sv", "google.com.tj", "google.com.tn", "google.com.tr",
+        "google.com.tw", "google.com.ua", "google.com.uy", "google.com.vc", "google.com.vn",
+        "google.cv", "google.cz", "google.de", "google.dj", "google.dk", "google.dm", "google.dz",
+        "google.ee", "google.es", "google.fi", "google.fm", "google.fr", "google.ga", "google.ge", "google.gg", "google.gl", "google.gm", "google.gp", "google.gr", "google.gy",
+        "google.hn", "google.hr", "google.ht", "google.hu", "google.ie", "google.im", "google.iq", "google.is", "google.it",
+        "google.je", "google.jo", "google.kg", "google.ki", "google.kz", "google.la", "google.li", "google.lk", "google.lt", "google.lu", "google.lv",
+        "google.md", "google.me", "google.mg", "google.mk", "google.ml", "google.mn", "google.ms", "google.mu", "google.mv", "google.mw",
+        "google.ne", "google.net", "google.nf", "google.nl", "google.no", "google.nr", "google.nu",
+        "google.pl", "google.pn", "google.ps", "google.pt", "google.ro", "google.rs", "google.ru", "google.rw",
+        "google.sc", "google.se", "google.sh", "google.si", "google.sk", "google.sm", "google.sn", "google.so", "google.sr", "google.st",
+        "google.td", "google.tg", "google.tk", "google.tl", "google.tm", "google.tn", "google.to", "google.tt",
+        "google.vg", "google.vu", "google.ws"
+    )
+
     fun isGoogleSafeSearchUrl(url: String): Boolean {
-        if (url.isBlank() || !url.contains("safe=active", ignoreCase = true)) return false
+        if (url.isBlank()) return false
         return try {
             val uri = Uri.parse(url)
-            val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+            if (scheme != "http" && scheme != "https") return false
+            if (!uri.userInfo.isNullOrEmpty()) return false
+            val port = uri.port
+            if (port != -1 && port != 80 && port != 443) return false
+            val host = uri.host ?: return false
             if (!isGoogleHost(host)) return false
             val path = uri.path?.lowercase(Locale.ROOT) ?: ""
             if (!path.contains("/search") && !path.contains("/webhp") && path != "/") return false
@@ -107,11 +140,40 @@ object ProtectionEngine {
     }
 
     fun isGoogleHost(host: String): Boolean {
-        val clean = host.lowercase(Locale.ROOT)
-        return clean == "google.com" ||
-            clean.endsWith(".google.com") ||
-            clean.startsWith("google.") ||
-            clean.contains(".google.")
+        if (host.isBlank()) return false
+        var clean = host.trim().lowercase(Locale.ROOT)
+        // Handle trailing dot (DNS root)
+        if (clean.endsWith(".")) {
+            clean = clean.dropLast(1)
+        }
+        if (clean.isEmpty()) return false
+
+        // Hostname syntax validation: only alphanumeric, dots, and hyphens
+        // Rejects user-info (@), port (:), path (/ or \), query (?), fragment (#), whitespace
+        for (ch in clean) {
+            if (!(ch in 'a'..'z' || ch in '0'..'9' || ch == '.' || ch == '-')) {
+                return false
+            }
+        }
+        if (clean.startsWith(".") || clean.endsWith(".") || clean.contains("..")) return false
+
+        // Validate each label (RFC 1034 / 1123)
+        val labels = clean.split('.')
+        for (label in labels) {
+            if (label.isEmpty() || label.startsWith("-") || label.endsWith("-")) {
+                return false
+            }
+        }
+
+        // Only allow naked Google search domain (e.g. google.com) or www subdomain (e.g. www.google.com).
+        // Disallow arbitrary subdomains or unrelated Google services (e.g. drive.google.com, docs.google.com).
+        val baseDomain = if (clean.startsWith("www.")) {
+            clean.removePrefix("www.")
+        } else {
+            clean
+        }
+
+        return SUPPORTED_GOOGLE_DOMAINS.contains(baseDomain)
     }
 
     fun extractSearchEngineQuery(url: String): String? {
@@ -120,7 +182,10 @@ object ProtectionEngine {
             val uri = Uri.parse(url)
             val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
             if (scheme != "http" && scheme != "https") return null
-            val host = uri.host?.lowercase(Locale.ROOT) ?: return null
+            if (!uri.userInfo.isNullOrEmpty()) return null
+            val port = uri.port
+            if (port != -1 && port != 80 && port != 443) return null
+            val host = uri.host ?: return null
             val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
             if (isGoogleHost(host) && !path.startsWith("/url")) {
@@ -190,8 +255,9 @@ object ProtectionEngine {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
 
-        Log.d("DIAGNOSTIC", "DIRECT_URL_CHECK=checkDirectUrl")
-        Log.d("DIAGNOSTIC", "URL=$trimmed")
+        if (Log.isLoggable("DIAGNOSTIC", Log.DEBUG)) {
+            Log.d("DIAGNOSTIC", "DIRECT_URL_CHECK=checkDirectUrl")
+        }
 
         val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords, normalizedKeywords)
         if (blockedKw != null) {

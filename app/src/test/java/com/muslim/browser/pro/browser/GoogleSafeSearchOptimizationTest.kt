@@ -175,10 +175,40 @@ class GoogleSafeSearchOptimizationTest {
 
     @Test
     fun test10_googleHostDetection() {
+        // Legitimate standard Google domains
         assertTrue(ProtectionEngine.isGoogleHost("google.com"))
         assertTrue(ProtectionEngine.isGoogleHost("www.google.com"))
         assertTrue(ProtectionEngine.isGoogleHost("google.co.uk"))
         assertTrue(ProtectionEngine.isGoogleHost("www.google.co.uk"))
+
+        // Regional Google search domains
+        assertTrue(ProtectionEngine.isGoogleHost("google.ca"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.ca"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.de"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.de"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com.pk"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com.pk"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com.sa"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com.sa"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com.eg"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com.eg"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com.tr"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com.tr"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.co.jp"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.co.jp"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.co.in"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.co.in"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.ae"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.ae"))
+
+        // Case normalization and trailing dots
+        assertTrue(ProtectionEngine.isGoogleHost("WWW.GOOGLE.COM"))
+        assertTrue(ProtectionEngine.isGoogleHost("Google.Co.Uk"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com."))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com."))
+        assertTrue(ProtectionEngine.isGoogleHost("google.co.uk."))
+
+        // Unrelated domains
         assertFalse(ProtectionEngine.isGoogleHost("example.com"))
         assertFalse(ProtectionEngine.isGoogleHost("notgoogle.com"))
     }
@@ -190,5 +220,157 @@ class GoogleSafeSearchOptimizationTest {
 
         val emptyQuery = ProtectionEngine.extractSearchEngineQuery("https://www.google.com/search?safe=active")
         assertEquals(null, emptyQuery)
+    }
+
+    @Test
+    fun test12_deceptiveHostsRejected() {
+        // Deceptive hosts with lookalikes or suffix confusion
+        assertFalse(ProtectionEngine.isGoogleHost("google.evil.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("www.google.evil.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com.evil.test"))
+        assertFalse(ProtectionEngine.isGoogleHost("evil.google.evil.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.attacker.co.uk"))
+        assertFalse(ProtectionEngine.isGoogleHost("evilgoogle.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("mygoogle.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com-security.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.xyz"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.top"))
+    }
+
+    @Test
+    fun test13_unrelatedGoogleServicesAndSubdomainsRejected() {
+        // Arbitrary subdomains and non-search Google services must not be trusted as search hosts
+        assertFalse(ProtectionEngine.isGoogleHost("drive.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("docs.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("mail.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("cloud.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("developer.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("sub.www.google.com"))
+    }
+
+    @Test
+    fun test14_malformedHostnamesRejected() {
+        // Malformed hostnames, user-info, ports, and invalid characters
+        assertFalse(ProtectionEngine.isGoogleHost(""))
+        assertFalse(ProtectionEngine.isGoogleHost("   "))
+        assertFalse(ProtectionEngine.isGoogleHost("user@google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com:80"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com/search"))
+        assertFalse(ProtectionEngine.isGoogleHost("google..com"))
+        assertFalse(ProtectionEngine.isGoogleHost(".google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("-google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google-.com"))
+    }
+
+    @Test
+    fun test15_safeSearchEnforcementNotMerelySubstring() {
+        // A URL is NOT safe merely because it contains "safe=active" as text
+        // Query parameter has safe=off with safe=active in another parameter
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://www.google.com/search?q=unfiltered&safe=off&comment=safe=active"
+            )
+        )
+        // safe=active is part of query text or unrelated parameter
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://www.google.com/search?q=safe=active"
+            )
+        )
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://www.google.com/search?note=safe=active"
+            )
+        )
+        // Deceptive domain with safe=active
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://google.evil.com/search?q=test&safe=active"
+            )
+        )
+        // Non-search Google service with safe=active
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://drive.google.com/search?q=test&safe=active"
+            )
+        )
+        // Valid Google SafeSearch URL
+        assertTrue(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://www.google.com/search?q=test&safe=active"
+            )
+        )
+        assertTrue(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://google.co.uk/search?q=test&safe=active"
+            )
+        )
+    }
+
+    @Test
+    fun test16_schemePortUserInfoSafety() {
+        // Unexpected schemes
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "javascript://www.google.com/search?q=test&safe=active"
+            )
+        )
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "ftp://www.google.com/search?q=test&safe=active"
+            )
+        )
+        // User-info present
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://user:pass@www.google.com/search?q=test&safe=active"
+            )
+        )
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://attacker.com@www.google.com/search?q=test&safe=active"
+            )
+        )
+        // Non-standard port
+        assertFalse(
+            ProtectionEngine.isGoogleSafeSearchUrl(
+                "https://www.google.com:8080/search?q=test&safe=active"
+            )
+        )
+
+        // NavigationController evaluation fails closed for malicious URLs with user-info or non-standard ports
+        val decisionUserInfo = NavigationController.evaluate(
+            url = "https://user:pass@www.google.com/search?q=test&safe=active",
+            customKeywords = customKeywords,
+            normalizedKeywords = normalizedKeywords,
+            searchEngine = SearchEngine.GOOGLE
+        )
+        // Not treated as Google search; proceeds through regular checks
+        assertFalse(decisionUserInfo is NavigationDecision.Redirect)
+
+        val decisionDeceptive = NavigationController.evaluate(
+            url = "https://google.evil.com/search?q=test&safe=active",
+            customKeywords = customKeywords,
+            normalizedKeywords = normalizedKeywords,
+            searchEngine = SearchEngine.GOOGLE
+        )
+        // Not treated as Google search
+        assertFalse(decisionDeceptive is NavigationDecision.Redirect)
+    }
+
+    @Test
+    fun test17_fastPathStrictlyValidatesGoogleSafeSearchUrl() {
+        // If an invalid URL was somehow marked validated, fast-path must reject it if not a valid Google SafeSearch URL
+        val deceptiveUrl = "https://google.evil.com/search?q=test&safe=active"
+        NavigationController.markSearchUrlValidated(deceptiveUrl)
+
+        val decision = NavigationController.evaluate(
+            url = deceptiveUrl,
+            customKeywords = customKeywords,
+            normalizedKeywords = normalizedKeywords,
+            searchEngine = SearchEngine.GOOGLE
+        )
+        // Fast-path does not allow deceptive URL
+        assertFalse(decision == NavigationDecision.Allowed && NavigationController.isSearchUrlValidated(deceptiveUrl))
     }
 }

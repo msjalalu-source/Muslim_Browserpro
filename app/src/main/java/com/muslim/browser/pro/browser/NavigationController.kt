@@ -35,18 +35,23 @@ object NavigationController {
         // SMART FAST-PATH for application-generated validated Google Search
         if (isSearchUrlValidated(trimmed)) {
             clearSearchUrlValidation()
-            // Verify safe=active is present on the Google URL before fast-pathing
-            if (trimmed.contains("safe=active")) {
+            // Verify that the URL is a strictly valid Google SafeSearch URL before fast-pathing
+            if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
                 return NavigationDecision.Allowed
             }
         }
 
         // Focused Google SafeSearch evaluation (single-pass, zero duplicate processing):
         val uri = try { Uri.parse(trimmed) } catch (_: Exception) { null }
-        val host = uri?.host?.lowercase(Locale.ROOT)
-        val isGoogle = host != null && ProtectionEngine.isGoogleHost(host)
+        val scheme = uri?.scheme?.lowercase(Locale.ROOT)
+        val isHttpScheme = scheme == "http" || scheme == "https"
+        val hasUserInfo = !uri?.userInfo.isNullOrEmpty()
+        val port = uri?.port ?: -1
+        val isStandardPort = port == -1 || port == 80 || port == 443
+        val host = uri?.host
+        val isGoogle = isHttpScheme && !hasUserInfo && isStandardPort && host != null && ProtectionEngine.isGoogleHost(host)
 
-        if (isGoogle && uri != null) {
+        if (isGoogle) {
             val path = uri.path?.lowercase(Locale.ROOT) ?: ""
             if (path.contains("/search") || path.contains("/webhp") || path == "/" || path.isEmpty()) {
                 val query = uri.getQueryParameter("q")
