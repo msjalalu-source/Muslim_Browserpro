@@ -117,8 +117,8 @@ fun BrowserMenuSheet(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppTheme.values().forEach { theme ->
-                        val isSelected = uiState.appTheme == theme
+                    listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
+                        val isSelected = uiState.appTheme == theme || (uiState.appTheme == AppTheme.FORCE_DARK_ON && theme == AppTheme.WHITE)
                         Surface(
                             onClick = {
                                 onSelectTheme(theme)
