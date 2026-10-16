@@ -223,20 +223,69 @@ object DesktopCore {
 })();"""
 
     const val COMMON_DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
+    var TARGET = 'width=1280';
+    var G = window.__mb_vp_guard__;
+    function ensure() {
+        try {
+            if (!window.__mb_vp_guard__ || !window.__mb_vp_guard__.active) return;
+            var head = document.head || document.documentElement;
+            if (!head) return;
+            var m = document.querySelector('meta[name="viewport"]');
+            if (!m) {
+                m = document.createElement('meta');
+                m.name = 'viewport';
+                head.appendChild(m);
+            }
+            if (m.getAttribute('content') !== TARGET) {
+                m.setAttribute('content', TARGET);
+            }
+        } catch(e) {}
+    }
+    if (G) {
+        G.active = true;
+        ensure();
+        return;
+    }
+    window.__mb_vp_guard__ = { active: true };
+    ensure();
+    var obsHead = null;
+    function watch() {
+        try {
+            var h = document.head;
+            if (!h || h === obsHead || !window.MutationObserver) return;
+            obsHead = h;
+            new MutationObserver(ensure).observe(h, {
+                childList: true, subtree: true,
+                attributes: true, attributeFilter: ['content']
+            });
+        } catch(e) {}
+    }
+    watch();
     try {
-        var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
-        if (!head) return;
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (!meta) {
-            meta = document.createElement('meta');
-            meta.name = 'viewport';
-            head.appendChild(meta);
-        }
-        meta.setAttribute('content', 'width=1280');
+        new MutationObserver(function() { ensure(); watch(); })
+            .observe(document.documentElement, { childList: true });
     } catch(e) {}
+    ['turbo:load', 'turbo:render', 'turbo:visit', 'pjax:end', 'pageshow', 'popstate', 'DOMContentLoaded', 'load']
+        .forEach(function(ev) {
+            var f = function() { ensure(); watch(); };
+            window.addEventListener(ev, f, { passive: true });
+            document.addEventListener(ev, f, { passive: true });
+        });
+    try {
+        ['pushState', 'replaceState'].forEach(function(n) {
+            var o = history[n];
+            if (o) history[n] = function() {
+                var r = o.apply(this, arguments);
+                ensure();
+                return r;
+            };
+        });
+    } catch(e) {}
+    [0, 150, 600, 1500].forEach(function(ms) { setTimeout(ensure, ms); });
 })();"""
 
     private const val CLEANUP_DESKTOP_SCRIPT: String = """(function() {
+    if (window.__mb_vp_guard__) window.__mb_vp_guard__.active = false;
     var keys = ['__mb_win10_touch__'];
     for (var i = 0; i < keys.length; i++) {
         var k = keys[i];
