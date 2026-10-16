@@ -682,71 +682,6 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Desktop Mode 4 - Targeted Viewport Guard
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_desktop_mode_4")
-                        .clickable {
-                            val isChecked = uiState.isDesktopMode4Enabled
-                            val target = if (!isChecked) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
-                            notifyArchitectureChange(context, target)
-                        },
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Desktop Mode 4",
-                                tint = if (uiState.isDesktopMode4Enabled) colors.accent else colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Desktop Mode 4",
-                                    color = colors.textPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Targeted viewport guard",
-                                    color = colors.textSecondary,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-
-                        Switch(
-                            checked = uiState.isDesktopMode4Enabled,
-                            onCheckedChange = { checked ->
-                                val target = if (checked) DesktopArchitecture.DESKTOP_MODE_4 else DesktopArchitecture.NONE
-                                notifyArchitectureChange(context, target)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = colors.buttonText,
-                                checkedTrackColor = colors.accent,
-                                uncheckedThumbColor = colors.textSecondary,
-                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("desktop_mode_4_switch")
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
 
                 // Experimental Browser Identity Profile: Windows 10 Touch
                 Surface(
@@ -1343,14 +1278,14 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             }
         }
 
-        val effectiveArchitecture = when (architecture) {
-            DesktopArchitecture.WINDOWS_10_TOUCH -> DesktopArchitecture.WINDOWS_10_TOUCH
-            DesktopArchitecture.DESKTOP_MODE_4 -> DesktopArchitecture.DESKTOP_MODE_4
-            else -> DesktopArchitecture.NONE
+        val effectiveArchitecture = if (architecture == DesktopArchitecture.WINDOWS_10_TOUCH) {
+            DesktopArchitecture.WINDOWS_10_TOUCH
+        } else {
+            DesktopArchitecture.NONE
         }
 
         if (currentContext is com.muslim.browser.pro.MainActivity) {
-            // Direct no-reload architecture synchronization for Desktop Mode 4, Windows 10 Touch, and Mobile (NONE):
+            // Direct no-reload architecture synchronization for Windows 10 Touch and Mobile (NONE):
             // 1. Synchronize architecture across live WebViews using TabWebViewManager
             // 2. Apply required settings/viewport to active WebView through DesktopCore.synchronizeDesktopWebView
             // 3. Update BrowserViewModel state

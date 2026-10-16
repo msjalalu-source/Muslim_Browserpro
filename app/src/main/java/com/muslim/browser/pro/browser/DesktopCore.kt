@@ -8,7 +8,6 @@ import java.util.Locale
 object DesktopCore {
     const val TARGET_WIDTH: Int = 1280
     const val VIEWPORT_CONTENT: String = "width=1280"
-    const val DESKTOP_USER_AGENT: String = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     const val WINDOWS_10_TOUCH_USER_AGENT: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     /**
@@ -223,23 +222,6 @@ object DesktopCore {
     } catch(e) {}
 })();"""
 
-    const val DESKTOP_MODE_4_SCRIPT: String = """(function() {
-    if (window.__mb_desktop_mode4_applied__) return;
-    window.__mb_desktop_mode4_applied__ = true;
-    var TARGET = 'width=1280';
-    try {
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (!meta) {
-            meta = document.createElement('meta');
-            meta.name = 'viewport';
-            (document.head || document.documentElement).appendChild(meta);
-        }
-        if (meta.getAttribute('content') !== TARGET) {
-            meta.setAttribute('content', TARGET);
-        }
-    } catch(e) {}
-})();"""
-
     const val COMMON_DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
     try {
         var head = document.head || document.getElementsByTagName('head')[0] || document.documentElement;
@@ -263,7 +245,6 @@ object DesktopCore {
         }
     }
     delete window.__mb_win10_touch__;
-    delete window.__mb_desktop_mode4_applied__;
     try { delete navigator.userAgentData; } catch(e) {}
     try { delete navigator.platform; } catch(e) {}
     try {
@@ -296,21 +277,6 @@ object DesktopCore {
         if (path.endsWith("/authorize")) return true
 
         return false
-    }
-
-    fun applyDesktopMode4Settings(webView: WebView) {
-        val settings = webView.settings
-        if (!settings.useWideViewPort) settings.useWideViewPort = true
-        if (!settings.loadWithOverviewMode) settings.loadWithOverviewMode = true
-        if (settings.textZoom != 100) settings.textZoom = 100
-        if (!settings.builtInZoomControls) settings.builtInZoomControls = true
-        if (settings.displayZoomControls) settings.displayZoomControls = false
-    }
-
-    fun applyDesktopMode4Viewport(webView: WebView) {
-        try {
-            webView.evaluateJavascript(DESKTOP_MODE_4_SCRIPT, null)
-        } catch (_: Throwable) {}
     }
 
     /**
@@ -361,12 +327,6 @@ object DesktopCore {
     fun handlePageLifecycle(webView: WebView, architecture: DesktopArchitecture, url: String) {
         if (!architecture.isAnyDesktop()) return
         when (architecture) {
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                applyDesktopMode4Settings(webView)
-                if (!isAuthenticationUrl(url)) {
-                    applyDesktopMode4Viewport(webView)
-                }
-            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 applyCommonDesktopWebViewSettings(webView)
                 if (!isAuthenticationUrl(url)) {
@@ -391,15 +351,10 @@ object DesktopCore {
     ) {
         val effectiveArchitecture = when (architecture) {
             DesktopArchitecture.WINDOWS_10_TOUCH -> DesktopArchitecture.WINDOWS_10_TOUCH
-            DesktopArchitecture.DESKTOP_MODE_4 -> DesktopArchitecture.DESKTOP_MODE_4
             else -> DesktopArchitecture.NONE
         }
 
         val targetUa = when (effectiveArchitecture) {
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                if (isAuthenticationUrl(url)) null
-                else WebViewConfigurator.DESKTOP_USER_AGENT
-            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 if (isAuthenticationUrl(url)) null
                 else WINDOWS_10_TOUCH_USER_AGENT
@@ -413,12 +368,6 @@ object DesktopCore {
         }
 
         when (effectiveArchitecture) {
-            DesktopArchitecture.DESKTOP_MODE_4 -> {
-                applyDesktopMode4Settings(webView)
-                if (!isAuthenticationUrl(url)) {
-                    applyDesktopMode4Viewport(webView)
-                }
-            }
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
                 cleanupCommonDesktopState(webView)
                 applyCommonDesktopWebViewSettings(webView)
@@ -437,7 +386,7 @@ object DesktopCore {
         try {
             val prefs = context.getSharedPreferences("focus_shield_prefs", Context.MODE_PRIVATE)
             val saved = prefs.getString("key_desktop_architecture", null) ?: return
-            if (saved == "STANDARD" || saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
+            if (saved == "STANDARD" || saved == "DESKTOP_MODE_4" || saved == "DESKTOP_MODE_11" || saved == "DESKTOP_MODE_12" || saved == "WINDOWS_7") {
                 prefs.edit().putString("key_desktop_architecture", "NONE").apply()
             }
         } catch (_: Throwable) {}
