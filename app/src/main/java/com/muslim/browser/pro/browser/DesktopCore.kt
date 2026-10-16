@@ -223,77 +223,77 @@ object DesktopCore {
 })();"""
 
     const val COMMON_DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
-    var TARGET = 'width=1280';
-    var G = window.__mb_vp_guard__;
-    function nudge() {
-        try { window.dispatchEvent(new Event('resize')); } catch(e) {}
-    }
-    function ensure() {
-        try {
-            if (!window.__mb_vp_guard__ || !window.__mb_vp_guard__.active) return;
-            var head = document.head || document.documentElement;
-            if (!head) return;
-            var m = document.querySelector('meta[name="viewport"]');
-            if (!m) {
-                m = document.createElement('meta');
-                m.name = 'viewport';
-                head.appendChild(m);
+    try {
+        var TARGET_CONTENT = 'width=1280';
+        function updateViewport() {
+            var metas = document.querySelectorAll('meta[name="viewport"]');
+            if (metas.length > 0) {
+                metas.forEach(function(m) {
+                    if (m.getAttribute('content') !== TARGET_CONTENT) {
+                        m.setAttribute('content', TARGET_CONTENT);
+                    }
+                });
+            } else {
+                var head = document.head || document.documentElement;
+                if (head) {
+                    var meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    meta.content = TARGET_CONTENT;
+                    head.appendChild(meta);
+                }
             }
-            if (m.getAttribute('content') !== TARGET) {
-                m.setAttribute('content', TARGET);
-                setTimeout(nudge, 50);
-                setTimeout(nudge, 400);
-            }
-        } catch(e) {}
-    }
-    if (G) {
-        G.active = true;
-        ensure();
-        return;
-    }
-    window.__mb_vp_guard__ = { active: true };
-    ensure();
-    setTimeout(nudge, 50);
-    setTimeout(nudge, 400);
-    setTimeout(nudge, 1200);
-    var obsHead = null;
-    function watch() {
-        try {
-            var h = document.head;
-            if (!h || h === obsHead || !window.MutationObserver) return;
-            obsHead = h;
-            new MutationObserver(ensure).observe(h, {
-                childList: true, subtree: true,
-                attributes: true, attributeFilter: ['content']
+        }
+        updateViewport();
+        if (window.navigator && window.navigator.userAgentData) {
+            try {
+                if (window.navigator.userAgentData.mobile !== false) {
+                    Object.defineProperty(window.navigator.userAgentData, 'mobile', {
+                        get: function() { return false; },
+                        configurable: true
+                    });
+                }
+            } catch(e) {}
+        }
+        if (window.__mbViewportObserver) {
+            window.__mbViewportObserver.disconnect();
+            window.__mbViewportObserver = null;
+        }
+        var targetHead = document.head || document.documentElement;
+        if (window.MutationObserver && targetHead) {
+            window.__mbViewportObserver = new MutationObserver(function(mutations) {
+                for (var i = 0; i < mutations.length; i++) {
+                    var m = mutations[i];
+                    if (m.type === 'childList') {
+                        updateViewport();
+                        break;
+                    } else if (m.type === 'attributes' && m.target && m.target.getAttribute('content') !== TARGET_CONTENT) {
+                        m.target.setAttribute('content', TARGET_CONTENT);
+                        break;
+                    }
+                }
             });
-        } catch(e) {}
-    }
-    watch();
-    try {
-        new MutationObserver(function() { ensure(); watch(); })
-            .observe(document.documentElement, { childList: true });
+            window.__mbViewportObserver.observe(targetHead, { childList: true, subtree: false });
+            var vp = document.querySelector('meta[name="viewport"]');
+            if (vp) {
+                window.__mbViewportObserver.observe(vp, { attributes: true, attributeFilter: ['content'] });
+            }
+        }
+        if (!window.__mbSpaListenersAttached) {
+            window.__mbSpaListenersAttached = true;
+            var spaHandler = function() { updateViewport(); };
+            window.addEventListener('turbo:load', spaHandler, { passive: true });
+            window.addEventListener('popstate', spaHandler, { passive: true });
+        }
     } catch(e) {}
-    ['turbo:load', 'turbo:render', 'turbo:visit', 'pjax:end', 'pageshow', 'popstate', 'DOMContentLoaded', 'load']
-        .forEach(function(ev) {
-            var f = function() { ensure(); watch(); };
-            window.addEventListener(ev, f, { passive: true });
-            document.addEventListener(ev, f, { passive: true });
-        });
-    try {
-        ['pushState', 'replaceState'].forEach(function(n) {
-            var o = history[n];
-            if (o) history[n] = function() {
-                var r = o.apply(this, arguments);
-                ensure();
-                return r;
-            };
-        });
-    } catch(e) {}
-    [0, 150, 600, 1500].forEach(function(ms) { setTimeout(ensure, ms); });
 })();"""
 
     private const val CLEANUP_DESKTOP_SCRIPT: String = """(function() {
-    if (window.__mb_vp_guard__) window.__mb_vp_guard__.active = false;
+    try {
+        if (window.__mbViewportObserver) {
+            window.__mbViewportObserver.disconnect();
+            window.__mbViewportObserver = null;
+        }
+    } catch(e) {}
     var keys = ['__mb_win10_touch__'];
     for (var i = 0; i < keys.length; i++) {
         var k = keys[i];
@@ -305,10 +305,12 @@ object DesktopCore {
     try { delete navigator.userAgentData; } catch(e) {}
     try { delete navigator.platform; } catch(e) {}
     try {
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (meta) {
-            meta.setAttribute('content', 'width=device-width, initial-scale=1.0');
-        }
+        var metas = document.querySelectorAll('meta[name="viewport"]');
+        metas.forEach(function(m) {
+            if (m.getAttribute('content') !== 'width=device-width, initial-scale=1.0') {
+                m.setAttribute('content', 'width=device-width, initial-scale=1.0');
+            }
+        });
     } catch(e) {}
 })();"""
 
