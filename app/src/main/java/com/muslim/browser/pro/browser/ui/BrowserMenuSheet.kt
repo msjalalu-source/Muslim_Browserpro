@@ -682,7 +682,6 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-
                 // Desktop Mode 4 - Targeted Viewport Guard
                 Surface(
                     modifier = Modifier
@@ -1344,11 +1343,13 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             }
         }
 
-        if (currentContext is com.muslim.browser.pro.MainActivity &&
-            (architecture == DesktopArchitecture.DESKTOP_MODE_4 ||
-             architecture == DesktopArchitecture.WINDOWS_10_TOUCH ||
-             architecture == DesktopArchitecture.NONE)
-        ) {
+        val effectiveArchitecture = when (architecture) {
+            DesktopArchitecture.WINDOWS_10_TOUCH -> DesktopArchitecture.WINDOWS_10_TOUCH
+            DesktopArchitecture.DESKTOP_MODE_4 -> DesktopArchitecture.DESKTOP_MODE_4
+            else -> DesktopArchitecture.NONE
+        }
+
+        if (currentContext is com.muslim.browser.pro.MainActivity) {
             // Direct no-reload architecture synchronization for Desktop Mode 4, Windows 10 Touch, and Mobile (NONE):
             // 1. Synchronize architecture across live WebViews using TabWebViewManager
             // 2. Apply required settings/viewport to active WebView through DesktopCore.synchronizeDesktopWebView
@@ -1359,7 +1360,7 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             } catch (_: Throwable) {
                 null
             }
-            twm?.syncAllLiveWebViewsArchitecture(architecture)
+            twm?.syncAllLiveWebViewsArchitecture(effectiveArchitecture)
 
             val currentWebView = try {
                 val field = currentContext.javaClass.getDeclaredField("webViewInstance")
@@ -1372,7 +1373,7 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
                 com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
                     currentWebView,
                     currentWebView.url,
-                    architecture,
+                    effectiveArchitecture,
                     true
                 )
             }
@@ -1384,14 +1385,13 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             } catch (_: Throwable) {
                 null
             }
-            viewModel?.selectDesktopArchitecture(architecture)
+            viewModel?.selectDesktopArchitecture(effectiveArchitecture)
             return
         }
 
-        // Standard path for other architectures or when disabling desktop modes
         val method = currentContext?.javaClass?.methods?.firstOrNull {
             it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
         }
-        method?.invoke(currentContext, architecture)
+        method?.invoke(currentContext, effectiveArchitecture)
     } catch (_: Throwable) {}
 }
