@@ -225,6 +225,9 @@ object DesktopCore {
     const val COMMON_DESKTOP_VIEWPORT_SCRIPT: String = """(function() {
     var TARGET = 'width=1280';
     var G = window.__mb_vp_guard__;
+    function nudge() {
+        try { window.dispatchEvent(new Event('resize')); } catch(e) {}
+    }
     function ensure() {
         try {
             if (!window.__mb_vp_guard__ || !window.__mb_vp_guard__.active) return;
@@ -238,6 +241,8 @@ object DesktopCore {
             }
             if (m.getAttribute('content') !== TARGET) {
                 m.setAttribute('content', TARGET);
+                setTimeout(nudge, 50);
+                setTimeout(nudge, 400);
             }
         } catch(e) {}
     }
@@ -248,6 +253,9 @@ object DesktopCore {
     }
     window.__mb_vp_guard__ = { active: true };
     ensure();
+    setTimeout(nudge, 50);
+    setTimeout(nudge, 400);
+    setTimeout(nudge, 1200);
     var obsHead = null;
     function watch() {
         try {
