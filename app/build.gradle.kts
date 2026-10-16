@@ -70,8 +70,18 @@ android {
     }
 }
 
+val filteredPrebuiltJar = tasks.register<Jar>("filteredPrebuiltJar") {
+    archiveFileName.set("app-prebuilt-filtered.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("filtered-libs"))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(zipTree(file("libs/app-prebuilt.jar"))) {
+        exclude("com/muslim/browser/pro/browser/ui/BottomNavBar*")
+    }
+}
+
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    implementation(files(filteredPrebuiltJar.flatMap { it.archiveFile }))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"), "exclude" to listOf("app-prebuilt.jar"))))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
