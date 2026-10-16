@@ -1,40 +1,57 @@
 package com.muslim.browser.pro.browser
 
-import android.content.ComponentName
-import android.content.Context
-import android.content.pm.PackageManager
 import android.view.WindowManager
-import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-import com.muslim.browser.pro.MainActivity
+import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 
-@RunWith(RobolectricTestRunner::class)
-@Config(packageName = "com.muslim.browser.pro")
 class KeyboardVisibilityConfigTest {
-
-    private lateinit var context: Context
-
-    @Before
-    fun setUp() {
-        context = ApplicationProvider.getApplicationContext<Context>()
-    }
 
     @Test
     fun testMainActivityConfiguredWithAdjustResize() {
-        val componentName = ComponentName(context, MainActivity::class.java)
-        val activityInfo = context.packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA)
+        val manifestFile = listOf(
+            File("src/main/AndroidManifest.xml"),
+            File("app/src/main/AndroidManifest.xml"),
+            File("../app/src/main/AndroidManifest.xml")
+        ).firstOrNull { it.exists() }
 
-        val adjustMode = activityInfo.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST
+        assertNotNull("AndroidManifest.xml must exist", manifestFile)
+
+        val factory = DocumentBuilderFactory.newInstance()
+        factory.isNamespaceAware = true
+        val builder = factory.newDocumentBuilder()
+        val doc = builder.parse(manifestFile!!)
+
+        val activities = doc.getElementsByTagName("activity")
+        var mainActivityFound = false
+        var softInputModeAttr: String? = null
+
+        for (i in 0 until activities.length) {
+            val element = activities.item(i) as org.w3c.dom.Element
+            val name = element.getAttribute("android:name")
+            if (name == "com.muslim.browser.pro.MainActivity" || name == ".MainActivity") {
+                mainActivityFound = true
+                softInputModeAttr = element.getAttribute("android:windowSoftInputMode")
+                break
+            }
+        }
+
+        assertTrue("MainActivity must be declared in AndroidManifest.xml", mainActivityFound)
         assertEquals(
-            "MainActivity must have SOFT_INPUT_ADJUST_RESIZE configured in AndroidManifest.xml",
-            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
-            adjustMode
+            "MainActivity must have android:windowSoftInputMode=\"adjustResize\" configured in AndroidManifest.xml",
+            "adjustResize",
+            softInputModeAttr
+        )
+    }
+
+    @Test
+    fun testSoftInputModeConstantMatchesAdjustResize() {
+        assertEquals(
+            0x10,
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         )
     }
 }
