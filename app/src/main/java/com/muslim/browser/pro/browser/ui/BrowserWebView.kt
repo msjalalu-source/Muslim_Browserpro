@@ -1,6 +1,9 @@
 package com.muslim.browser.pro.browser.ui
 
+import android.util.Log
+import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.compose.foundation.BorderStroke
@@ -35,6 +38,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -216,6 +220,57 @@ fun BrowserWebView(
         val bottomBarHeight = 41.8.dp + navBottom
         val additionalKeyboardPadding = maxOf(0.dp, imeBottom - bottomBarHeight)
 
+        // Non-invasive keyboard & focus diagnostics for Phase 2 investigation
+        LaunchedEffect(imeBottom) {
+            val imeDp = imeBottom.value
+            val isFocused = webView.hasFocus()
+            val hasWinFocus = webView.hasWindowFocus()
+            Log.d(
+                "MB_KEYBOARD_DIAG",
+                "[ImeInsetsChanged] imeBottom=${imeDp}dp, padding=${additionalKeyboardPadding.value}dp, webViewFocused=$isFocused, windowFocused=$hasWinFocus"
+            )
+        }
+
+        DisposableEffect(webView) {
+            val focusListener = View.OnFocusChangeListener { v, hasFocus ->
+                Log.d(
+                    "MB_KEYBOARD_DIAG",
+                    "[WebViewFocusChanged] hasFocus=$hasFocus, hasWindowFocus=${v.hasWindowFocus()}"
+                )
+            }
+            val windowFocusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasWindowFocus ->
+                Log.d(
+                    "MB_KEYBOARD_DIAG",
+                    "[WindowFocusChanged] hasWindowFocus=$hasWindowFocus, webViewFocused=${webView.hasFocus()}"
+                )
+            }
+            val globalFocusListener = ViewTreeObserver.OnGlobalFocusChangeListener { oldFocus, newFocus ->
+                val oldName = oldFocus?.javaClass?.simpleName ?: "null"
+                val newName = newFocus?.javaClass?.simpleName ?: "null"
+                if (oldFocus != newFocus) {
+                    Log.d(
+                        "MB_KEYBOARD_DIAG",
+                        "[GlobalFocusChanged] oldFocus=$oldName, newFocus=$newName, webViewFocused=${webView.hasFocus()}"
+                    )
+                }
+            }
+
+            webView.onFocusChangeListener = focusListener
+            val observer = webView.viewTreeObserver
+            if (observer.isAlive) {
+                observer.addOnWindowFocusChangeListener(windowFocusListener)
+                observer.addOnGlobalFocusChangeListener(globalFocusListener)
+            }
+
+            onDispose {
+                webView.onFocusChangeListener = null
+                if (observer.isAlive) {
+                    observer.removeOnWindowFocusChangeListener(windowFocusListener)
+                    observer.removeOnGlobalFocusChangeListener(globalFocusListener)
+                }
+            }
+        }
+
         // Web Content Viewport Container
         Box(
             modifier = Modifier
@@ -230,8 +285,9 @@ fun BrowserWebView(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
                         )
-                        isFocusable = true
-                        isFocusableInTouchMode = true
+                        isFocusable = false
+                        isFocusableInTouchMode = false
+                        descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -239,6 +295,19 @@ fun BrowserWebView(
                     val isForceDark = uiState.appTheme == AppTheme.FORCE_DARK_ON
                     if (MainActivity.isDarkThemeActive != isForceDark) {
                         MainActivity.applyWebViewTheme(webView, isForceDark)
+                    }
+
+                    // Prevent container from stealing focus from the child WebView
+                    if (container.isFocusable || container.isFocusableInTouchMode) {
+                        container.isFocusable = false
+                        container.isFocusableInTouchMode = false
+                        container.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+                    }
+
+                    // Ensure the WebView itself is focusable in touch mode to receive input and suggestions
+                    if (!webView.isFocusable || !webView.isFocusableInTouchMode) {
+                        webView.isFocusable = true
+                        webView.isFocusableInTouchMode = true
                     }
 
                     if (container.childCount != 1 || container.getChildAt(0) != webView) {

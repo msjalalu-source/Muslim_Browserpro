@@ -519,64 +519,8 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Smart Form Autofill Action (Explicit User Triggered)
+                // Smart Form Autofill Profile Row with integrated Fill Form Action Button
                 Surface(
-                    onClick = {
-                        val profile = AutofillRepository.loadProfile(context)
-                        if (!profile.isEnabled) {
-                            Toast.makeText(context, "Autofill is disabled. Enable it in Autofill Settings.", Toast.LENGTH_SHORT).show()
-                            showAutofillDialog = true
-                        } else {
-                            val liveWv = getActiveLiveWebView(context, uiState)
-                            if (liveWv != null && !uiState.isHomePage && !isBlocked) {
-                                onDismiss()
-                                AutofillEngine.executeAutofill(context, liveWv) { _, _, msg ->
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                Toast.makeText(context, "No active web form to fill", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_fill_form"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Assignment,
-                                contentDescription = "Fill Form",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Fill Form",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Smart Form Autofill Profile Settings Entry
-                Surface(
-                    onClick = {
-                        showAutofillDialog = true
-                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("menu_item_autofill_profile"),
@@ -587,11 +531,24 @@ fun BrowserMenuSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                            .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Main row area: Opens Autofill Profile settings/editor
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    showAutofillDialog = true
+                                }
+                                .padding(vertical = 6.dp)
+                                .testTag("menu_action_autofill_profile_main"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Badge,
                                 contentDescription = "Autofill Profile",
@@ -605,6 +562,41 @@ fun BrowserMenuSheet(
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // Dedicated trailing action button: Immediately invokes Fill Form action
+                        Button(
+                            onClick = {
+                                val liveWv = getActiveLiveWebView(context, uiState)
+                                if (liveWv != null && !uiState.isHomePage && !isBlocked) {
+                                    onDismiss()
+                                    AutofillEngine.executeAutofill(context, liveWv) { _, _, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "No active web form to fill", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.accent.copy(alpha = 0.2f),
+                                contentColor = colors.accent
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier
+                                .height(28.dp)
+                                .testTag("menu_action_fill_form")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Assignment,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = colors.accent
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Fill Form", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

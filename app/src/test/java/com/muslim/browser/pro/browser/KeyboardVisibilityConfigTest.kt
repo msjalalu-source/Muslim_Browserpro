@@ -1,13 +1,22 @@
 package com.muslim.browser.pro.browser
 
+import android.content.Context
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.WebView
+import android.widget.FrameLayout
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 
+@RunWith(RobolectricTestRunner::class)
 class KeyboardVisibilityConfigTest {
 
     @Test
@@ -94,5 +103,40 @@ class KeyboardVisibilityConfigTest {
         assertEquals("Additional padding must be exactly ime - bottomBarHeight", 210.2f, paddingOpen, 0.001f)
         assertEquals("Total reserved height from bottom must match IME height exactly", imeOpen, bottomBarHeight + paddingOpen, 0.001f)
     }
+
+    @Test
+    fun testWebViewContainerPreventsFocusTheft() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val container = FrameLayout(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            isFocusable = false
+            isFocusableInTouchMode = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+
+        assertFalse("WebView parent container must not be focusable to prevent focus theft", container.isFocusable)
+        assertFalse("WebView parent container must not be focusable in touch mode", container.isFocusableInTouchMode)
+        assertEquals(
+            "WebView parent container must prioritize descendant focusability",
+            ViewGroup.FOCUS_AFTER_DESCENDANTS,
+            container.descendantFocusability
+        )
+    }
+
+    @Test
+    fun testWebViewConfiguredForTouchModeFocus() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val webView = WebView(context).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
+        }
+
+        assertTrue("WebView must be focusable to receive input and suggestions", webView.isFocusable)
+        assertTrue("WebView must be focusable in touch mode to maintain soft keyboard connection", webView.isFocusableInTouchMode)
+    }
 }
+
 

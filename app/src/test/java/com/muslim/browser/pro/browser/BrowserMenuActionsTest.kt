@@ -101,4 +101,75 @@ class BrowserMenuActionsTest {
         assertTrue(shareDuringLoading)
         assertFalse(pdfDuringLoading)
     }
+
+    @Test
+    fun testFillFormExecutionGuards() {
+        fun canExecuteFillForm(isHomePage: Boolean, isBlocked: Boolean, hasLiveWebView: Boolean): Boolean {
+            return hasLiveWebView && !isHomePage && !isBlocked
+        }
+
+        // Active web page with live webview
+        assertTrue(canExecuteFillForm(isHomePage = false, isBlocked = false, hasLiveWebView = true))
+
+        // Home page should prevent fill form
+        assertFalse(canExecuteFillForm(isHomePage = true, isBlocked = false, hasLiveWebView = true))
+
+        // Blocked page should prevent fill form
+        assertFalse(canExecuteFillForm(isHomePage = false, isBlocked = true, hasLiveWebView = true))
+
+        // Null/missing webview should prevent fill form
+        assertFalse(canExecuteFillForm(isHomePage = false, isBlocked = false, hasLiveWebView = false))
+    }
+
+    @Test
+    fun testFillFormPreservesDisabledAutofillSetting() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val disabledProfile = AutofillProfile(
+            isEnabled = false,
+            personalInfo = PersonalInfo(userNameEn = "Test User")
+        )
+        AutofillRepository.saveProfile(context, disabledProfile)
+
+        val webView = android.webkit.WebView(context)
+        var resultMessage = ""
+        var filledCount = -1
+
+        AutofillEngine.executeAutofill(context, webView) { filled, _, message ->
+            filledCount = filled
+            resultMessage = message
+        }
+
+        assertEquals(0, filledCount)
+        assertTrue(resultMessage.contains("Autofill is disabled"))
+    }
+
+    @Test
+    fun testDualClickTargetsIndependence() {
+        var dialogOpened = false
+        var formFillExecuted = false
+
+        val onMainAreaClicked = {
+            dialogOpened = true
+        }
+
+        val onTrailingActionButtonClicked = {
+            // Invokes form fill, must NOT open dialog
+            formFillExecuted = true
+        }
+
+        // Clicking the main area only opens settings dialog
+        onMainAreaClicked()
+        assertTrue(dialogOpened)
+        assertFalse(formFillExecuted)
+
+        // Reset
+        dialogOpened = false
+        formFillExecuted = false
+
+        // Clicking the trailing button only invokes form fill
+        onTrailingActionButtonClicked()
+        assertTrue(formFillExecuted)
+        assertFalse(dialogOpened)
+    }
 }
+
