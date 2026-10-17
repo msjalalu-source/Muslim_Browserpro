@@ -76,6 +76,7 @@ val filteredPrebuiltJar = tasks.register<Jar>("filteredPrebuiltJar") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from(zipTree(file("libs/app-prebuilt.jar"))) {
         exclude("com/muslim/browser/pro/browser/ui/BottomNavBar*")
+        exclude("com/muslim/browser/pro/browser/ui/BrowserWebView*")
     }
 }
 

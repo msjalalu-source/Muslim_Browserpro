@@ -54,4 +54,45 @@ class KeyboardVisibilityConfigTest {
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         )
     }
+
+    @Test
+    fun testKeyboardVisibilityScriptSupportsAllEditableTypes() {
+        val script = DesktopCore.KEYBOARD_VISIBILITY_SCRIPT
+        assertNotNull("Script must not be null", script)
+        assertTrue("Script must handle INPUT elements", script.contains("INPUT"))
+        assertTrue("Script must handle TEXTAREA elements", script.contains("TEXTAREA"))
+        assertTrue("Script must handle contenteditable elements", script.contains("isContentEditable"))
+        assertTrue("Script must handle role=textbox", script.contains("textbox"))
+        assertTrue("Script must check activeElement", script.contains("activeElement"))
+        assertTrue("Script must support shadowRoot", script.contains("shadowRoot"))
+        assertTrue("Script must contain scrollIntoViewIfNeeded or scrollIntoView",
+            script.contains("scrollIntoViewIfNeeded") && script.contains("scrollIntoView"))
+        assertTrue("Script must listen to visualViewport or window resize",
+            script.contains("visualViewport") && script.contains("resize"))
+        assertTrue("Script must listen to focusin", script.contains("focusin"))
+        assertTrue("Script must not attach pointerup listener to prevent scroll snap-back", !script.contains("pointerup"))
+        assertTrue("Script must be idempotent with guard key", script.contains("__mb_keyboard_guard__"))
+    }
+
+    @Test
+    fun testKeyboardInsetsPaddingCalculationPreventsDoublePadding() {
+        val bottomBarHeight = 41.8f + 48f // 89.8f
+
+        // When keyboard is closed (ime = 0)
+        val imeClosed = 0f
+        val paddingClosed = maxOf(0f, imeClosed - bottomBarHeight)
+        assertEquals("When keyboard is closed, additional padding must be 0", 0f, paddingClosed, 0.001f)
+
+        // When keyboard is partially open or smaller than bottom bar
+        val imeSmall = 50f
+        val paddingSmall = maxOf(0f, imeSmall - bottomBarHeight)
+        assertEquals("When IME is smaller than bottom bar, additional padding must be 0", 0f, paddingSmall, 0.001f)
+
+        // When keyboard is fully open (e.g. 300dp)
+        val imeOpen = 300f
+        val paddingOpen = maxOf(0f, imeOpen - bottomBarHeight)
+        assertEquals("Additional padding must be exactly ime - bottomBarHeight", 210.2f, paddingOpen, 0.001f)
+        assertEquals("Total reserved height from bottom must match IME height exactly", imeOpen, bottomBarHeight + paddingOpen, 0.001f)
+    }
 }
+

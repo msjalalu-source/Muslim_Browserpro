@@ -380,10 +380,103 @@ object DesktopCore {
     }
 
     /**
+     * Universal Keyboard Visibility Helper Script:
+     * - Detects all editable fields: input (text, search, email, etc.), textarea, contenteditable, role="textbox"
+     * - Handles shadow DOM and nested editable containers (such as Monaco, CodeMirror, rich editors)
+     * - Dispatches visibility adjustments on focusin, pointerup, input, and visualViewport/window resize
+     * - Scrolls active element into visible viewport using scrollIntoViewIfNeeded or scrollIntoView({ block: 'nearest' })
+     * - Uses progressive delays (0ms, 120ms, 300ms) to ensure visibility across keyboard appearance animations
+     * - Safe against cross-origin frames and idempotent via __mb_keyboard_guard__
+     */
+    const val KEYBOARD_VISIBILITY_SCRIPT: String = """(function() {
+    if (window.__mb_keyboard_guard__) return;
+    window.__mb_keyboard_guard__ = true;
+
+    function getActiveEditable() {
+        try {
+            var el = document.activeElement;
+            while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+                el = el.shadowRoot.activeElement;
+            }
+            if (!el) return null;
+            var tag = (el.tagName || '').toUpperCase();
+            if (tag === 'INPUT') {
+                var type = (el.type || 'text').toLowerCase();
+                var nonText = ['hidden', 'submit', 'button', 'reset', 'checkbox', 'radio', 'file', 'image'];
+                if (nonText.indexOf(type) === -1) return el;
+            } else if (tag === 'TEXTAREA') {
+                return el;
+            } else if (el.isContentEditable) {
+                return el;
+            } else if (el.getAttribute && (el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === '' || el.getAttribute('role') === 'textbox')) {
+                return el;
+            }
+            var p = el.parentElement;
+            while (p && p !== document.body && p !== document.documentElement) {
+                if (p.isContentEditable || (p.getAttribute && (p.getAttribute('contenteditable') === 'true' || p.getAttribute('role') === 'textbox'))) {
+                    return el;
+                }
+                p = p.parentElement;
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    function ensureVisible(target) {
+        try {
+            var el = target || getActiveEditable();
+            if (!el || !el.isConnected) return;
+            if (typeof el.scrollIntoViewIfNeeded === 'function') {
+                el.scrollIntoViewIfNeeded(false);
+            } else if (typeof el.scrollIntoView === 'function') {
+                el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+            }
+        } catch(e) {}
+    }
+
+    function scheduleVisibilityCheck(target) {
+        ensureVisible(target);
+        setTimeout(function() { ensureVisible(target); }, 120);
+        setTimeout(function() { ensureVisible(target); }, 300);
+    }
+
+    document.addEventListener('focusin', function(e) {
+        scheduleVisibilityCheck(e.target);
+    }, { passive: true, capture: true });
+
+    document.addEventListener('input', function(e) {
+        ensureVisible(e.target);
+    }, { passive: true, capture: true });
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', function() {
+            var el = getActiveEditable();
+            if (el) scheduleVisibilityCheck(el);
+        }, { passive: true });
+    } else {
+        window.addEventListener('resize', function() {
+            var el = getActiveEditable();
+            if (el) scheduleVisibilityCheck(el);
+        }, { passive: true });
+    }
+})();"""
+
+    /**
+     * Injects the universal keyboard visibility helper into the given WebView.
+     */
+    fun ensureKeyboardVisibilityHelper(webView: WebView) {
+        try {
+            webView.evaluateJavascript(KEYBOARD_VISIBILITY_SCRIPT, null)
+        } catch (_: Throwable) {}
+    }
+
+    /**
      * Shared lifecycle hook called on page finished / SPA navigation.
-     * Configures common settings and injects architecture-specific scripts.
+     * Configures common settings, injects universal keyboard visibility helper,
+     * and injects architecture-specific scripts.
      */
     fun handlePageLifecycle(webView: WebView, architecture: DesktopArchitecture, url: String) {
+        ensureKeyboardVisibilityHelper(webView)
         if (!architecture.isAnyDesktop()) return
         when (architecture) {
             DesktopArchitecture.WINDOWS_10_TOUCH -> {

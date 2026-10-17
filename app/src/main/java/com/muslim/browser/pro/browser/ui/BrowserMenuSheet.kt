@@ -41,6 +41,12 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Translate
+import android.content.Intent
+import android.print.PrintAttributes
+import android.print.PrintManager
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
+import com.muslim.browser.pro.browser.ShareIntentHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -102,6 +108,11 @@ fun BrowserMenuSheet(
     var showClearAllDataDialog by remember { mutableStateOf(false) }
     var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var lastPdfJobTimestamp by remember { mutableStateOf(0L) }
+    val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(uiState.currentUrl)
+    val isBlocked = uiState.blockedInfo != null
+    val isShareEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid
+    val isSavePdfEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid && !uiState.isLoading
 
     // Dialog: Theme Selection (Settings -> Theme)
     if (showThemeDialog) {
@@ -390,6 +401,105 @@ fun BrowserMenuSheet(
                             Text(
                                 text = "Translating...",
                                 color = colors.accent,
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Share Webpage URL (Native Android Sharesheet)
+                Surface(
+                    onClick = {
+                        if (isShareEnabled) {
+                            onDismiss()
+                            performShare(context, uiState.currentUrl, uiState.pageTitle)
+                        }
+                    },
+                    enabled = isShareEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_share"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share",
+                                tint = if (isShareEnabled) colors.iconTint else colors.textSecondary.copy(alpha = 0.38f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Share",
+                                color = if (isShareEnabled) colors.textPrimary else colors.textSecondary.copy(alpha = 0.38f),
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Save Webpage as PDF (Native Android PDF Infrastructure)
+                Surface(
+                    onClick = {
+                        if (isSavePdfEnabled) {
+                            val now = System.currentTimeMillis()
+                            if (now - lastPdfJobTimestamp >= 1500L) {
+                                lastPdfJobTimestamp = now
+                                val success = performSaveAsPdf(context, uiState)
+                                if (success) {
+                                    onDismiss()
+                                }
+                            }
+                        }
+                    },
+                    enabled = isSavePdfEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_save_as_pdf"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = "Save as PDF",
+                                tint = if (isSavePdfEnabled) colors.iconTint else colors.textSecondary.copy(alpha = 0.38f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Save as PDF",
+                                color = if (isSavePdfEnabled) colors.textPrimary else colors.textSecondary.copy(alpha = 0.38f),
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (uiState.isLoading && isWebUrlValid && !uiState.isHomePage && !isBlocked) {
+                            Text(
+                                text = "Loading...",
+                                color = colors.textSecondary,
                                 fontSize = 10.5.sp
                             )
                         }
@@ -1329,4 +1439,100 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
         }
         method?.invoke(currentContext, effectiveArchitecture)
     } catch (_: Throwable) {}
+}
+
+internal fun sanitizePdfJobName(title: String?, url: String?): String {
+    val baseName = if (!title.isNullOrBlank()) {
+        title.trim()
+    } else if (!url.isNullOrBlank()) {
+        val hostFromUri = try {
+            android.net.Uri.parse(url).host
+        } catch (_: Throwable) {
+            null
+        }
+        val fallbackHost = if (url.contains("://")) {
+            url.substringAfter("://").substringBefore('/').substringBefore('?').substringBefore(':')
+        } else {
+            url.substringBefore('/').substringBefore('?').substringBefore(':')
+        }
+        if (!hostFromUri.isNullOrBlank()) hostFromUri else fallbackHost.ifBlank { "Webpage" }
+    } else {
+        "Webpage"
+    }
+    val sanitized = baseName.replace(Regex("[/\\\\:*?\"<>|\\r\\n\\t]"), "_").trim()
+    val candidate = if (sanitized.isEmpty() || sanitized.all { it == '_' }) "Webpage" else sanitized
+    val maxLen = 60
+    val truncated = if (candidate.length > maxLen) candidate.substring(0, maxLen).trimEnd('_', ' ') else candidate
+    return "MuslimBrowser_$truncated"
+}
+
+private fun performShare(context: android.content.Context, url: String, title: String) {
+    try {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, url)
+            if (title.isNotBlank()) {
+                putExtra(Intent.EXTRA_SUBJECT, title)
+                putExtra(Intent.EXTRA_TITLE, title)
+            }
+        }
+        val chooser = Intent.createChooser(sendIntent, "Share Webpage")
+        var currentContext: android.content.Context? = context
+        while (currentContext != null) {
+            if (currentContext is android.app.Activity) break
+            if (currentContext is android.content.ContextWrapper) {
+                currentContext = currentContext.baseContext
+            } else {
+                break
+            }
+        }
+        val launchContext = currentContext ?: context
+        if (launchContext !is android.app.Activity) {
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        launchContext.startActivity(chooser)
+    } catch (_: Throwable) {}
+}
+
+private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserUiState): Boolean {
+    try {
+        var currentContext: android.content.Context? = context
+        while (currentContext != null) {
+            if (currentContext is com.muslim.browser.pro.MainActivity) break
+            if (currentContext is android.content.ContextWrapper) {
+                currentContext = currentContext.baseContext
+            } else {
+                break
+            }
+        }
+        val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return false
+
+        // Retrieve live WebView for the active tab ID
+        val liveWebView = try {
+            mainActivity.tabWebViewManager?.getLiveWebView(uiState.currentTabId)
+        } catch (_: Throwable) {
+            null
+        } ?: try {
+            val field = mainActivity.javaClass.getDeclaredField("webViewInstance")
+            field.isAccessible = true
+            field.get(mainActivity) as? android.webkit.WebView
+        } catch (_: Throwable) {
+            null
+        } ?: return false
+
+        // Verify that the WebView is active and represents the current webpage
+        val wvUrl = liveWebView.url
+        if (wvUrl.isNullOrBlank() || !ShareIntentHandler.isDirectHttpUrl(wvUrl)) {
+            return false
+        }
+
+        val printManager = mainActivity.getSystemService(android.content.Context.PRINT_SERVICE) as? PrintManager ?: return false
+        val jobName = sanitizePdfJobName(uiState.pageTitle.ifBlank { liveWebView.title ?: "" }, wvUrl)
+        val printAdapter = liveWebView.createPrintDocumentAdapter(jobName)
+        val printAttributes = PrintAttributes.Builder().build()
+        printManager.print(jobName, printAdapter, printAttributes)
+        return true
+    } catch (_: Throwable) {
+        return false
+    }
 }
