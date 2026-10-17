@@ -426,37 +426,42 @@ object DesktopCore {
         try {
             var el = target || getActiveEditable();
             if (!el || !el.isConnected) return;
+            if (window.visualViewport) {
+                var rect = el.getBoundingClientRect();
+                var vv = window.visualViewport;
+                if (rect.top >= 0 && rect.bottom <= vv.height) {
+                    return;
+                }
+            }
             if (typeof el.scrollIntoViewIfNeeded === 'function') {
                 el.scrollIntoViewIfNeeded(false);
             } else if (typeof el.scrollIntoView === 'function') {
-                el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+                el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
             }
         } catch(e) {}
     }
 
-    function scheduleVisibilityCheck(target) {
-        ensureVisible(target);
-        setTimeout(function() { ensureVisible(target); }, 120);
-        setTimeout(function() { ensureVisible(target); }, 300);
-    }
-
     document.addEventListener('focusin', function(e) {
-        scheduleVisibilityCheck(e.target);
-    }, { passive: true, capture: true });
-
-    document.addEventListener('input', function(e) {
         ensureVisible(e.target);
     }, { passive: true, capture: true });
 
     if (window.visualViewport) {
+        var resizeTimer = null;
         window.visualViewport.addEventListener('resize', function() {
-            var el = getActiveEditable();
-            if (el) scheduleVisibilityCheck(el);
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function() {
+                var el = getActiveEditable();
+                if (el) ensureVisible(el);
+            }, 100);
         }, { passive: true });
     } else {
+        var winResizeTimer = null;
         window.addEventListener('resize', function() {
-            var el = getActiveEditable();
-            if (el) scheduleVisibilityCheck(el);
+            if (winResizeTimer) clearTimeout(winResizeTimer);
+            winResizeTimer = setTimeout(function() {
+                var el = getActiveEditable();
+                if (el) ensureVisible(el);
+            }, 100);
         }, { passive: true });
     }
 })();"""
