@@ -44,8 +44,13 @@ import androidx.compose.material.icons.filled.Translate
 import android.content.Intent
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.widget.Toast
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
+import com.muslim.browser.pro.browser.AutofillEngine
+import com.muslim.browser.pro.browser.AutofillRepository
 import com.muslim.browser.pro.browser.ShareIntentHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -113,6 +118,7 @@ fun BrowserMenuSheet(
     val isBlocked = uiState.blockedInfo != null
     val isShareEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid
     val isSavePdfEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid && !uiState.isLoading
+    var showAutofillDialog by remember { mutableStateOf(false) }
 
     // Dialog: Theme Selection (Settings -> Theme)
     if (showThemeDialog) {
@@ -184,6 +190,11 @@ fun BrowserMenuSheet(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.testTag("dialog_theme_selector")
         )
+    }
+
+    // Dialog: Smart Form Autofill Settings & Profile Editor
+    if (showAutofillDialog) {
+        AutofillSettingsDialog(onDismiss = { showAutofillDialog = false })
     }
 
     // Dialog: Clear All Data
@@ -501,6 +512,98 @@ fun BrowserMenuSheet(
                                 text = "Loading...",
                                 color = colors.textSecondary,
                                 fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Smart Form Autofill Action (Explicit User Triggered)
+                Surface(
+                    onClick = {
+                        val profile = AutofillRepository.loadProfile(context)
+                        if (!profile.isEnabled) {
+                            Toast.makeText(context, "Autofill is disabled. Enable it in Autofill Settings.", Toast.LENGTH_SHORT).show()
+                            showAutofillDialog = true
+                        } else {
+                            val liveWv = getActiveLiveWebView(context, uiState)
+                            if (liveWv != null && !uiState.isHomePage && !isBlocked) {
+                                onDismiss()
+                                AutofillEngine.executeAutofill(context, liveWv) { _, _, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "No active web form to fill", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_fill_form"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Assignment,
+                                contentDescription = "Fill Form",
+                                tint = colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Fill Form",
+                                color = colors.textPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Smart Form Autofill Profile Settings Entry
+                Surface(
+                    onClick = {
+                        showAutofillDialog = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("menu_item_autofill_profile"),
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.dp, colors.border)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Badge,
+                                contentDescription = "Autofill Profile",
+                                tint = colors.iconTint,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Autofill Profile (CV)",
+                                color = colors.textPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
@@ -1494,6 +1597,31 @@ private fun performShare(context: android.content.Context, url: String, title: S
     } catch (_: Throwable) {}
 }
 
+internal fun getActiveLiveWebView(context: android.content.Context, uiState: BrowserUiState): android.webkit.WebView? {
+    var currentContext: android.content.Context? = context
+    while (currentContext != null) {
+        if (currentContext is com.muslim.browser.pro.MainActivity) break
+        if (currentContext is android.content.ContextWrapper) {
+            currentContext = currentContext.baseContext
+        } else {
+            break
+        }
+    }
+    val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return null
+
+    return try {
+        mainActivity.tabWebViewManager?.getLiveWebView(uiState.currentTabId)
+    } catch (_: Throwable) {
+        null
+    } ?: try {
+        val field = mainActivity.javaClass.getDeclaredField("webViewInstance")
+        field.isAccessible = true
+        field.get(mainActivity) as? android.webkit.WebView
+    } catch (_: Throwable) {
+        null
+    }
+}
+
 private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserUiState): Boolean {
     try {
         var currentContext: android.content.Context? = context
@@ -1507,18 +1635,7 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
         }
         val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return false
 
-        // Retrieve live WebView for the active tab ID
-        val liveWebView = try {
-            mainActivity.tabWebViewManager?.getLiveWebView(uiState.currentTabId)
-        } catch (_: Throwable) {
-            null
-        } ?: try {
-            val field = mainActivity.javaClass.getDeclaredField("webViewInstance")
-            field.isAccessible = true
-            field.get(mainActivity) as? android.webkit.WebView
-        } catch (_: Throwable) {
-            null
-        } ?: return false
+        val liveWebView = getActiveLiveWebView(context, uiState) ?: return false
 
         // Verify that the WebView is active and represents the current webpage
         val wvUrl = liveWebView.url
@@ -1536,3 +1653,4 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
         return false
     }
 }
+
