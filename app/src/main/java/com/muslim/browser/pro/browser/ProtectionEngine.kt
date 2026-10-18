@@ -56,14 +56,6 @@ object ProtectionEngine {
         "pdf"
     )
 
-    fun buildGoogleSafeSearchUrl(query: String): String {
-        val trimmed = query.trim()
-        val encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.name())
-        val url = "https://www.google.com/search?q=$encoded&safe=active"
-        NavigationController.markSearchUrlValidated(url)
-        return url
-    }
-
     fun buildDuckDuckGoSafeSearchUrl(query: String): String {
         val trimmed = query.trim()
         val encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.name())
@@ -71,10 +63,7 @@ object ProtectionEngine {
     }
 
     fun buildSafeSearchUrl(query: String, searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO): String {
-        return when (searchEngine) {
-            SearchEngine.DUCKDUCKGO -> buildDuckDuckGoSafeSearchUrl(query)
-            SearchEngine.GOOGLE -> buildGoogleSafeSearchUrl(query)
-        }
+        return buildDuckDuckGoSafeSearchUrl(query)
     }
 
     val SUPPORTED_GOOGLE_DOMAINS: Set<String> = hashSetOf(
@@ -105,38 +94,19 @@ object ProtectionEngine {
         "google.vg", "google.vu", "google.ws"
     )
 
-    fun isGoogleSafeSearchUrl(url: String): Boolean {
-        if (url.isBlank()) return false
-        return try {
-            val uri = Uri.parse(url)
-            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
-            if (scheme != "http" && scheme != "https") return false
-            if (!uri.userInfo.isNullOrEmpty()) return false
-            val port = uri.port
-            if (port != -1 && port != 80 && port != 443) return false
-            val host = uri.host ?: return false
-            if (!isGoogleHost(host)) return false
-            val path = uri.path?.lowercase(Locale.ROOT) ?: ""
-            if (!path.contains("/search") && !path.contains("/webhp") && path != "/") return false
-            uri.getQueryParameter("safe")?.equals("active", ignoreCase = true) == true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     fun isDuckDuckGoSafeSearchUrl(url: String): Boolean {
         if (url.isBlank()) return false
         return try {
             val uri = Uri.parse(url)
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
-            host == "safe.duckduckgo.com" || (host.contains("duckduckgo.com") && uri.getQueryParameter("kp") == "1")
+            host == "safe.duckduckgo.com"
         } catch (_: Exception) {
             false
         }
     }
 
     fun isSafeSearchUrl(url: String): Boolean {
-        return isGoogleSafeSearchUrl(url) || isDuckDuckGoSafeSearchUrl(url)
+        return isDuckDuckGoSafeSearchUrl(url)
     }
 
     fun isGoogleHost(host: String): Boolean {
@@ -188,26 +158,90 @@ object ProtectionEngine {
             val host = uri.host ?: return null
             val path = uri.path?.lowercase(Locale.ROOT) ?: ""
 
+            // 1. Google (only /search or /webhp with query param q, preserve translate, accounts, etc.)
             if (isGoogleHost(host) && !path.startsWith("/url")) {
-                if (path.contains("/search") || path.contains("/webhp") || path == "/" || path.isEmpty()) {
+                if (path.contains("/search") || path.contains("/webhp")) {
                     val q = uri.getQueryParameter("q")
                     if (!q.isNullOrBlank()) return q
                 }
             }
 
+            // 2. DuckDuckGo
+            if (host.contains("duckduckgo.com")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 3. Bing
             if (host.contains("bing.com") && (path.contains("/search") || uri.getQueryParameter("q") != null)) {
                 val q = uri.getQueryParameter("q")
                 if (!q.isNullOrBlank()) return q
             }
 
-            if (host.contains("duckduckgo.com") && uri.getQueryParameter("q") != null) {
+            // 4. Yahoo
+            if (host.contains("search.yahoo.com") || (host.contains("yahoo.com") && path.contains("/search"))) {
+                val p = uri.getQueryParameter("p") ?: uri.getQueryParameter("q")
+                if (!p.isNullOrBlank()) return p
+            }
+
+            // 5. Yandex
+            if (host.contains("yandex.") || host.contains("ya.ru")) {
+                val text = uri.getQueryParameter("text") ?: uri.getQueryParameter("q")
+                if (!text.isNullOrBlank()) return text
+            }
+
+            // 6. Brave
+            if (host.contains("brave.com") || host.contains("search.brave.com")) {
                 val q = uri.getQueryParameter("q")
                 if (!q.isNullOrBlank()) return q
             }
 
-            if (host.contains("search.yahoo.com") || (host.contains("yahoo.com") && path.contains("/search"))) {
-                val p = uri.getQueryParameter("p")
-                if (!p.isNullOrBlank()) return p
+            // 7. Ecosia
+            if (host.contains("ecosia.org")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 8. Startpage
+            if (host.contains("startpage.com")) {
+                val q = uri.getQueryParameter("query") ?: uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 9. Qwant
+            if (host.contains("qwant.com")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 10. Ask
+            if (host.contains("ask.com")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 11. Baidu
+            if (host.contains("baidu.com")) {
+                val wd = uri.getQueryParameter("wd") ?: uri.getQueryParameter("word")
+                if (!wd.isNullOrBlank()) return wd
+            }
+
+            // 12. Naver
+            if (host.contains("naver.com")) {
+                val query = uri.getQueryParameter("query") ?: uri.getQueryParameter("q")
+                if (!query.isNullOrBlank()) return query
+            }
+
+            // 13. AOL
+            if (host.contains("search.aol.") || host.contains("aol.com")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
+            }
+
+            // 14. Mojeek
+            if (host.contains("mojeek.com")) {
+                val q = uri.getQueryParameter("q")
+                if (!q.isNullOrBlank()) return q
             }
 
             null
@@ -222,12 +256,13 @@ object ProtectionEngine {
         normalizedKeywords: Collection<String>? = null
     ): String? {
         if (customKeywords.isEmpty() || text.isBlank()) return null
-        val lowerText = text.trim().lowercase(Locale.ROOT)
-        val normalized = if (lowerText.contains("%20")) {
-            lowerText.replace("%20", " ")
-        } else {
-            lowerText
+        val plusReplaced = text.replace('+', ' ')
+        val decoded = try {
+            Uri.decode(plusReplaced) ?: plusReplaced
+        } catch (_: Exception) {
+            plusReplaced
         }
+        val normalized = decoded.trim().lowercase(Locale.ROOT)
 
         if (!normalizedKeywords.isNullOrEmpty()) {
             for (kwNorm in normalizedKeywords) {

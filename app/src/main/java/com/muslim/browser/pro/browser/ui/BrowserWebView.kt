@@ -1,11 +1,25 @@
 package com.muslim.browser.pro.browser.ui
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
+import android.net.http.SslError
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.lifecycle.ViewModelProvider
+import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.NavigationController
+import com.muslim.browser.pro.browser.NavigationDecision
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement

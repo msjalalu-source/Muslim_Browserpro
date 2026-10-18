@@ -5,22 +5,6 @@ import java.util.Locale
 
 object NavigationController {
 
-    @Volatile
-    private var lastValidatedGoogleUrl: String? = null
-
-    fun markSearchUrlValidated(url: String) {
-        lastValidatedGoogleUrl = url.trim()
-    }
-
-    fun isSearchUrlValidated(url: String): Boolean {
-        val validated = lastValidatedGoogleUrl
-        return validated != null && validated == url.trim()
-    }
-
-    fun clearSearchUrlValidation() {
-        lastValidatedGoogleUrl = null
-    }
-
     fun evaluate(
         url: String,
         customKeywords: Set<String>,
@@ -32,66 +16,27 @@ object NavigationController {
             return NavigationDecision.Allowed
         }
 
-        // SMART FAST-PATH for application-generated validated Google Search
-        if (isSearchUrlValidated(trimmed)) {
-            clearSearchUrlValidation()
-            // Verify that the URL is a strictly valid Google SafeSearch URL before fast-pathing
-            if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
+        // Unified search engine evaluation for all supported search engines
+        // (Google, Bing, Yahoo, Yandex, Brave, Ecosia, Startpage, Qwant, Ask, Baidu, Naver, AOL, Mojeek, DuckDuckGo)
+        val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
+        if (searchEngineQuery != null) {
+            // 1. Check custom protected keywords on search query
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)
+            if (blockedKw != null) {
+                return NavigationDecision.Blocked(
+                    "Custom Keyword Protection",
+                    "Search query blocked due to protected keyword: \"$blockedKw\""
+                )
+            }
+
+            // 2. If already on safe.duckduckgo.com, do NOT redirect (prevent loop)
+            if (ProtectionEngine.isDuckDuckGoSafeSearchUrl(trimmed)) {
                 return NavigationDecision.Allowed
             }
-        }
 
-        // Focused Google SafeSearch evaluation (single-pass, zero duplicate processing):
-        val uri = try { Uri.parse(trimmed) } catch (_: Exception) { null }
-        val scheme = uri?.scheme?.lowercase(Locale.ROOT)
-        val isHttpScheme = scheme == "http" || scheme == "https"
-        val hasUserInfo = !uri?.userInfo.isNullOrEmpty()
-        val port = uri?.port ?: -1
-        val isStandardPort = port == -1 || port == 80 || port == 443
-        val host = uri?.host
-        val isGoogle = isHttpScheme && !hasUserInfo && isStandardPort && host != null && ProtectionEngine.isGoogleHost(host)
-
-        if (isGoogle) {
-            val path = uri.path?.lowercase(Locale.ROOT) ?: ""
-            if (path.contains("/search") || path.contains("/webhp") || path == "/" || path.isEmpty()) {
-                val query = uri.getQueryParameter("q")
-                if (!query.isNullOrBlank()) {
-                    // Check custom keywords on untrusted Google search
-                    val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(query, customKeywords, normalizedKeywords)
-                    if (blockedKw != null) {
-                        return NavigationDecision.Blocked(
-                            "Custom Keyword Protection",
-                            "Search query blocked due to protected keyword: \"$blockedKw\""
-                        )
-                    }
-                    // Enforce SafeSearch parameter (safe=active)
-                    val isSafeActive = uri.getQueryParameter("safe")?.equals("active", ignoreCase = true) == true
-                    return if (isSafeActive) {
-                        NavigationDecision.Allowed
-                    } else {
-                        val safeUrl = ProtectionEngine.buildGoogleSafeSearchUrl(query)
-                        NavigationDecision.Redirect(safeUrl)
-                    }
-                }
-            }
-            // Non-search Google navigation proceeds to destination checks without re-querying
-        } else {
-            // Search engine evaluation for non-Google engines (e.g. DuckDuckGo - untouched as required by scope)
-            val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
-            if (searchEngineQuery != null) {
-                val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)
-                if (blockedKw != null) {
-                    return NavigationDecision.Blocked(
-                        "Custom Keyword Protection",
-                        "Search query blocked due to protected keyword: \"$blockedKw\""
-                    )
-                }
-                if (ProtectionEngine.isSafeSearchUrl(trimmed)) {
-                    return NavigationDecision.Allowed
-                }
-                val safeUrl = ProtectionEngine.buildSafeSearchUrl(searchEngineQuery, searchEngine)
-                return NavigationDecision.Redirect(safeUrl)
-            }
+            // 3. Redirect all search results to DuckDuckGo SafeSearch
+            val safeUrl = ProtectionEngine.buildDuckDuckGoSafeSearchUrl(searchEngineQuery)
+            return NavigationDecision.Redirect(safeUrl)
         }
 
         // Audio & Download policies
