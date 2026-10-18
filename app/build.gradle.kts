@@ -25,10 +25,10 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        val releaseKeystorePath = System.getenv("RELEASE_STORE_FILE")
-        val releaseStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
-        val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
-        val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        val releaseKeystorePath = System.getenv("KEYSTORE_PATH") ?: System.getenv("RELEASE_STORE_FILE")
+        val releaseStorePassword = System.getenv("KEYSTORE_PASSWORD") ?: System.getenv("RELEASE_STORE_PASSWORD")
+        val releaseKeyAlias = System.getenv("KEY_ALIAS") ?: System.getenv("RELEASE_KEY_ALIAS")
+        val releaseKeyPassword = System.getenv("KEY_PASSWORD") ?: System.getenv("RELEASE_KEY_PASSWORD")
 
         if (!releaseKeystorePath.isNullOrBlank() &&
             !releaseStorePassword.isNullOrBlank() &&

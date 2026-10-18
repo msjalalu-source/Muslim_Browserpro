@@ -37,30 +37,28 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Configure signing keystore
+      - name: Configure release signing keystore
         env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           [ -f .env ] || touch .env
           chmod +x gradlew
-          if [ -n "$RELEASE_KEYSTORE_BASE64" ] && [ -n "$RELEASE_STORE_PASSWORD" ] && [ -n "$RELEASE_KEY_ALIAS" ] && [ -n "$RELEASE_KEY_PASSWORD" ]; then
-            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
-            echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/release.keystore" >> "$GITHUB_ENV"
-            echo "RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD" >> "$GITHUB_ENV"
-          else
-            if [ ! -f "debug.keystore" ]; then
-              keytool -genkeypair -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
-            fi
-            echo "RELEASE_STORE_FILE=$GITHUB_WORKSPACE/debug.keystore" >> "$GITHUB_ENV"
-            echo "RELEASE_STORE_PASSWORD=android" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=androiddebugkey" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::error::Required release signing secrets are missing! Please configure KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD in GitHub Repository Secrets."
+            exit 1
           fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/release.keystore"
+          if [ ! -s "$GITHUB_WORKSPACE/release.keystore" ]; then
+            echo "::error::Failed to decode release.keystore from KEYSTORE_BASE64 or file is empty!"
+            exit 1
+          fi
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/release.keystore" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Build release APK
         run: ./gradlew assembleRelease --stacktrace --no-daemon --no-configuration-cache
@@ -70,7 +68,8 @@ jobs:
         run: |
           APK_PATH="app/build/outputs/apk/release/app-release.apk"
           if [ ! -f "$APK_PATH" ]; then
-            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*unsigned*" | head -n 1)
+            echo "::error::Release APK $APK_PATH not found! Built APK was either unsigned or failed to generate."
+            exit 1
           fi
           APKSIGNER_BIN=$(command -v apksigner || find "$ANDROID_HOME/build-tools" -name apksigner 2>/dev/null | sort -V | tail -n 1)
           "$APKSIGNER_BIN" verify --verbose --print-certs "$APK_PATH"
@@ -80,7 +79,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
-          path: ${{ steps.verify_apk.outputs.apk_path }}
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Publish APK to GitHub Releases
