@@ -1,5 +1,9 @@
 package com.muslim.browser.pro.browser.ui
 
+import android.content.Intent
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,10 +27,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.ui.platform.LocalContext
-import com.muslim.browser.pro.browser.DesktopArchitecture
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CleaningServices
@@ -37,21 +41,12 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Translate
-import android.content.Intent
-import android.print.PrintAttributes
-import android.print.PrintManager
-import android.widget.Toast
-import androidx.compose.material.icons.automirrored.filled.Assignment
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Share
-import com.muslim.browser.pro.browser.AutofillEngine
-import com.muslim.browser.pro.browser.AutofillRepository
-import com.muslim.browser.pro.browser.ShareIntentHandler
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,16 +70,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.muslim.browser.pro.browser.AutofillEngine
 import com.muslim.browser.pro.browser.BrowserUiState
+import com.muslim.browser.pro.browser.DesktopArchitecture
+import com.muslim.browser.pro.browser.ShareIntentHandler
 import com.muslim.browser.pro.browser.TranslationEngine
 import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.LocalAppColors
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BrowserMenuSheet(
     uiState: BrowserUiState,
@@ -108,87 +107,23 @@ fun BrowserMenuSheet(
     val context = LocalContext.current
     val colors = LocalAppColors.current
 
-    var newKeywordInput by remember { mutableStateOf("") }
-    var keywordError by remember { mutableStateOf<String?>(null) }
     var showClearAllDataDialog by remember { mutableStateOf(false) }
     var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showAutofillDialog by remember { mutableStateOf(false) }
     var lastPdfJobTimestamp by remember { mutableStateOf(0L) }
+
     val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(uiState.currentUrl)
     val isBlocked = uiState.blockedInfo != null
     val isShareEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid
     val isSavePdfEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid && !uiState.isLoading
-    var showAutofillDialog by remember { mutableStateOf(false) }
 
-    // Dialog: Theme Selection (Settings -> Theme)
+    // Dialog: Theme Selection
     if (showThemeDialog) {
-        AlertDialog(
-            onDismissRequest = { showThemeDialog = false },
-            title = {
-                Text(
-                    text = "Theme",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = colors.textPrimary
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
-                        val isSelected = uiState.appTheme == theme || (uiState.appTheme == AppTheme.FORCE_DARK_ON && theme == AppTheme.WHITE)
-                        Surface(
-                            onClick = {
-                                onSelectTheme(theme)
-                                showThemeDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) colors.surfaceVariant else Color.Transparent,
-                            border = BorderStroke(1.dp, if (isSelected) colors.accent else colors.border.copy(alpha = 0.5f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("theme_option_${theme.name.lowercase()}")
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = {
-                                        onSelectTheme(theme)
-                                        showThemeDialog = false
-                                    },
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = colors.accent,
-                                        unselectedColor = colors.textSecondary
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = theme.displayName,
-                                    color = colors.textPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(
-                    onClick = { showThemeDialog = false },
-                    modifier = Modifier.testTag("dismiss_theme_dialog_button")
-                ) {
-                    Text("Close", color = colors.accent)
-                }
-            },
-            containerColor = colors.surface,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.testTag("dialog_theme_selector")
+        ThemeSelectionDialog(
+            currentTheme = uiState.appTheme,
+            onSelectTheme = onSelectTheme,
+            onDismiss = { showThemeDialog = false }
         )
     }
 
@@ -199,102 +134,17 @@ fun BrowserMenuSheet(
 
     // Dialog: Clear All Data
     if (showClearAllDataDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearAllDataDialog = false },
-            title = {
-                Text(
-                    text = "Clear All Data?",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = colors.textPrimary
-                )
-            },
-            text = {
-                Text(
-                    text = "Clear browsing history, cache and cookies.",
-                    color = colors.textSecondary,
-                    fontSize = 13.sp
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showClearAllDataDialog = false
-                        onClearAllData()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFEF5350),
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("confirm_clear_all_data_button")
-                ) {
-                    Text("Clear", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                Button(
-                    onClick = { showClearAllDataDialog = false },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.border.copy(alpha = 0.2f),
-                        contentColor = colors.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("cancel_clear_all_data_button")
-                ) {
-                    Text("Cancel")
-                }
-            },
-            containerColor = colors.surface,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.testTag("dialog_clear_all_data")
+        ClearAllDataDialog(
+            onConfirm = onClearAllData,
+            onDismiss = { showClearAllDataDialog = false }
         )
     }
 
     // Dialog: Clear Cache & Cookies
     if (showClearCacheCookiesDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearCacheCookiesDialog = false },
-            title = {
-                Text(
-                    text = "Clear Cache & Cookies?",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = colors.textPrimary
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showClearCacheCookiesDialog = false
-                        onClearCacheAndCookies()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.buttonBackground,
-                        contentColor = colors.buttonText
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("confirm_clear_cache_cookies_button")
-                ) {
-                    Text("Clear", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                Button(
-                    onClick = { showClearCacheCookiesDialog = false },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.border.copy(alpha = 0.2f),
-                        contentColor = colors.textPrimary
-                    ),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("cancel_clear_cache_cookies_button")
-                ) {
-                    Text("Cancel")
-                }
-            },
-            containerColor = colors.surface,
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.testTag("dialog_clear_cache_cookies")
+        ClearCacheCookiesDialog(
+            onConfirm = onClearCacheAndCookies,
+            onDismiss = { showClearCacheCookiesDialog = false }
         )
     }
 
@@ -335,136 +185,56 @@ fun BrowserMenuSheet(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = colors.iconTint,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Muslim Browser",
-                            color = colors.textPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .size(28.dp)
-                            .testTag("close_menu_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close Menu",
-                            tint = colors.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
+                MenuHeader(onDismiss = onDismiss)
 
                 HorizontalDivider(color = colors.border, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Translate to বাংলা (বা Original Page Restore)
-                Surface(
+                MenuRow(
+                    title = if (uiState.isPageTranslated) "Original Page" else "Translate to বাংলা",
+                    icon = Icons.Default.Translate,
+                    contentDescription = "Translate to বাংলা",
                     onClick = onTranslateToBengali,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_translate_bengali"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (uiState.isPageTranslated) colors.surfaceVariant else colors.surface,
-                    border = BorderStroke(1.dp, if (uiState.isPageTranslated) colors.accent else colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = "Translate to বাংলা",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (uiState.isPageTranslated) "Original Page" else "Translate to বাংলা",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        if (uiState.isTranslating) {
+                    surfaceColor = if (uiState.isPageTranslated) colors.surfaceVariant else colors.surface,
+                    borderColor = if (uiState.isPageTranslated) colors.accent else colors.border,
+                    trailingContent = if (uiState.isTranslating) {
+                        {
                             Text(
                                 text = "Translating...",
                                 color = colors.accent,
                                 fontSize = 10.5.sp
                             )
                         }
-                    }
-                }
+                    } else null,
+                    modifier = Modifier.testTag("menu_item_translate_bengali")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Share Webpage URL (Native Android Sharesheet)
-                Surface(
+                MenuRow(
+                    title = "Share",
+                    icon = Icons.Default.Share,
+                    contentDescription = "Share",
+                    enabled = isShareEnabled,
                     onClick = {
                         if (isShareEnabled) {
                             onDismiss()
                             performShare(context, uiState.currentUrl, uiState.pageTitle)
                         }
                     },
-                    enabled = isShareEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_share"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = if (isShareEnabled) colors.iconTint else colors.textSecondary.copy(alpha = 0.38f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Share",
-                                color = if (isShareEnabled) colors.textPrimary else colors.textSecondary.copy(alpha = 0.38f),
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
+                    modifier = Modifier.testTag("menu_item_share")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Save Webpage as PDF (Native Android PDF Infrastructure)
-                Surface(
+                MenuRow(
+                    title = "Save as PDF",
+                    icon = Icons.Default.PictureAsPdf,
+                    contentDescription = "Save as PDF",
+                    enabled = isSavePdfEnabled,
                     onClick = {
                         if (isSavePdfEnabled) {
                             val now = System.currentTimeMillis()
@@ -477,923 +247,863 @@ fun BrowserMenuSheet(
                             }
                         }
                     },
-                    enabled = isSavePdfEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_save_as_pdf"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.PictureAsPdf,
-                                contentDescription = "Save as PDF",
-                                tint = if (isSavePdfEnabled) colors.iconTint else colors.textSecondary.copy(alpha = 0.38f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Save as PDF",
-                                color = if (isSavePdfEnabled) colors.textPrimary else colors.textSecondary.copy(alpha = 0.38f),
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        if (uiState.isLoading && isWebUrlValid && !uiState.isHomePage && !isBlocked) {
+                    trailingContent = if (uiState.isLoading && isWebUrlValid && !uiState.isHomePage && !isBlocked) {
+                        {
                             Text(
                                 text = "Loading...",
                                 color = colors.textSecondary,
                                 fontSize = 10.5.sp
                             )
                         }
-                    }
-                }
+                    } else null,
+                    modifier = Modifier.testTag("menu_item_save_as_pdf")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Smart Form Autofill Profile Row with integrated Fill Form Action Button
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_autofill_profile"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Main row area: Opens Autofill Profile settings/editor
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    showAutofillDialog = true
-                                }
-                                .padding(vertical = 6.dp)
-                                .testTag("menu_action_autofill_profile_main"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Badge,
-                                contentDescription = "Autofill Profile",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Autofill Profile (CV)",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Dedicated trailing action button: Immediately invokes Fill Form action
-                        Button(
-                            onClick = {
-                                val liveWv = getActiveLiveWebView(context, uiState)
-                                if (liveWv != null && !uiState.isHomePage && !isBlocked) {
-                                    onDismiss()
-                                    AutofillEngine.executeAutofill(context, liveWv) { _, _, msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    Toast.makeText(context, "No active web form to fill", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colors.accent.copy(alpha = 0.2f),
-                                contentColor = colors.accent
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .height(28.dp)
-                                .testTag("menu_action_fill_form")
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Assignment,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = colors.accent
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Fill Form", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
+                AutofillSection(
+                    uiState = uiState,
+                    isBlocked = isBlocked,
+                    onOpenAutofillDialog = { showAutofillDialog = true },
+                    onDismiss = onDismiss
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Translation Engine Selection (3 Selectable Switches, Single Active Engine)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_translation_engine"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Translate,
-                                contentDescription = null,
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Translation Engine",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 1. LibreTranslate Switch (Default)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 1.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "LibreTranslate",
-                                color = colors.textPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.LIBRE_TRANSLATE) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Switch(
-                                checked = uiState.selectedTranslationEngine == TranslationEngine.LIBRE_TRANSLATE,
-                                onCheckedChange = { checked ->
-                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.LIBRE_TRANSLATE) {
-                                        onSelectTranslationEngine(TranslationEngine.LIBRE_TRANSLATE)
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = colors.buttonText,
-                                    checkedTrackColor = colors.accent,
-                                    uncheckedThumbColor = colors.textSecondary,
-                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier.testTag("switch_engine_libre")
-                            )
-                        }
-
-                        // 2. MyMemory Translate Switch
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 1.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "MyMemory Translate",
-                                color = colors.textPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = if (uiState.selectedTranslationEngine == TranslationEngine.MYMEMORY) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Switch(
-                                checked = uiState.selectedTranslationEngine == TranslationEngine.MYMEMORY,
-                                onCheckedChange = { checked ->
-                                    if (checked || uiState.selectedTranslationEngine != TranslationEngine.MYMEMORY) {
-                                        onSelectTranslationEngine(TranslationEngine.MYMEMORY)
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = colors.buttonText,
-                                    checkedTrackColor = colors.accent,
-                                    uncheckedThumbColor = colors.textSecondary,
-                                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                                ),
-                                modifier = Modifier.testTag("switch_engine_mymemory")
-                            )
-                        }
-                    }
-                }
+                TranslationEngineSection(
+                    selectedEngine = uiState.selectedTranslationEngine,
+                    onSelectTranslationEngine = onSelectTranslationEngine
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Settings -> Theme (Centralized Theme Selection: White, Black & White)
-                Surface(
+                MenuRow(
+                    title = "Theme",
+                    icon = Icons.Default.Settings,
+                    contentDescription = "Theme",
                     onClick = { showThemeDialog = true },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_theme"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Theme",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Theme",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = colors.accent.copy(alpha = 0.15f)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = uiState.appTheme.displayName,
-                                    color = colors.accent,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = colors.accent,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                    trailingContent = { MenuBadge(text = uiState.appTheme.displayName) },
+                    modifier = Modifier.testTag("menu_item_theme")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Browsing History (ইতিহাস)
-                Surface(
+                MenuRow(
+                    title = "History",
+                    icon = Icons.Default.History,
+                    contentDescription = "Browsing History",
                     onClick = onOpenHistory,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_history"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = "Browsing History",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "History",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = colors.accent.copy(alpha = 0.15f)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "View",
-                                    color = colors.accent,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = colors.accent,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                    trailingContent = { MenuBadge(text = "View") },
+                    modifier = Modifier.testTag("menu_item_history")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Downloads (Settings item labeled exactly 'Downloads')
-                Surface(
+                MenuRow(
+                    title = "Downloads",
+                    icon = Icons.Default.Download,
+                    contentDescription = "Downloads",
                     onClick = onOpenDownloads,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("menu_item_downloads"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "Downloads",
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Downloads",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = colors.accent.copy(alpha = 0.15f)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "View",
-                                    color = colors.accent,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = colors.accent,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                    trailingContent = { MenuBadge(text = "View") },
+                    modifier = Modifier.testTag("menu_item_downloads")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-
                 // Experimental Browser Identity Profile: Windows 10 Touch
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("item_windows_10_touch")
-                        .clickable {
-                            val isChecked = uiState.isWindows10TouchEnabled
-                            val target = if (!isChecked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
-                            notifyArchitectureChange(context, target)
-                        },
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surface,
-                    border = BorderStroke(1.dp, colors.border.copy(alpha = 0.5f))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.DesktopWindows,
-                                contentDescription = "Windows 10 Desktop",
-                                tint = if (uiState.isWindows10TouchEnabled) colors.accent else colors.textPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Windows 10 Desktop",
-                                    color = colors.textPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "Experimental browser identity profile",
-                                    color = colors.textSecondary,
-                                    fontSize = 10.sp
-                                )
-                            }
-                        }
-
-                        Switch(
-                            checked = uiState.isWindows10TouchEnabled,
-                            onCheckedChange = { checked ->
-                                val target = if (checked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
-                                notifyArchitectureChange(context, target)
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = colors.buttonText,
-                                checkedTrackColor = colors.accent,
-                                uncheckedThumbColor = colors.textSecondary,
-                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("windows_10_touch_switch")
-                        )
-                    }
-                }
+                DesktopSection(uiState = uiState)
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Ad Blocking (Compact, No description text)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_ad_blocking"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Security,
-                                contentDescription = null,
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Ad Blocking",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Switch(
-                            checked = uiState.isAdBlockingEnabled,
-                            onCheckedChange = onToggleAdBlocking,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = colors.buttonText,
-                                checkedTrackColor = colors.accent,
-                                uncheckedThumbColor = colors.textSecondary,
-                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("ad_blocking_switch")
-                        )
-                    }
-                }
+                MenuToggleRow(
+                    title = "Ad Blocking",
+                    icon = Icons.Default.Security,
+                    checked = uiState.isAdBlockingEnabled,
+                    onCheckedChange = onToggleAdBlocking,
+                    switchTestTag = "ad_blocking_switch",
+                    modifier = Modifier.testTag("section_ad_blocking")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Pop-up Blocking (Compact, No description text)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_popup_blocking"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Block,
-                                contentDescription = null,
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Pop-up Blocking",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Switch(
-                            checked = uiState.isPopupBlockingEnabled,
-                            onCheckedChange = onTogglePopupBlocking,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = colors.buttonText,
-                                checkedTrackColor = colors.accent,
-                                uncheckedThumbColor = colors.textSecondary,
-                                uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                            ),
-                            modifier = Modifier.testTag("popup_blocking_switch")
-                        )
-                    }
-                }
+                MenuToggleRow(
+                    title = "Pop-up Blocking",
+                    icon = Icons.Default.Block,
+                    checked = uiState.isPopupBlockingEnabled,
+                    onCheckedChange = onTogglePopupBlocking,
+                    switchTestTag = "popup_blocking_switch",
+                    modifier = Modifier.testTag("section_popup_blocking")
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Adult Content Protection (Permanent Badge, Compact)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_adult_protection"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shield,
-                                contentDescription = null,
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Adult Protection",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = colors.accent.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, colors.accent)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Permanently Locked",
-                                    tint = colors.accent,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "Always Active",
-                                    color = colors.accent,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
+                AdultProtectionSection()
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Clear Cache & Cookies (Compact)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_clear_cache_cookies"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CleaningServices,
-                                contentDescription = null,
-                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFFFB74D),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Clear Cache & Cookies",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Button(
-                            onClick = { showClearCacheCookiesDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colors.accent.copy(alpha = 0.2f),
-                                contentColor = colors.accent
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .height(28.dp)
-                                .testTag("btn_clear_cache_cookies")
-                        ) {
-                            Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Clear All Data (Compact)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_clear_all_data"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x2BEF5350))
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = null,
-                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFEF5350),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Clear All Data",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Button(
-                            onClick = { showClearAllDataDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33EF5350),
-                                contentColor = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF8A80)
-                            ),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                            shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier
-                                .height(28.dp)
-                                .testTag("btn_clear_all_data")
-                        ) {
-                            Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
+                // Clear Cache & Cookies and Clear All Data
+                ClearDataSection(
+                    onOpenClearCacheDialog = { showClearCacheCookiesDialog = true },
+                    onOpenClearAllDialog = { showClearAllDataDialog = true }
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Custom Keyword Blocking (Compact)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_custom_keywords"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Key,
-                                contentDescription = null,
-                                tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFFFA726),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Custom Keywords",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = newKeywordInput,
-                                onValueChange = {
-                                    newKeywordInput = it
-                                    keywordError = null
-                                },
-                                placeholder = {
-                                    Text("Enter keyword...", color = colors.textSecondary, fontSize = 11.sp)
-                                },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(42.dp)
-                                    .testTag("keyword_input_field"),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = colors.textPrimary,
-                                    unfocusedTextColor = colors.textPrimary,
-                                    focusedBorderColor = colors.accent,
-                                    unfocusedBorderColor = colors.border,
-                                    cursorColor = colors.accent
-                                )
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Button(
-                                onClick = {
-                                    val success = onAddKeyword(newKeywordInput)
-                                    if (success) {
-                                        newKeywordInput = ""
-                                        keywordError = null
-                                    } else {
-                                        keywordError = "Cannot add duplicate or blank keyword"
-                                    }
-                                },
-                                shape = RoundedCornerShape(6.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = colors.buttonBackground,
-                                    contentColor = colors.buttonText
-                                ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                modifier = Modifier
-                                    .height(36.dp)
-                                    .testTag("add_keyword_button")
-                            ) {
-                                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        if (keywordError != null) {
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(
-                                text = keywordError ?: "",
-                                color = Color(0xFFEF5350),
-                                fontSize = 10.5.sp
-                            )
-                        }
-
-                        if (uiState.customKeywords.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                uiState.customKeywords.forEach { kw ->
-                                    Surface(
-                                        shape = RoundedCornerShape(5.dp),
-                                        color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33FF7043),
-                                        border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x66FF7043)),
-                                        modifier = Modifier.testTag("protected_keyword_$kw")
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Lock,
-                                                contentDescription = "Protected",
-                                                tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF7043),
-                                                modifier = Modifier.size(9.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                            Text(
-                                                text = kw,
-                                                color = colors.textPrimary,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                CustomKeywordSection(
+                    customKeywords = uiState.customKeywords,
+                    onAddKeyword = onAddKeyword
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Download Protection (Compact)
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("section_download_protection"),
-                    shape = RoundedCornerShape(8.dp),
-                    color = colors.surfaceVariant,
-                    border = BorderStroke(1.dp, colors.border)
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = null,
-                                tint = colors.iconTint,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Download Protection",
-                                color = colors.textPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                DownloadProtectionSection()
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Reusable Compact Menu Row Composables
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun MenuRow(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    contentDescription: String? = title,
+    surfaceColor: Color = LocalAppColors.current.surfaceVariant,
+    borderColor: Color = LocalAppColors.current.border,
+    iconTint: Color = if (enabled) LocalAppColors.current.iconTint else LocalAppColors.current.textSecondary.copy(alpha = 0.38f),
+    titleColor: Color = if (enabled) LocalAppColors.current.textPrimary else LocalAppColors.current.textSecondary.copy(alpha = 0.38f),
+    trailingContent: (@Composable () -> Unit)? = null
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = surfaceColor,
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    color = titleColor,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            if (trailingContent != null) {
+                trailingContent()
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuToggleRow(
+    title: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    switchTestTag: String? = null,
+    subtitle: String? = null,
+    surfaceColor: Color = LocalAppColors.current.surfaceVariant,
+    borderColor: Color = LocalAppColors.current.border,
+    iconTint: Color = LocalAppColors.current.iconTint,
+    contentDescription: String? = null,
+    onRowClick: (() -> Unit)? = null
+) {
+    val colors = LocalAppColors.current
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = surfaceColor,
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (onRowClick != null) Modifier.clickable { onRowClick() } else Modifier)
+                .padding(horizontal = 10.dp, vertical = if (subtitle != null) 6.dp else 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                if (subtitle != null) {
+                    Column {
+                        Text(
+                            text = title,
+                            color = colors.textPrimary,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = subtitle,
+                            color = colors.textSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                } else {
+                    Text(
+                        text = title,
+                        color = colors.textPrimary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = colors.buttonText,
+                    checkedTrackColor = colors.accent,
+                    uncheckedThumbColor = colors.textSecondary,
+                    uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                ),
+                modifier = if (switchTestTag != null) Modifier.testTag(switchTestTag) else Modifier
+            )
+        }
+    }
+}
+
+@Composable
+private fun MenuBadge(text: String, showArrow: Boolean = true) {
+    val colors = LocalAppColors.current
+    Surface(
+        shape = RoundedCornerShape(4.dp),
+        color = colors.accent.copy(alpha = 0.15f)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = text,
+                color = colors.accent,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            if (showArrow) {
+                Spacer(modifier = Modifier.width(2.dp))
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = colors.accent,
+                    modifier = Modifier.size(12.dp)
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Logical Menu Sections
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun MenuHeader(onDismiss: () -> Unit) {
+    val colors = LocalAppColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = colors.iconTint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Muslim Browser",
+                color = colors.textPrimary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier
+                .size(28.dp)
+                .testTag("close_menu_button")
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Close Menu",
+                tint = colors.textSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AutofillSection(
+    uiState: BrowserUiState,
+    isBlocked: Boolean,
+    onOpenAutofillDialog: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val colors = LocalAppColors.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("menu_item_autofill_profile"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Main row area: Opens Autofill Profile settings/editor
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        onOpenAutofillDialog()
+                    }
+                    .padding(vertical = 6.dp)
+                    .testTag("menu_action_autofill_profile_main"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Badge,
+                    contentDescription = "Autofill Profile",
+                    tint = colors.iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Autofill Profile (CV)",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            // Dedicated trailing action button: Immediately invokes Fill Form action
+            Button(
+                onClick = {
+                    val liveWv = getActiveLiveWebView(context, uiState)
+                    if (liveWv != null && !uiState.isHomePage && !isBlocked) {
+                        onDismiss()
+                        AutofillEngine.executeAutofill(context, liveWv) { _, _, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
+                    } else {
+                        Toast.makeText(context, "No active web form to fill", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent.copy(alpha = 0.2f),
+                    contentColor = colors.accent
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .height(28.dp)
+                    .testTag("menu_action_autofill_fill_form")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Assignment,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = colors.accent
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Fill Form", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
 
-                        Spacer(modifier = Modifier.height(4.dp))
+@Composable
+private fun TranslationEngineSection(
+    selectedEngine: TranslationEngine,
+    onSelectTranslationEngine: (TranslationEngine) -> Unit
+) {
+    val colors = LocalAppColors.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_translation_engine"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Translate,
+                    contentDescription = null,
+                    tint = colors.iconTint,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Translation Engine",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            // 1. LibreTranslate Switch (Default)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "LibreTranslate",
+                    color = colors.textPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = if (selectedEngine == TranslationEngine.LIBRE_TRANSLATE) FontWeight.Bold else FontWeight.Normal
+                )
+                Switch(
+                    checked = selectedEngine == TranslationEngine.LIBRE_TRANSLATE,
+                    onCheckedChange = { checked ->
+                        if (checked || selectedEngine != TranslationEngine.LIBRE_TRANSLATE) {
+                            onSelectTranslationEngine(TranslationEngine.LIBRE_TRANSLATE)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colors.buttonText,
+                        checkedTrackColor = colors.accent,
+                        uncheckedThumbColor = colors.textSecondary,
+                        uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.testTag("switch_engine_libre")
+                )
+            }
+            // 2. MyMemory Translate Switch
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "MyMemory Translate",
+                    color = colors.textPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = if (selectedEngine == TranslationEngine.MYMEMORY) FontWeight.Bold else FontWeight.Normal
+                )
+                Switch(
+                    checked = selectedEngine == TranslationEngine.MYMEMORY,
+                    onCheckedChange = { checked ->
+                        if (checked || selectedEngine != TranslationEngine.MYMEMORY) {
+                            onSelectTranslationEngine(TranslationEngine.MYMEMORY)
+                        }
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = colors.buttonText,
+                        checkedTrackColor = colors.accent,
+                        uncheckedThumbColor = colors.textSecondary,
+                        uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
+                    ),
+                    modifier = Modifier.testTag("switch_engine_mymemory")
+                )
+            }
+        }
+    }
+}
 
-                        DownloadItemCompact(label = "Video (.mp4, .mkv)", isBlocked = true)
-                        DownloadItemCompact(label = "Audio (.mp3, .wav)", isBlocked = false)
-                        DownloadItemCompact(label = "Apps (.apk)", isBlocked = true)
-                        DownloadItemCompact(label = "Images (.jpg, .png)", isBlocked = false)
-                        DownloadItemCompact(label = "PDF Documents (.pdf)", isBlocked = false)
+@Composable
+private fun DesktopSection(uiState: BrowserUiState) {
+    val context = LocalContext.current
+    val colors = LocalAppColors.current
+    MenuToggleRow(
+        title = "Windows 10 Desktop",
+        subtitle = "Experimental browser identity profile",
+        icon = Icons.Default.DesktopWindows,
+        contentDescription = "Windows 10 Desktop",
+        checked = uiState.isWindows10TouchEnabled,
+        onCheckedChange = { checked ->
+            val target = if (checked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+            notifyArchitectureChange(context, target)
+        },
+        onRowClick = {
+            val isChecked = uiState.isWindows10TouchEnabled
+            val target = if (!isChecked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+            notifyArchitectureChange(context, target)
+        },
+        surfaceColor = colors.surface,
+        borderColor = colors.border.copy(alpha = 0.5f),
+        iconTint = if (uiState.isWindows10TouchEnabled) colors.accent else colors.textPrimary,
+        switchTestTag = "windows_10_touch_switch",
+        modifier = Modifier.testTag("item_windows_10_touch")
+    )
+}
+
+@Composable
+private fun AdultProtectionSection() {
+    val colors = LocalAppColors.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_adult_protection"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = colors.iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Adult Protection",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = colors.accent.copy(alpha = 0.15f),
+                border = BorderStroke(1.dp, colors.accent)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Permanently Locked",
+                        tint = colors.accent,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Always Active",
+                        color = colors.accent,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ClearDataSection(
+    onOpenClearCacheDialog: () -> Unit,
+    onOpenClearAllDialog: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    // Clear Cache & Cookies (Compact)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_clear_cache_cookies"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CleaningServices,
+                    contentDescription = null,
+                    tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFFFB74D),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Clear Cache & Cookies",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Button(
+                onClick = onOpenClearCacheDialog,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent.copy(alpha = 0.2f),
+                    contentColor = colors.accent
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .height(28.dp)
+                    .testTag("btn_clear_cache_cookies")
+            ) {
+                Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    // Clear All Data (Compact)
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_clear_all_data"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x2BEF5350))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = null,
+                    tint = if (colors.isMonochrome) colors.iconTint else Color(0xFFEF5350),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Clear All Data",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Button(
+                onClick = onOpenClearAllDialog,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent.copy(alpha = 0.2f),
+                    contentColor = colors.accent
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .height(28.dp)
+                    .testTag("btn_clear_all_data")
+            ) {
+                Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomKeywordSection(
+    customKeywords: Set<String>,
+    onAddKeyword: (String) -> Boolean
+) {
+    val colors = LocalAppColors.current
+    var newKeywordInput by remember { mutableStateOf("") }
+    var keywordError by remember { mutableStateOf<String?>(null) }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_custom_keywords"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Key,
+                    contentDescription = null,
+                    tint = colors.iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Custom Keyword Blocking",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = newKeywordInput,
+                    onValueChange = {
+                        newKeywordInput = it
+                        keywordError = null
+                    },
+                    placeholder = {
+                        Text("Enter keyword...", color = colors.textSecondary, fontSize = 11.sp)
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .testTag("keyword_input_field"),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = colors.textPrimary,
+                        unfocusedTextColor = colors.textPrimary,
+                        focusedBorderColor = colors.accent,
+                        unfocusedBorderColor = colors.border,
+                        cursorColor = colors.accent
+                    )
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = {
+                        val success = onAddKeyword(newKeywordInput)
+                        if (success) {
+                            newKeywordInput = ""
+                            keywordError = null
+                        } else {
+                            keywordError = "Cannot add duplicate or blank keyword"
+                        }
+                    },
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.buttonBackground,
+                        contentColor = colors.buttonText
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .height(36.dp)
+                        .testTag("add_keyword_button")
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Add", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (keywordError != null) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = keywordError ?: "",
+                    color = Color(0xFFEF5350),
+                    fontSize = 10.5.sp
+                )
+            }
+            if (customKeywords.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    customKeywords.forEach { kw ->
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33FF7043),
+                            border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x66FF7043)),
+                            modifier = Modifier.testTag("protected_keyword_$kw")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "Protected",
+                                    tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF7043),
+                                    modifier = Modifier.size(9.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = kw,
+                                    color = colors.textPrimary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1402,9 +1112,242 @@ fun BrowserMenuSheet(
 }
 
 @Composable
+private fun DownloadProtectionSection() {
+    val colors = LocalAppColors.current
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("section_download_protection"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = null,
+                    tint = colors.iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Download Protection",
+                    color = colors.textPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            DownloadItemCompact(label = "Video (.mp4, .mkv)", isBlocked = true)
+            DownloadItemCompact(label = "Audio (.mp3, .wav)", isBlocked = false)
+            DownloadItemCompact(label = "Apps (.apk)", isBlocked = true)
+            DownloadItemCompact(label = "Images (.jpg, .png)", isBlocked = false)
+            DownloadItemCompact(label = "PDF Documents (.pdf)", isBlocked = false)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dialog Composables
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun ThemeSelectionDialog(
+    currentTheme: AppTheme,
+    onSelectTheme: (AppTheme) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Theme",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = colors.textPrimary
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
+                    val isSelected = currentTheme == theme || (currentTheme == AppTheme.FORCE_DARK_ON && theme == AppTheme.WHITE)
+                    Surface(
+                        onClick = {
+                            onSelectTheme(theme)
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isSelected) colors.surfaceVariant else Color.Transparent,
+                        border = BorderStroke(1.dp, if (isSelected) colors.accent else colors.border.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("theme_option_${theme.name.lowercase()}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    onSelectTheme(theme)
+                                    onDismiss()
+                                },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = colors.accent,
+                                    unselectedColor = colors.textSecondary
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = theme.displayName,
+                                color = colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("dismiss_theme_dialog_button")
+            ) {
+                Text("Close", color = colors.accent)
+            }
+        },
+        containerColor = colors.surface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.testTag("dialog_theme_selector")
+    )
+}
+
+@Composable
+private fun ClearAllDataDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Clear All Data?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = colors.textPrimary
+            )
+        },
+        text = {
+            Text(
+                text = "Clear browsing history, cache and cookies.",
+                color = colors.textSecondary,
+                fontSize = 13.sp
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onDismiss()
+                    onConfirm()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEF5350),
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("confirm_clear_all_data_button")
+            ) {
+                Text("Clear", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.border.copy(alpha = 0.2f),
+                    contentColor = colors.textPrimary
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("cancel_clear_all_data_button")
+            ) {
+                Text("Cancel")
+            }
+        },
+        containerColor = colors.surface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.testTag("dialog_clear_all_data")
+    )
+}
+
+@Composable
+private fun ClearCacheCookiesDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalAppColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Clear Cache & Cookies?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                color = colors.textPrimary
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onDismiss()
+                    onConfirm()
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.buttonBackground,
+                    contentColor = colors.buttonText
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("confirm_clear_cache_cookies_button")
+            ) {
+                Text("Clear", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.border.copy(alpha = 0.2f),
+                    contentColor = colors.textPrimary
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.testTag("cancel_clear_cache_cookies_button")
+            ) {
+                Text("Cancel")
+            }
+        },
+        containerColor = colors.surface,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.testTag("dialog_clear_cache_cookies")
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Helpers and Public/Internal Utilities
+// ---------------------------------------------------------------------------
+
+@Composable
 fun DownloadItemCompact(label: String, isBlocked: Boolean) {
     val colors = LocalAppColors.current
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1428,7 +1371,7 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lock,
-                        contentDescription = "Permanently Blocked",
+                        contentDescription = "Blocked",
                         tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
                         modifier = Modifier.size(9.dp)
                     )
@@ -1490,11 +1433,6 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
         }
 
         if (currentContext is com.muslim.browser.pro.MainActivity) {
-            // Direct no-reload architecture synchronization for Windows 10 Touch and Mobile (NONE):
-            // 1. Synchronize architecture across live WebViews using TabWebViewManager
-            // 2. Apply required settings/viewport to active WebView through DesktopCore.synchronizeDesktopWebView
-            // 3. Update BrowserViewModel state
-            // 4. Return before invoking reflection-based MainActivity.setDesktopArchitecture$app(...) that triggers WebView.reload()
             val twm = try {
                 currentContext.tabWebViewManager
             } catch (_: Throwable) {
@@ -1509,6 +1447,7 @@ private fun notifyArchitectureChange(context: android.content.Context, architect
             } catch (_: Throwable) {
                 null
             }
+
             if (currentWebView != null) {
                 com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
                     currentWebView,
@@ -1554,6 +1493,7 @@ internal fun sanitizePdfJobName(title: String?, url: String?): String {
     } else {
         "Webpage"
     }
+
     val sanitized = baseName.replace(Regex("[/\\\\:*?\"<>|\\r\\n\\t]"), "_").trim()
     val candidate = if (sanitized.isEmpty() || sanitized.all { it == '_' }) "Webpage" else sanitized
     val maxLen = 60
@@ -1600,7 +1540,6 @@ internal fun getActiveLiveWebView(context: android.content.Context, uiState: Bro
         }
     }
     val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return null
-
     return try {
         mainActivity.tabWebViewManager?.getLiveWebView(uiState.currentTabId)
     } catch (_: Throwable) {
@@ -1626,10 +1565,8 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
             }
         }
         val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return false
-
         val liveWebView = getActiveLiveWebView(context, uiState) ?: return false
 
-        // Verify that the WebView is active and represents the current webpage
         val wvUrl = liveWebView.url
         if (wvUrl.isNullOrBlank() || !ShareIntentHandler.isDirectHttpUrl(wvUrl)) {
             return false
@@ -1645,4 +1582,3 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
         return false
     }
 }
-
