@@ -1,9 +1,17 @@
 package com.muslim.browser.pro.browser.ui
 
+import android.app.Activity
+import android.app.role.RoleManager
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -107,6 +115,12 @@ fun BrowserMenuSheet(
 ) {
     val context = LocalContext.current
     val colors = LocalAppColors.current
+
+    val defaultBrowserLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Returned from system default browser role dialog or settings
+    }
 
     var showClearAllDataDialog by remember { mutableStateOf(false) }
     var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
@@ -323,8 +337,8 @@ fun BrowserMenuSheet(
                     icon = Icons.Default.Language,
                     contentDescription = "ডিফল্ট ব্রাউজার করুন",
                     onClick = {
+                        openDefaultBrowserSettings(context, defaultBrowserLauncher)
                         onDismiss()
-                        openDefaultBrowserSettings(context)
                     },
                     trailingContent = { MenuBadge(text = "Set") },
                     modifier = Modifier.testTag("menu_item_default_browser")
@@ -1619,78 +1633,99 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
 
 /**
  * Safely prompts the user to set Muslim Browser Pro as the default browser app.
- * Tier 1: Android 10+ (API 29+) RoleManager ROLE_BROWSER dialog.
- * Tier 2: Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS.
+ * Tier 1: Android 10+ (API 29+) RoleManager ROLE_BROWSER dialog launched via ActivityResultLauncher.
+ * Tier 2: Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS fallback.
  * Tier 3: Settings.ACTION_SETTINGS fallback.
  * Tier 4: Settings.ACTION_APPLICATION_DETAILS_SETTINGS fallback.
- * Ensures the app never crashes under any OEM customization.
+ * Ensures the app never crashes under any OEM customization and guides user with Toast messages.
  */
-internal fun openDefaultBrowserSettings(context: android.content.Context) {
+internal fun openDefaultBrowserSettings(
+    context: android.content.Context,
+    launcher: ActivityResultLauncher<Intent>? = null
+) {
     var currentContext: android.content.Context? = context
     while (currentContext != null) {
-        if (currentContext is android.app.Activity) break
+        if (currentContext is Activity) break
         if (currentContext is android.content.ContextWrapper) {
             currentContext = currentContext.baseContext
         } else {
             break
         }
     }
-    val targetActivity = currentContext as? android.app.Activity
+    val targetActivity = currentContext as? Activity
 
     // Tier 1: Android 10+ (API 29+) RoleManager request
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         try {
-            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
-            if (roleManager != null && roleManager.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
-                val intent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER)
-                if (targetActivity != null) {
-                    targetActivity.startActivity(intent)
-                } else {
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            if (roleManager != null && roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
+                if (roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                    Toast.makeText(context, "Muslim Browser আগে থেকেই ডিফল্ট ব্রাউজার", Toast.LENGTH_SHORT).show()
+                    return
                 }
-                return
+                val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+                if (launcher != null) {
+                    launcher.launch(intent)
+                    return
+                } else if (targetActivity != null) {
+                    @Suppress("DEPRECATION")
+                    targetActivity.startActivityForResult(intent, 1001)
+                    return
+                }
             }
+        } catch (_: Throwable) {
+            // Fall through to fallback tiers
+        }
+    }
+
+    // Tier 2: Fallback options in sequence, each in its own try/catch block
+    var openedSettings = false
+
+    // Option A: Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS
+    try {
+        val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+        if (targetActivity != null) {
+            targetActivity.startActivity(intent)
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+        openedSettings = true
+    } catch (_: Throwable) {}
+
+    // Option B: General System Settings
+    if (!openedSettings) {
+        try {
+            val intent = Intent(Settings.ACTION_SETTINGS)
+            if (targetActivity != null) {
+                targetActivity.startActivity(intent)
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            openedSettings = true
         } catch (_: Throwable) {}
     }
 
-    // Tier 2: Android 7.0 - 9.0 (API 24+) Manage Default Apps Settings
-    try {
-        val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-        if (targetActivity != null) {
-            targetActivity.startActivity(intent)
-        } else {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        }
-        return
-    } catch (_: Throwable) {}
+    // Option C: App Info / Details Settings
+    if (!openedSettings) {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+            }
+            if (targetActivity != null) {
+                targetActivity.startActivity(intent)
+            } else {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            }
+            openedSettings = true
+        } catch (_: Throwable) {}
+    }
 
-    // Tier 3: General System Settings
-    try {
-        val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
-        if (targetActivity != null) {
-            targetActivity.startActivity(intent)
-        } else {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        }
-        return
-    } catch (_: Throwable) {}
-
-    // Tier 4: App Info / Details Settings
-    try {
-        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = android.net.Uri.fromParts("package", context.packageName, null)
-        }
-        if (targetActivity != null) {
-            targetActivity.startActivity(intent)
-        } else {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        }
-    } catch (_: Throwable) {
-        // Fail-safe: prevent any crash
+    // Step 4: Show Toast when directed to phone settings
+    if (openedSettings) {
+        Toast.makeText(context, "Default apps → Browser app → Muslim Browser বেছে নিন।", Toast.LENGTH_LONG).show()
     }
 }
 
