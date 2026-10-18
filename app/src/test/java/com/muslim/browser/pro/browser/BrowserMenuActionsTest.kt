@@ -171,5 +171,12 @@ class BrowserMenuActionsTest {
         assertTrue(formFillExecuted)
         assertFalse(dialogOpened)
     }
+
+    @Test
+    fun testOpenDefaultBrowserSettingsExecutesWithoutCrashing() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        // Must complete safely across Android API levels without any unhandled exceptions
+        com.muslim.browser.pro.browser.ui.openDefaultBrowserSettings(context)
+    }
 }
 

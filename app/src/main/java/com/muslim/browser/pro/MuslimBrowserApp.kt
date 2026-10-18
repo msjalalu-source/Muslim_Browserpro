@@ -5,6 +5,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.ViewModelProvider
 import com.muslim.browser.pro.browser.BrowserViewModel
@@ -13,7 +14,7 @@ import com.muslim.browser.pro.browser.ShareIntentHandler
 /**
  * Application class for Muslim Browser Pro.
  * Guarantees lifecycle execution before any Activity or WebView initialization occurs,
- * and coordinates incoming share intents from the native Android Sharesheet.
+ * and coordinates incoming share intents from the native Android Sharesheet and deep link VIEW intents.
  */
 class MuslimBrowserApp : Application() {
 
@@ -27,8 +28,9 @@ class MuslimBrowserApp : Application() {
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
                 if (activity is ComponentActivity && activity.javaClass.name.endsWith("MainActivity")) {
-                    // Handle incoming share intents received while the activity is already running (singleTask)
+                    // Handle incoming deep link or share intents received while the activity is already running (singleTask)
                     activity.addOnNewIntentListener { newIntent ->
+                        activity.intent = newIntent
                         handleIncomingShare(activity, newIntent)
                     }
 
@@ -74,8 +76,8 @@ class MuslimBrowserApp : Application() {
         }
 
         /**
-         * Safely extracts and dispatches a shared URL or search query from an incoming intent
-         * to the active BrowserViewModel.
+         * Safely extracts and dispatches a shared URL, deep link URL, or search query
+         * from an incoming intent to the active BrowserViewModel and navigates the active WebView.
          *
          * @return true if a valid share or view target was extracted and submitted, false otherwise.
          */
@@ -89,7 +91,30 @@ class MuslimBrowserApp : Application() {
 
             return try {
                 val viewModel = ViewModelProvider(activity)[BrowserViewModel::class.java]
-                viewModel.submitQueryOrUrl(content)
+                val submitted = viewModel.submitQueryOrUrl(content)
+                if (submitted) {
+                    val currentUrl = viewModel.uiState.value.currentUrl
+                    if (currentUrl.isNotBlank()) {
+                        val mainActivity = activity as? MainActivity
+                        val liveWebView = try {
+                            mainActivity?.tabWebViewManager?.getLiveWebView(viewModel.uiState.value.currentTabId)
+                        } catch (_: Throwable) {
+                            null
+                        } ?: run {
+                            try {
+                                val field = activity.javaClass.getDeclaredField("webViewInstance")
+                                field.isAccessible = true
+                                field.get(activity) as? WebView
+                            } catch (_: Throwable) {
+                                null
+                            }
+                        }
+                        liveWebView?.post {
+                            liveWebView.loadUrl(currentUrl)
+                        }
+                    }
+                }
+                submitted
             } catch (_: Exception) {
                 false
             }

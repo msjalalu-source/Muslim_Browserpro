@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Security
@@ -315,6 +316,22 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                // Default Browser (ডিফল্ট ব্রাউজার করুন)
+                MenuRow(
+                    title = "ডিফল্ট ব্রাউজার করুন",
+                    subtitle = "খুলে যাওয়া স্ক্রিনে Muslim Browser বেছে নিন।",
+                    icon = Icons.Default.Language,
+                    contentDescription = "ডিফল্ট ব্রাউজার করুন",
+                    onClick = {
+                        onDismiss()
+                        openDefaultBrowserSettings(context)
+                    },
+                    trailingContent = { MenuBadge(text = "Set") },
+                    modifier = Modifier.testTag("menu_item_default_browser")
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 // Experimental Browser Identity Profile: Windows 10 Touch
                 DesktopSection(uiState = uiState)
 
@@ -384,12 +401,14 @@ private fun MenuRow(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     contentDescription: String? = title,
+    subtitle: String? = null,
     surfaceColor: Color = LocalAppColors.current.surfaceVariant,
     borderColor: Color = LocalAppColors.current.border,
     iconTint: Color = if (enabled) LocalAppColors.current.iconTint else LocalAppColors.current.textSecondary.copy(alpha = 0.38f),
     titleColor: Color = if (enabled) LocalAppColors.current.textPrimary else LocalAppColors.current.textSecondary.copy(alpha = 0.38f),
     trailingContent: (@Composable () -> Unit)? = null
 ) {
+    val colors = LocalAppColors.current
     Surface(
         onClick = onClick,
         enabled = enabled,
@@ -401,11 +420,14 @@ private fun MenuRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 7.dp),
+                .padding(horizontal = 10.dp, vertical = if (subtitle != null) 6.dp else 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = contentDescription,
@@ -413,14 +435,26 @@ private fun MenuRow(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = title,
-                    color = titleColor,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Column {
+                    Text(
+                        text = title,
+                        color = titleColor,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (subtitle != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = subtitle,
+                            color = colors.textSecondary,
+                            fontSize = 10.5.sp,
+                            lineHeight = 13.sp
+                        )
+                    }
+                }
             }
             if (trailingContent != null) {
+                Spacer(modifier = Modifier.width(6.dp))
                 trailingContent()
             }
         }
@@ -1582,3 +1616,81 @@ private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserU
         return false
     }
 }
+
+/**
+ * Safely prompts the user to set Muslim Browser Pro as the default browser app.
+ * Tier 1: Android 10+ (API 29+) RoleManager ROLE_BROWSER dialog.
+ * Tier 2: Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS.
+ * Tier 3: Settings.ACTION_SETTINGS fallback.
+ * Tier 4: Settings.ACTION_APPLICATION_DETAILS_SETTINGS fallback.
+ * Ensures the app never crashes under any OEM customization.
+ */
+internal fun openDefaultBrowserSettings(context: android.content.Context) {
+    var currentContext: android.content.Context? = context
+    while (currentContext != null) {
+        if (currentContext is android.app.Activity) break
+        if (currentContext is android.content.ContextWrapper) {
+            currentContext = currentContext.baseContext
+        } else {
+            break
+        }
+    }
+    val targetActivity = currentContext as? android.app.Activity
+
+    // Tier 1: Android 10+ (API 29+) RoleManager request
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        try {
+            val roleManager = context.getSystemService(android.app.role.RoleManager::class.java)
+            if (roleManager != null && roleManager.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
+                val intent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER)
+                if (targetActivity != null) {
+                    targetActivity.startActivity(intent)
+                } else {
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }
+                return
+            }
+        } catch (_: Throwable) {}
+    }
+
+    // Tier 2: Android 7.0 - 9.0 (API 24+) Manage Default Apps Settings
+    try {
+        val intent = Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+        if (targetActivity != null) {
+            targetActivity.startActivity(intent)
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+        return
+    } catch (_: Throwable) {}
+
+    // Tier 3: General System Settings
+    try {
+        val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+        if (targetActivity != null) {
+            targetActivity.startActivity(intent)
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+        return
+    } catch (_: Throwable) {}
+
+    // Tier 4: App Info / Details Settings
+    try {
+        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.fromParts("package", context.packageName, null)
+        }
+        if (targetActivity != null) {
+            targetActivity.startActivity(intent)
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        }
+    } catch (_: Throwable) {
+        // Fail-safe: prevent any crash
+    }
+}
+
