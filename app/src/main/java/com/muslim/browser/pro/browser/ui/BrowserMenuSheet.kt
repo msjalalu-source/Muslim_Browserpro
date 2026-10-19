@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -163,6 +164,73 @@ fun BrowserMenuSheet(
         )
     }
 
+    var showTranslationConfirmDialog by remember { mutableStateOf(false) }
+    var dontAskAgainTranslation by remember { mutableStateOf(false) }
+
+    // Dialog: Translation Privacy Confirmation
+    if (showTranslationConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showTranslationConfirmDialog = false },
+            title = {
+                Text(
+                    text = "অনুবাদ নিশ্চিতকরণ",
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary,
+                    fontSize = 15.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "অনুবাদের জন্য এই পেজের লেখা বাইরের সার্ভারে যাবে। চালিয়ে যাবেন?",
+                        color = colors.textPrimary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { dontAskAgainTranslation = !dontAskAgainTranslation }
+                    ) {
+                        Checkbox(
+                            checked = dontAskAgainTranslation,
+                            onCheckedChange = { dontAskAgainTranslation = it }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "আর জিজ্ঞাসা করো না",
+                            color = colors.textSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (dontAskAgainTranslation) {
+                            context.getSharedPreferences("translation_privacy_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("key_skip_translation_confirmation", true)
+                                .apply()
+                        }
+                        showTranslationConfirmDialog = false
+                        onTranslateToBengali()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
+                ) {
+                    Text("চালিয়ে যান", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTranslationConfirmDialog = false }) {
+                    Text("বাতিল", color = colors.textSecondary)
+                }
+            },
+            containerColor = colors.surface,
+            shape = RoundedCornerShape(12.dp)
+        )
+    }
+
     // Semi-transparent overlay to ensure background home page/web page is visible outside the compact floating panel
     Box(
         modifier = modifier
@@ -210,7 +278,19 @@ fun BrowserMenuSheet(
                     title = if (uiState.isPageTranslated) "Original Page" else "Translate to বাংলা",
                     icon = Icons.Default.Translate,
                     contentDescription = "Translate to বাংলা",
-                    onClick = onTranslateToBengali,
+                    onClick = {
+                        if (uiState.isPageTranslated) {
+                            onTranslateToBengali()
+                        } else {
+                            val prefs = context.getSharedPreferences("translation_privacy_prefs", android.content.Context.MODE_PRIVATE)
+                            val skipConfirm = prefs.getBoolean("key_skip_translation_confirmation", false)
+                            if (skipConfirm) {
+                                onTranslateToBengali()
+                            } else {
+                                showTranslationConfirmDialog = true
+                            }
+                        }
+                    },
                     surfaceColor = if (uiState.isPageTranslated) colors.surfaceVariant else colors.surface,
                     borderColor = if (uiState.isPageTranslated) colors.accent else colors.border,
                     trailingContent = if (uiState.isTranslating) {

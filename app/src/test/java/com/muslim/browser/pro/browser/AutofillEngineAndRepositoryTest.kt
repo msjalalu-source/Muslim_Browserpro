@@ -236,20 +236,23 @@ class AutofillEngineAndRepositoryTest {
         val defaultProfile = AutofillProfile()
         assertEquals(3, defaultProfile.education.size)
 
-        assertEquals("B.Sc. (Hons) in Mathematics", defaultProfile.education[0].qualification)
-        assertEquals("Hazi Asmat College, National University", defaultProfile.education[0].institution)
-        assertEquals("2020", defaultProfile.education[0].year)
-        assertEquals("2nd Class", defaultProfile.education[0].result)
+        assertEquals("", defaultProfile.education[0].qualification)
+        assertEquals("", defaultProfile.education[0].institution)
+        assertEquals("", defaultProfile.education[0].year)
+        assertEquals("", defaultProfile.education[0].result)
 
-        assertEquals("Higher Secondary Certificate (HSC)", defaultProfile.education[1].qualification)
-        assertEquals("Scholastica Model College", defaultProfile.education[1].institution)
-        assertEquals("2015", defaultProfile.education[1].year)
-        assertEquals("Grade A", defaultProfile.education[1].result)
+        assertEquals("", defaultProfile.education[1].qualification)
+        assertEquals("", defaultProfile.education[1].institution)
+        assertEquals("", defaultProfile.education[1].year)
+        assertEquals("", defaultProfile.education[1].result)
 
-        assertEquals("Secondary School Certificate (SSC)", defaultProfile.education[2].qualification)
-        assertEquals("Satirpara K.K Institution School & College", defaultProfile.education[2].institution)
-        assertEquals("2013", defaultProfile.education[2].year)
-        assertEquals("Grade A", defaultProfile.education[2].result)
+        assertEquals("", defaultProfile.education[2].qualification)
+        assertEquals("", defaultProfile.education[2].institution)
+        assertEquals("", defaultProfile.education[2].year)
+        assertEquals("", defaultProfile.education[2].result)
+
+        assertEquals("", defaultProfile.personalInfo.nationality)
+        assertEquals("", defaultProfile.personalInfo.gender)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -286,8 +289,11 @@ class AutofillEngineAndRepositoryTest {
     fun testApprovedSkillsAndLanguagesCount() {
         val defaultProfile = AutofillProfile()
         assertEquals(5, defaultProfile.skills.size)
+        defaultProfile.skills.forEach { assertEquals("", it) }
         assertEquals(2, defaultProfile.languages.size)
+        defaultProfile.languages.forEach { assertEquals("", it) }
         assertEquals(5, defaultProfile.interests.size)
+        defaultProfile.interests.forEach { assertEquals("", it) }
     }
 
     // 11. Newly added fields in Personal, Education, and Work tabs save and restore correctly

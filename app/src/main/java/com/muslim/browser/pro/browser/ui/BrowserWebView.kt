@@ -44,6 +44,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -111,12 +112,25 @@ fun BrowserWebView(
                         .padding(horizontal = 10.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Lock,
-                        contentDescription = "Secure Connection",
-                        modifier = Modifier.size(13.dp),
-                        tint = appColors.accent
-                    )
+                    val currentUrl = uiState.currentUrl.trim()
+                    val isHttps = currentUrl.startsWith("https://", ignoreCase = true)
+                    val isHttp = currentUrl.startsWith("http://", ignoreCase = true)
+
+                    if (isHttp) {
+                        Icon(
+                            imageVector = Icons.Filled.LockOpen,
+                            contentDescription = "Not secure",
+                            modifier = Modifier.size(13.dp),
+                            tint = Color(0xFFE53935)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = if (isHttps) "Secure Connection" else "Security",
+                            modifier = Modifier.size(13.dp),
+                            tint = if (isHttps) appColors.accent else appColors.iconTint
+                        )
+                    }
 
                     Spacer(modifier = Modifier.width(6.dp))
 

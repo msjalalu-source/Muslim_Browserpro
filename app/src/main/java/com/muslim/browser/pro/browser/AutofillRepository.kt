@@ -204,8 +204,8 @@ object AutofillRepository {
             phone = pJson.optString("phone", ""),
             email = pJson.optString("email", ""),
             dateOfBirth = pJson.optString("dateOfBirth", ""),
-            nationality = extractString(pJson, "nationality", "Bangladeshi"),
-            gender = extractString(pJson, "gender", "Male"),
+            nationality = extractString(pJson, "nationality", ""),
+            gender = extractString(pJson, "gender", ""),
             maritalStatus = extractString(pJson, "maritalStatus", ""),
             bloodGroup = pJson.optString("bloodGroup", ""),
             height = pJson.optString("height", ""),
@@ -250,21 +250,19 @@ object AutofillRepository {
             weList.add(WorkExperienceEntry())
         }
 
-        // Education: Strictly 3 slots bounded
-        val defaultEdu = AutofillProfile.defaultEducationRecords()
+        // Education: Strictly 3 slots bounded without falling back to hardcoded defaults
         val eduList = mutableListOf<EducationEntry>()
         val eduArray = root.optJSONArray("education")
         if (eduArray != null) {
             val count = minOf(eduArray.length(), AutofillProfile.MAX_EDUCATION_COUNT)
             for (i in 0 until count) {
                 val obj = eduArray.optJSONObject(i) ?: continue
-                val base = defaultEdu.getOrElse(i) { defaultEdu[0] }
                 eduList.add(
                     EducationEntry(
-                        qualification = extractString(obj, "qualification", base.qualification),
-                        institution = extractString(obj, "institution", base.institution),
-                        year = obj.optString("year", base.year).ifBlank { base.year },
-                        result = extractString(obj, "result", base.result),
+                        qualification = extractString(obj, "qualification"),
+                        institution = extractString(obj, "institution"),
+                        year = obj.optString("year", ""),
+                        result = extractString(obj, "result"),
                         board = obj.optString("board", ""),
                         rollNo = obj.optString("rollNo", ""),
                         groupSubject = obj.optString("groupSubject", ""),
@@ -274,73 +272,67 @@ object AutofillRepository {
             }
         }
         while (eduList.size < AutofillProfile.MAX_EDUCATION_COUNT) {
-            eduList.add(defaultEdu[eduList.size])
+            eduList.add(EducationEntry())
         }
 
-        // Skills: Exactly 5 approved slots
-        val defaultSkills = AutofillProfile.defaultSkillsList()
+        // Skills: Exactly 5 slots bounded without falling back to hardcoded defaults
         val skillsList = mutableListOf<String>()
         val skillsArray = root.optJSONArray("skills")
         if (skillsArray != null) {
             val count = minOf(skillsArray.length(), AutofillProfile.MAX_SKILLS_COUNT)
             for (i in 0 until count) {
                 val item = skillsArray.opt(i)
-                val base = defaultSkills[i]
                 if (item is JSONObject) {
-                    skillsList.add(item.optString("en", base).ifBlank { base })
-                } else if (item is String && item.isNotBlank()) {
-                    skillsList.add(item)
+                    skillsList.add(item.optString("en", ""))
+                } else if (item != null) {
+                    skillsList.add(item.toString())
                 } else {
-                    skillsList.add(base)
+                    skillsList.add("")
                 }
             }
         }
         while (skillsList.size < AutofillProfile.MAX_SKILLS_COUNT) {
-            skillsList.add(defaultSkills[skillsList.size])
+            skillsList.add("")
         }
 
-        // Languages: Exactly 2 approved slots
-        val defaultLangs = AutofillProfile.defaultLanguagesList()
+        // Languages: Exactly 2 slots bounded without falling back to hardcoded defaults
         val langList = mutableListOf<String>()
         val langArray = root.optJSONArray("languages")
         if (langArray != null) {
             val count = minOf(langArray.length(), AutofillProfile.MAX_LANGUAGES_COUNT)
             for (i in 0 until count) {
                 val item = langArray.opt(i)
-                val base = defaultLangs[i]
                 if (item is JSONObject) {
-                    langList.add(item.optString("en", base).ifBlank { base })
-                } else if (item is String && item.isNotBlank()) {
-                    langList.add(item)
+                    langList.add(item.optString("en", ""))
+                } else if (item != null) {
+                    langList.add(item.toString())
                 } else {
-                    langList.add(base)
+                    langList.add("")
                 }
             }
         }
         while (langList.size < AutofillProfile.MAX_LANGUAGES_COUNT) {
-            langList.add(defaultLangs[langList.size])
+            langList.add("")
         }
 
-        // Interests: Exactly 5 approved slots
-        val defaultInterests = AutofillProfile.defaultInterestsList()
+        // Interests: Exactly 5 slots bounded without falling back to hardcoded defaults
         val intList = mutableListOf<String>()
         val intArray = root.optJSONArray("interests")
         if (intArray != null) {
             val count = minOf(intArray.length(), AutofillProfile.MAX_INTERESTS_COUNT)
             for (i in 0 until count) {
                 val item = intArray.opt(i)
-                val base = defaultInterests[i]
                 if (item is JSONObject) {
-                    intList.add(item.optString("en", base).ifBlank { base })
-                } else if (item is String && item.isNotBlank()) {
-                    intList.add(item)
+                    intList.add(item.optString("en", ""))
+                } else if (item != null) {
+                    intList.add(item.toString())
                 } else {
-                    intList.add(base)
+                    intList.add("")
                 }
             }
         }
         while (intList.size < AutofillProfile.MAX_INTERESTS_COUNT) {
-            intList.add(defaultInterests[intList.size])
+            intList.add("")
         }
 
         val declaration = extractString(root, "declaration")
@@ -366,9 +358,9 @@ object AutofillRepository {
     private fun extractString(root: JSONObject, key: String, fallback: String = ""): String {
         val opt = root.opt(key) ?: return fallback
         if (opt is JSONObject) {
-            return opt.optString("en", fallback).ifBlank { fallback }
+            return opt.optString("en", fallback)
         }
         val str = opt.toString().trim()
-        return if (str == "null") fallback else str.ifBlank { fallback }
+        return if (str == "null") fallback else str
     }
 }

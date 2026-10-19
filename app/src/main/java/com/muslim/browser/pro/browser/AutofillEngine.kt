@@ -43,8 +43,9 @@ object AutofillEngine {
     var skippedCount = 0;
     
     // Explicit security exclusions (passwords, payment cards, OTP, token, bank account)
+    // "pass" alone is excluded to ensure "Passing Year" is never blocked
     var SENSITIVE_KEYWORDS = [
-        'password', 'passwd', 'pwd', 'token', 'otp', 'captcha', 
+        'password', 'passwd', 'pwd', 'passcode', 'passphrase', 'token', 'otp', 'captcha', 
         'card', 'credit', 'debit', 'cvv', 'cvc', 'securitycode', 'pin', 
         'accountnumber', 'bank', 'ssn', 'taxid'
     ];
@@ -52,11 +53,9 @@ object AutofillEngine {
     function isSensitive(str) {
         if (!str) return false;
         var s = str.toLowerCase();
-        // Do not flag academic passing year as password/pass
-        if (s.indexOf('passing') !== -1 || s.indexOf('pass year') !== -1 || s.indexOf('pass_year') !== -1) {
-            // Checked below safely
-        } else if (/\bpass\b|\bpasswd\b|\bpwd\b|\bpasscode\b|\bpassphrase\b/.test(s)) {
-            return true;
+        // Passing year or pass year is explicitly safe
+        if (s.indexOf('passing') !== -1 || s.indexOf('pass year') !== -1 || s.indexOf('pass_year') !== -1 || s.indexOf('passing_year') !== -1) {
+            return false;
         }
         for (var i = 0; i < SENSITIVE_KEYWORDS.length; i++) {
             if (s.indexOf(SENSITIVE_KEYWORDS[i]) !== -1) return true;
@@ -77,14 +76,18 @@ object AutofillEngine {
                     labelText += ' ' + (el.labels[i].innerText || el.labels[i].textContent || '');
                 }
             }
-            if (el.id) {
-                var explicitLabel = document.querySelector('label[for="' + el.id + '"]');
+            if (el.id && el.ownerDocument) {
+                var explicitLabel = el.ownerDocument.querySelector('label[for="' + el.id + '"]');
                 if (explicitLabel) {
                     labelText += ' ' + (explicitLabel.innerText || explicitLabel.textContent || '');
                 }
             }
             var p = el.parentElement;
             if (p && p.tagName === 'LABEL') {
+                labelText += ' ' + (p.innerText || p.textContent || '');
+            }
+            // Check adjacent sibling text or parent text for radio buttons
+            if (el.type === 'radio' && p) {
                 labelText += ' ' + (p.innerText || p.textContent || '');
             }
         } catch(e) {}
@@ -155,7 +158,7 @@ object AutofillEngine {
         var type = (el.type || 'text').toLowerCase();
         if (type === 'password' || type === 'hidden' || type === 'submit' || 
             type === 'button' || type === 'reset' || type === 'file' || 
-            type === 'checkbox' || type === 'radio' || type === 'image') {
+            type === 'checkbox' || type === 'image') {
             return null;
         }
         if (el.disabled || el.readOnly) return null;
@@ -203,7 +206,7 @@ object AutofillEngine {
                        combined.indexOf("mother") !== -1 ||
                        combined.indexOf("মাতার নাম") !== -1 ||
                        combined.indexOf("মায়ের নাম") !== -1 ||
-                       combined.indexOf("মাতা") !== -1;
+                       combined.indexOf("মাতার") !== -1;
         if (isMother) {
             if (combined.indexOf("father") !== -1 || combined.indexOf("পিতা") !== -1 || combined.indexOf("বাবা") !== -1) return null;
             var mVal = isBn ? (data.motherNameBn || data.motherNameEn) : data.motherNameEn;
@@ -212,7 +215,7 @@ object AutofillEngine {
         }
         
         // --- 3. User's Name Matching ---
-        // Disallow when "name" refers to school, institution, board, organization, employer, company, district, upazila, post office, reference, nominee, spouse, guardian, care of, father, mother, etc.
+        // Exclude when name refers to school, institution, board, organization, employer, company, district, upazila, post office, reference, nominee, spouse, guardian, care of, etc.
         var isExcludedFromName = combined.indexOf("father") !== -1 || combined.indexOf("mother") !== -1 ||
                                  combined.indexOf("পিতা") !== -1 || combined.indexOf("মাতা") !== -1 ||
                                  combined.indexOf("বাবা") !== -1 || combined.indexOf("মায়ের নাম") !== -1 || combined.indexOf("মাতার নাম") !== -1 ||
@@ -381,8 +384,9 @@ object AutofillEngine {
             return (data.address && data.address.trim().length > 0) ? data.address.trim() : null;
         }
         
-        // Date of Birth
-        if (type === 'date' || ac === 'bday' || combined.indexOf('dob') !== -1 || combined.indexOf('birth') !== -1 || combined.indexOf('জন্ম তারিখ') !== -1) {
+        // Date of Birth: STRICTLY requires dob/birth/জন্ম/bday keywords (never match all date fields)
+        var isBirthDate = ac === 'bday' || combined.indexOf('dob') !== -1 || combined.indexOf('birth') !== -1 || combined.indexOf('জন্ম') !== -1;
+        if (isBirthDate) {
             return (data.dateOfBirth && data.dateOfBirth.trim().length > 0) ? data.dateOfBirth.trim() : null;
         }
         
@@ -445,6 +449,21 @@ object AutofillEngine {
             }
         } catch(e) {
             el.value = val;
+        }
+    }
+
+    // Native checked setter for radio and checkbox
+    function setNativeChecked(el, checked) {
+        try {
+            var proto = Object.getPrototypeOf(el);
+            var desc = Object.getOwnPropertyDescriptor(proto, 'checked') || Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'checked');
+            if (desc && desc.set) {
+                desc.set.call(el, checked);
+            } else {
+                el.checked = checked;
+            }
+        } catch(e) {
+            el.checked = checked;
         }
     }
 
@@ -511,42 +530,121 @@ object AutofillEngine {
         return false;
     }
 
-    var inputs = document.querySelectorAll('input, textarea, select');
-    for (var i = 0; i < inputs.length; i++) {
-        var el = inputs[i];
-        try {
-            var val = matchField(el);
-            if (!val || val.trim().length === 0) continue;
-            val = val.trim();
+    // Helper: Select radio button matching label/value
+    function fillRadio(el, targetVal) {
+        if (!targetVal) return false;
+        var t = targetVal.trim().toLowerCase();
+        var rVal = (el.value || '').trim().toLowerCase();
+        var rLabel = getAssociatedLabelText(el).toLowerCase();
+        
+        var isMatch = (rVal === t || rLabel.indexOf(t) !== -1 || t.indexOf(rVal) !== -1);
+        // Bengali gender mappings
+        if (!isMatch && (t === 'male' || t === 'পুরুষ')) {
+            if (rVal === 'male' || rVal === 'm' || rVal === '1' || rLabel.indexOf('male') !== -1 || rLabel.indexOf('পুরুষ') !== -1) isMatch = true;
+        } else if (!isMatch && (t === 'female' || t === 'মহিলা' || t === 'নারী')) {
+            if (rVal === 'female' || rVal === 'f' || rVal === '2' || rLabel.indexOf('female') !== -1 || rLabel.indexOf('মহিলা') !== -1 || rLabel.indexOf('নারী') !== -1) isMatch = true;
+        }
 
-            if (el.tagName === 'SELECT') {
-                var isFilled = isSelectAlreadyFilled(el);
-                if (isFilled && !overwrite) {
-                    skippedCount++;
-                    continue;
-                }
-                var success = fillSelect(el, val);
-                if (success) {
-                    filledCount++;
-                } else {
-                    skippedCount++;
-                }
-            } else {
-                var currentVal = (el.value || '').trim();
-                if (currentVal.length > 0 && !overwrite) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                el.focus();
-                setNativeValue(el, val);
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                el.blur();
-                filledCount++;
+        if (isMatch) {
+            el.focus();
+            setNativeChecked(el, true);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            try { el.click(); } catch(e) {}
+            el.blur();
+            return true;
+        }
+        return false;
+    }
+
+    // Gather document and all same-origin iframe documents
+    function getDocuments() {
+        var docs = [document];
+        try {
+            var iframes = document.querySelectorAll('iframe');
+            for (var f = 0; f < iframes.length; f++) {
+                try {
+                    var iDoc = iframes[f].contentDocument || iframes[f].contentWindow.document;
+                    if (iDoc) docs.push(iDoc);
+                } catch(e) {}
             }
-        } catch(e) {
-            skippedCount++;
+        } catch(e) {}
+        return docs;
+    }
+
+    var allDocs = getDocuments();
+    for (var dIdx = 0; dIdx < allDocs.length; dIdx++) {
+        var targetDoc = allDocs[dIdx];
+        var inputs = targetDoc.querySelectorAll('input, textarea, select');
+        
+        // Track filled radio groups to avoid double counting
+        var filledRadioGroups = {};
+
+        for (var i = 0; i < inputs.length; i++) {
+            var el = inputs[i];
+            try {
+                var type = (el.type || 'text').toLowerCase();
+                
+                // Special handling for Radio Buttons (e.g. Gender)
+                if (type === 'radio') {
+                    var grpName = el.name || 'unnamed_radio';
+                    if (filledRadioGroups[grpName]) continue;
+                    
+                    var rLabel = getAssociatedLabelText(el).toLowerCase();
+                    var rHeading = getNearbyHeadingText(el).toLowerCase();
+                    var rCombined = (el.name + ' ' + el.id + ' ' + rLabel + ' ' + rHeading).toLowerCase();
+                    
+                    if (rCombined.indexOf('gender') !== -1 || rCombined.indexOf('sex') !== -1 || rCombined.indexOf('লিঙ্গ') !== -1 ||
+                        rCombined.indexOf('male') !== -1 || rCombined.indexOf('female') !== -1 || rCombined.indexOf('পুরুষ') !== -1 || rCombined.indexOf('মহিলা') !== -1) {
+                        if (data.gender && data.gender.trim().length > 0) {
+                            if (el.checked && !overwrite) {
+                                skippedCount++;
+                                filledRadioGroups[grpName] = true;
+                                continue;
+                            }
+                            var rSuccess = fillRadio(el, data.gender.trim());
+                            if (rSuccess) {
+                                filledCount++;
+                                filledRadioGroups[grpName] = true;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                var val = matchField(el);
+                if (!val || val.trim().length === 0) continue;
+                val = val.trim();
+
+                if (el.tagName === 'SELECT') {
+                    var isFilled = isSelectAlreadyFilled(el);
+                    if (isFilled && !overwrite) {
+                        skippedCount++;
+                        continue;
+                    }
+                    var success = fillSelect(el, val);
+                    if (success) {
+                        filledCount++;
+                    } else {
+                        skippedCount++;
+                    }
+                } else {
+                    var currentVal = (el.value || '').trim();
+                    if (currentVal.length > 0 && !overwrite) {
+                        skippedCount++;
+                        continue;
+                    }
+                    
+                    el.focus();
+                    setNativeValue(el, val);
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.blur();
+                    filledCount++;
+                }
+            } catch(e) {
+                skippedCount++;
+            }
         }
     }
     

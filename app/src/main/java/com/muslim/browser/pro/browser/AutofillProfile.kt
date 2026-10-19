@@ -19,10 +19,10 @@ data class WorkExperienceEntry(
  * All fields are single English strings with canonical year.
  */
 data class EducationEntry(
-    val qualification: String,
-    val institution: String,
-    val year: String, // Canonical academic year (e.g. "2020", "2015", "2013")
-    val result: String,
+    val qualification: String = "",
+    val institution: String = "",
+    val year: String = "",
+    val result: String = "",
     val board: String = "",
     val rollNo: String = "",
     val groupSubject: String = "",
@@ -49,8 +49,8 @@ data class PersonalInfo(
     val phone: String = "",
     val email: String = "",
     val dateOfBirth: String = "",
-    val nationality: String = "Bangladeshi",
-    val gender: String = "Male",
+    val nationality: String = "",
+    val gender: String = "",
     val maritalStatus: String = "",
     val bloodGroup: String = "",
     val height: String = "",
@@ -91,7 +91,7 @@ data class AutofillProfile(
     // C. Work Experience (Strict ceiling of exactly 3 slots)
     val workExperience: List<WorkExperienceEntry> = defaultWorkExperienceSlots(),
 
-    // D. Education (Strict ceiling of exactly 3 qualifications from CV)
+    // D. Education (Strict ceiling of exactly 3 qualifications)
     val education: List<EducationEntry> = defaultEducationRecords(),
 
     // E. Skills (Strict ceiling of exactly 5 approved entries, English-only)
@@ -132,27 +132,12 @@ data class AutofillProfile(
         const val MAX_INTERESTS_COUNT = 5
 
         /**
-         * Exactly the 3 verified education records from the reference CV.
+         * Exactly 3 education slots initialized to empty strings, preserving list bounds.
          */
         fun defaultEducationRecords(): List<EducationEntry> = listOf(
-            EducationEntry(
-                qualification = "B.Sc. (Hons) in Mathematics",
-                institution = "Hazi Asmat College, National University",
-                year = "2020",
-                result = "2nd Class"
-            ),
-            EducationEntry(
-                qualification = "Higher Secondary Certificate (HSC)",
-                institution = "Scholastica Model College",
-                year = "2015",
-                result = "Grade A"
-            ),
-            EducationEntry(
-                qualification = "Secondary School Certificate (SSC)",
-                institution = "Satirpara K.K Institution School & College",
-                year = "2013",
-                result = "Grade A"
-            )
+            EducationEntry(),
+            EducationEntry(),
+            EducationEntry()
         )
 
         fun defaultWorkExperienceSlots(): List<WorkExperienceEntry> = listOf(
@@ -161,25 +146,34 @@ data class AutofillProfile(
             WorkExperienceEntry()
         )
 
+        /**
+         * Exactly 5 skill slots initialized to empty strings, preserving list bounds.
+         */
         fun defaultSkillsList(): List<String> = listOf(
-            "6G, TIG, 3G and 4G Welding",
-            "MS Word, MS Excel and PowerPoint",
-            "Adobe After Effects",
-            "HTML and Internet Browsing",
-            "Teamwork and Communication Skills"
+            "",
+            "",
+            "",
+            "",
+            ""
         )
 
+        /**
+         * Exactly 2 language slots initialized to empty strings, preserving list bounds.
+         */
         fun defaultLanguagesList(): List<String> = listOf(
-            "Bengali (Native)",
-            "English (Good Reading, Writing, Listening & Medium Speaking)"
+            "",
+            ""
         )
 
+        /**
+         * Exactly 5 interest slots initialized to empty strings, preserving list bounds.
+         */
         fun defaultInterestsList(): List<String> = listOf(
-            "Traveling",
-            "Reading Books",
-            "Listening Music",
-            "Learning New Skills",
-            "Internet Browsing"
+            "",
+            "",
+            "",
+            "",
+            ""
         )
     }
 }
