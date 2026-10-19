@@ -289,4 +289,204 @@ class AutofillEngineAndRepositoryTest {
         assertEquals(2, defaultProfile.languages.size)
         assertEquals(5, defaultProfile.interests.size)
     }
+
+    // 11. Newly added fields in Personal, Education, and Work tabs save and restore correctly
+    @Test
+    fun testNewAutofillFieldsSaveAndRestore() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Kabir Ahmed",
+                nationalId = "19901234567890123",
+                presentCareOf = "Md. Rafiq",
+                presentVillageRoad = "House 10, Road 5",
+                presentDistrict = "Dhaka",
+                presentUpazila = "Mirpur",
+                presentPostOffice = "Mirpur-10",
+                presentPostCode = "1216",
+                permanentCareOf = "Md. Rafiq",
+                permanentVillageRoad = "Village Sonapur",
+                permanentDistrict = "Cumilla",
+                permanentUpazila = "Chandina",
+                permanentPostOffice = "Chandina",
+                permanentPostCode = "3510"
+            ),
+            education = listOf(
+                EducationEntry(
+                    qualification = "Secondary School Certificate (SSC)",
+                    institution = "Govt High School",
+                    year = "2010",
+                    result = "GPA 5.0",
+                    board = "Comilla",
+                    rollNo = "123456",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(
+                    qualification = "Higher Secondary Certificate (HSC)",
+                    institution = "Govt College",
+                    year = "2012",
+                    result = "GPA 4.8",
+                    board = "Comilla",
+                    rollNo = "654321",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(
+                    qualification = "Graduation / B.Sc in CSE",
+                    institution = "Dhaka University",
+                    year = "2017",
+                    result = "CGPA 3.7",
+                    courseDuration = "4 Years",
+                    groupSubject = "Computer Science"
+                )
+            ),
+            workExperience = listOf(
+                WorkExperienceEntry(
+                    employer = "Tech Solutions Ltd",
+                    designation = "Senior Software Engineer",
+                    serviceStart = "01/01/2018",
+                    serviceEnd = "31/12/2022",
+                    jobDescription = "Leading software engineering projects",
+                    period = "2018 - 2022"
+                ),
+                WorkExperienceEntry(),
+                WorkExperienceEntry()
+            )
+        )
+
+        assertTrue(AutofillRepository.saveProfile(context, profile))
+        val loaded = AutofillRepository.loadProfile(context)
+
+        // Verify Personal fields
+        assertEquals("19901234567890123", loaded.personalInfo.nationalId)
+        assertEquals("Md. Rafiq", loaded.personalInfo.presentCareOf)
+        assertEquals("House 10, Road 5", loaded.personalInfo.presentVillageRoad)
+        assertEquals("Dhaka", loaded.personalInfo.presentDistrict)
+        assertEquals("Mirpur", loaded.personalInfo.presentUpazila)
+        assertEquals("Mirpur-10", loaded.personalInfo.presentPostOffice)
+        assertEquals("1216", loaded.personalInfo.presentPostCode)
+
+        assertEquals("Md. Rafiq", loaded.personalInfo.permanentCareOf)
+        assertEquals("Village Sonapur", loaded.personalInfo.permanentVillageRoad)
+        assertEquals("Cumilla", loaded.personalInfo.permanentDistrict)
+        assertEquals("Chandina", loaded.personalInfo.permanentUpazila)
+        assertEquals("Chandina", loaded.personalInfo.permanentPostOffice)
+        assertEquals("3510", loaded.personalInfo.permanentPostCode)
+
+        // Verify Education fields
+        assertEquals("Comilla", loaded.education[0].board)
+        assertEquals("123456", loaded.education[0].rollNo)
+        assertEquals("Science", loaded.education[0].groupSubject)
+
+        assertEquals("Comilla", loaded.education[1].board)
+        assertEquals("654321", loaded.education[1].rollNo)
+        assertEquals("Science", loaded.education[1].groupSubject)
+
+        assertEquals("4 Years", loaded.education[2].courseDuration)
+        assertEquals("Computer Science", loaded.education[2].groupSubject)
+
+        // Verify Work fields
+        assertEquals("Tech Solutions Ltd", loaded.workExperience[0].employer)
+        assertEquals("Senior Software Engineer", loaded.workExperience[0].designation)
+        assertEquals("01/01/2018", loaded.workExperience[0].serviceStart)
+        assertEquals("31/12/2022", loaded.workExperience[0].serviceEnd)
+        assertEquals("Leading software engineering projects", loaded.workExperience[0].jobDescription)
+    }
+
+    // 12. AutofillEngine payload JSON includes all new fields, education and work lists
+    @Test
+    fun testPayloadJsonIncludesNewFieldsAndLists() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Kabir Ahmed",
+                userNameBn = "কবির আহমেদ",
+                nationalId = "19901234567890123",
+                presentCareOf = "Md. Rafiq",
+                presentVillageRoad = "House 10, Road 5",
+                presentDistrict = "Dhaka",
+                presentUpazila = "Mirpur",
+                presentPostOffice = "Mirpur-10",
+                presentPostCode = "1216",
+                permanentCareOf = "Md. Rafiq",
+                permanentVillageRoad = "Village Sonapur",
+                permanentDistrict = "Cumilla",
+                permanentUpazila = "Chandina",
+                permanentPostOffice = "Chandina",
+                permanentPostCode = "3510"
+            ),
+            education = listOf(
+                EducationEntry(
+                    qualification = "Secondary School Certificate (SSC)",
+                    institution = "Govt High School",
+                    year = "2010",
+                    result = "GPA 5.0",
+                    board = "Comilla",
+                    rollNo = "123456",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(
+                    qualification = "Higher Secondary Certificate (HSC)",
+                    institution = "Govt College",
+                    year = "2012",
+                    result = "GPA 4.8",
+                    board = "Comilla",
+                    rollNo = "654321",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(
+                    qualification = "Graduation / B.Sc in CSE",
+                    institution = "Dhaka University",
+                    year = "2017",
+                    result = "CGPA 3.7",
+                    courseDuration = "4 Years",
+                    groupSubject = "Computer Science"
+                )
+            ),
+            workExperience = listOf(
+                WorkExperienceEntry(
+                    employer = "Tech Solutions Ltd",
+                    designation = "Senior Software Engineer",
+                    serviceStart = "01/01/2018",
+                    serviceEnd = "31/12/2022",
+                    jobDescription = "Leading software engineering projects",
+                    period = "2018 - 2022"
+                ),
+                WorkExperienceEntry(),
+                WorkExperienceEntry()
+            )
+        )
+
+        val jsonStr = AutofillEngine.buildAutofillPayloadJson(profile)
+        val json = org.json.JSONObject(jsonStr)
+
+        assertEquals("19901234567890123", json.getString("nationalId"))
+        assertEquals("Md. Rafiq", json.getString("presentCareOf"))
+        assertEquals("House 10, Road 5", json.getString("presentVillageRoad"))
+        assertEquals("Dhaka", json.getString("presentDistrict"))
+        assertEquals("Mirpur", json.getString("presentUpazila"))
+        assertEquals("Mirpur-10", json.getString("presentPostOffice"))
+        assertEquals("1216", json.getString("presentPostCode"))
+
+        assertEquals("Md. Rafiq", json.getString("permanentCareOf"))
+        assertEquals("Village Sonapur", json.getString("permanentVillageRoad"))
+        assertEquals("Cumilla", json.getString("permanentDistrict"))
+        assertEquals("Chandina", json.getString("permanentUpazila"))
+        assertEquals("Chandina", json.getString("permanentPostOffice"))
+        assertEquals("3510", json.getString("permanentPostCode"))
+
+        val eduArray = json.getJSONArray("education")
+        assertEquals(3, eduArray.length())
+        assertEquals("Comilla", eduArray.getJSONObject(0).getString("board"))
+        assertEquals("123456", eduArray.getJSONObject(0).getString("rollNo"))
+        assertEquals("Science", eduArray.getJSONObject(0).getString("groupSubject"))
+        assertEquals("4 Years", eduArray.getJSONObject(2).getString("courseDuration"))
+
+        val workArray = json.getJSONArray("workExperience")
+        assertEquals(3, workArray.length())
+        assertEquals("Tech Solutions Ltd", workArray.getJSONObject(0).getString("employer"))
+        assertEquals("Senior Software Engineer", workArray.getJSONObject(0).getString("designation"))
+        assertEquals("01/01/2018", workArray.getJSONObject(0).getString("serviceStart"))
+        assertEquals("31/12/2022", workArray.getJSONObject(0).getString("serviceEnd"))
+        assertEquals("Leading software engineering projects", workArray.getJSONObject(0).getString("jobDescription"))
+    }
 }

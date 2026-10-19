@@ -111,6 +111,8 @@ object DownloadPolicy {
             h.contains("github-production-release-asset")
     }
 
+    const val TRUSTED_GITHUB_ACCOUNT = "msjalalu-source"
+
     fun isAllowedGitHubApkUrl(url: String): Boolean {
         if (url.isBlank()) return false
         return try {
@@ -118,67 +120,54 @@ object DownloadPolicy {
             val host = uri.host?.lowercase(Locale.ROOT)
             if (host != "github.com") return false
             val segments = uri.pathSegments
-            segments?.firstOrNull() == "msjalalu-source"
+            segments?.firstOrNull() == TRUSTED_GITHUB_ACCOUNT
         } catch (_: Exception) {
             false
         }
     }
 
-    fun isVideo(url: String, mimeType: String? = null, contentDisposition: String? = null): Boolean {
-        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
-        if (mime.startsWith("video/")) return true
+    private fun matchesExtensionOrPath(
+        url: String,
+        contentDisposition: String?,
+        extensions: Set<String>
+    ): Boolean {
         if (!contentDisposition.isNullOrBlank()) {
             val ext = extractExtension("", contentDisposition)
-            if (VIDEO_EXTS.contains(ext)) return true
+            if (extensions.contains(ext)) return true
         }
         val extFromUrl = extractExtension(url, null)
-        if (VIDEO_EXTS.contains(extFromUrl)) return true
+        if (extensions.contains(extFromUrl)) return true
         val extFromDisp = extractFileName(url, contentDisposition).substringAfterLast('.')
-        if (VIDEO_EXTS.contains(extFromDisp)) return true
+        if (extensions.contains(extFromDisp)) return true
 
         val cleanPath = try {
             Uri.parse(url.trim()).path?.lowercase(Locale.ROOT) ?: ""
         } catch (_: Exception) { "" }
 
-        for (videoExt in VIDEO_EXTS) {
-            if (cleanPath.endsWith(".$videoExt") || cleanPath.contains(".$videoExt/") || cleanPath.contains(".$videoExt?")) {
+        for (ext in extensions) {
+            if (cleanPath.endsWith(".$ext") || cleanPath.contains(".$ext/") || cleanPath.contains(".$ext?")) {
                 return true
             }
         }
         return false
+    }
+
+    fun isVideo(url: String, mimeType: String? = null, contentDisposition: String? = null): Boolean {
+        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (mime.startsWith("video/")) return true
+        return matchesExtensionOrPath(url, contentDisposition, VIDEO_EXTS)
     }
 
     fun isApk(url: String, mimeType: String? = null, contentDisposition: String? = null): Boolean {
         val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
         if (mime == "application/vnd.android.package-archive") return true
-        if (!contentDisposition.isNullOrBlank()) {
-            val ext = extractExtension("", contentDisposition)
-            if (APK_EXTS.contains(ext)) return true
-        }
-        val extFromUrl = extractExtension(url, null)
-        if (APK_EXTS.contains(extFromUrl)) return true
-        val extFromDisp = extractFileName(url, contentDisposition).substringAfterLast('.')
-        if (APK_EXTS.contains(extFromDisp)) return true
-
-        val cleanPath = try {
-            Uri.parse(url.trim()).path?.lowercase(Locale.ROOT) ?: ""
-        } catch (_: Exception) { "" }
-
-        for (apkExt in APK_EXTS) {
-            if (cleanPath.endsWith(".$apkExt") || cleanPath.contains(".$apkExt/") || cleanPath.contains(".$apkExt?")) {
-                return true
-            }
-        }
-        return false
+        return matchesExtensionOrPath(url, contentDisposition, APK_EXTS)
     }
 
-    fun isAudio(url: String): Boolean {
-        if (url.isBlank()) return false
-        val cleanUrl = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
-        val fileName = cleanUrl.substringAfterLast('/')
-        if (!fileName.contains('.')) return false
-        val ext = fileName.substringAfterLast('.')
-        return AUDIO_EXTS.contains(ext)
+    fun isAudio(url: String, mimeType: String? = null, contentDisposition: String? = null): Boolean {
+        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (mime.startsWith("audio/") || mime == "application/ogg") return true
+        return matchesExtensionOrPath(url, contentDisposition, AUDIO_EXTS)
     }
 
     fun isDownloadableFileUrl(url: String): Boolean {

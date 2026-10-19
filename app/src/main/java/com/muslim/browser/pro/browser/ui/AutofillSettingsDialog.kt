@@ -374,6 +374,9 @@ private fun PersonalInfoTab(
             CanonicalInputRow("Date of Birth", info.dateOfBirth, { updateInfo { copy(dateOfBirth = it) } }, "YYYY-MM-DD or DD/MM/YYYY")
         }
         item {
+            CanonicalInputRow("National ID Number", info.nationalId, { updateInfo { copy(nationalId = it) } }, "e.g. 199XXXXXXXXXXXXXX", KeyboardType.Number)
+        }
+        item {
             CanonicalInputRow("Nationality", info.nationality, { updateInfo { copy(nationality = it) } }, "Bangladeshi")
         }
         item {
@@ -389,6 +392,80 @@ private fun PersonalInfoTab(
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     CanonicalInputRow("Height", info.height, { updateInfo { copy(height = it) } }, "e.g. 5'7\"")
+                }
+            }
+        }
+
+        // Section: Present Address
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Present Address",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = LocalAppColors.current.accent
+            )
+        }
+        item {
+            CanonicalInputRow("Care Of", info.presentCareOf, { updateInfo { copy(presentCareOf = it) } }, "e.g. Guardian's name")
+        }
+        item {
+            CanonicalInputRow("Village / Road / House / Flat", info.presentVillageRoad, { updateInfo { copy(presentVillageRoad = it) } }, "e.g. House 12, Road 4")
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("District", info.presentDistrict, { updateInfo { copy(presentDistrict = it) } }, "e.g. Dhaka")
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Upazila / P.S.", info.presentUpazila, { updateInfo { copy(presentUpazila = it) } }, "e.g. Uttara")
+                }
+            }
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Post Office", info.presentPostOffice, { updateInfo { copy(presentPostOffice = it) } }, "e.g. Uttara H.P.O")
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Post Code", info.presentPostCode, { updateInfo { copy(presentPostCode = it) } }, "e.g. 1230", KeyboardType.Number)
+                }
+            }
+        }
+
+        // Section: Permanent Address
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Permanent Address",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = LocalAppColors.current.accent
+            )
+        }
+        item {
+            CanonicalInputRow("Care Of", info.permanentCareOf, { updateInfo { copy(permanentCareOf = it) } }, "e.g. Guardian's name")
+        }
+        item {
+            CanonicalInputRow("Village / Road / House / Flat", info.permanentVillageRoad, { updateInfo { copy(permanentVillageRoad = it) } }, "e.g. Village Name, Ward No")
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("District", info.permanentDistrict, { updateInfo { copy(permanentDistrict = it) } }, "e.g. Narsingdi")
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Upazila / P.S.", info.permanentUpazila, { updateInfo { copy(permanentUpazila = it) } }, "e.g. Shibpur")
+                }
+            }
+        }
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Post Office", info.permanentPostOffice, { updateInfo { copy(permanentPostOffice = it) } }, "e.g. Shibpur")
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    CanonicalInputRow("Post Code", info.permanentPostCode, { updateInfo { copy(permanentPostCode = it) } }, "e.g. 1620", KeyboardType.Number)
                 }
             }
         }
@@ -480,17 +557,58 @@ private fun EducationTab(
                         onProfileChange(profile.copy(education = list))
                     }
 
-                    CanonicalInputRow("Passing Year", entry.year, { newYear ->
-                        updateEntry { copy(year = newYear) }
-                    }, "Year (e.g. 2020)")
+                    val isSscHsc = entry.qualification.contains("SSC", ignoreCase = true) ||
+                        entry.qualification.contains("HSC", ignoreCase = true)
 
-                    CanonicalInputRow("Institution", entry.institution, { newInst ->
-                        updateEntry { copy(institution = newInst) }
-                    }, "Institution Name")
+                    CanonicalInputRow("Examination", entry.qualification, { newExam ->
+                        updateEntry { copy(qualification = newExam) }
+                    }, if (isSscHsc) "e.g. SSC, HSC" else "e.g. Graduation, Masters, B.Sc")
 
-                    CanonicalInputRow("Result / Division", entry.result, { newRes ->
-                        updateEntry { copy(result = newRes) }
-                    }, "Result (e.g. 2nd Class, Grade A)")
+                    if (isSscHsc) {
+                        CanonicalInputRow("Board", entry.board, { newBoard ->
+                            updateEntry { copy(board = newBoard) }
+                        }, "Education Board (e.g. Dhaka)")
+
+                        CanonicalInputRow("Roll No", entry.rollNo, { newRoll ->
+                            updateEntry { copy(rollNo = newRoll) }
+                        }, "Roll Number", KeyboardType.Number)
+
+                        CanonicalInputRow("Group / Subject", entry.groupSubject, { newGroup ->
+                            updateEntry { copy(groupSubject = newGroup) }
+                        }, "e.g. Science, Commerce, Arts")
+
+                        CanonicalInputRow("Institution", entry.institution, { newInst ->
+                            updateEntry { copy(institution = newInst) }
+                        }, "School / College Name")
+
+                        CanonicalInputRow("Passing Year", entry.year, { newYear ->
+                            updateEntry { copy(year = newYear) }
+                        }, "Year (e.g. 2013)")
+
+                        CanonicalInputRow("Result / Division", entry.result, { newRes ->
+                            updateEntry { copy(result = newRes) }
+                        }, "Result (e.g. Grade A, GPA 5.0)")
+                    } else {
+                        CanonicalInputRow("Subject / Degree", entry.groupSubject, { newSub ->
+                            updateEntry { copy(groupSubject = newSub) }
+                        }, "Subject / Degree (e.g. Mathematics)")
+
+                        CanonicalInputRow("University / Institution", entry.institution, { newInst ->
+                            updateEntry { copy(institution = newInst) }
+                        }, "University / Institution Name")
+
+                        CanonicalInputRow("Result", entry.result, { newRes ->
+                            updateEntry { copy(result = newRes) }
+                        }, "Result (e.g. 2nd Class, CGPA 3.5)")
+
+                        CanonicalInputRow("Passing Year", entry.year, { newYear ->
+                            updateEntry { copy(year = newYear) }
+                        }, "Year (e.g. 2020)")
+
+                        CanonicalInputRow("Course Duration", entry.courseDuration, { newDur ->
+                            updateEntry { copy(courseDuration = newDur) }
+                        }, "Course Duration (e.g. 4 Years, 1 Year)")
+                    }
                 }
             }
         }
@@ -531,21 +649,34 @@ private fun WorkExperienceTab(
                         onProfileChange(profile.copy(workExperience = list))
                     }
 
-                    CanonicalInputRow("Employer / Organization", exp.employer, { newEmp ->
+                    CanonicalInputRow("Organization", exp.employer, { newEmp ->
                         updateExp { copy(employer = newEmp) }
-                    }, "Company Name")
+                    }, "Company / Organization Name")
 
-                    CanonicalInputRow("Designation / Role", exp.designation, { newDes ->
+                    CanonicalInputRow("Designation / Post", exp.designation, { newDes ->
                         updateExp { copy(designation = newDes) }
-                    }, "Job Title")
+                    }, "Job Title / Post")
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            CanonicalInputRow("Length of Service - Start", exp.serviceStart, { newStart ->
+                                updateExp { copy(serviceStart = newStart) }
+                            }, "DD/MM/YYYY")
+                        }
+                        Box(modifier = Modifier.weight(1f)) {
+                            CanonicalInputRow("Length of Service - End", exp.serviceEnd, { newEnd ->
+                                updateExp { copy(serviceEnd = newEnd) }
+                            }, "DD/MM/YYYY or Present")
+                        }
+                    }
+
+                    CanonicalInputRow("Job Description", if (exp.jobDescription.isNotEmpty()) exp.jobDescription else exp.responsibilities, { newDesc ->
+                        updateExp { copy(jobDescription = newDesc, responsibilities = newDesc) }
+                    }, "Key responsibilities and duties")
 
                     CanonicalInputRow("Employment Period", exp.period, { newPer ->
                         updateExp { copy(period = newPer) }
                     }, "e.g. 2021 - Present")
-
-                    CanonicalInputRow("Responsibilities", exp.responsibilities, { newResp ->
-                        updateExp { copy(responsibilities = newResp) }
-                    }, "Key duties")
                 }
             }
         }

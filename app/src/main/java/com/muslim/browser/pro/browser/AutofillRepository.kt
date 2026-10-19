@@ -87,6 +87,19 @@ object AutofillRepository {
         pJson.put("maritalStatus", p.maritalStatus)
         pJson.put("bloodGroup", p.bloodGroup)
         pJson.put("height", p.height)
+        pJson.put("nationalId", p.nationalId)
+        pJson.put("presentCareOf", p.presentCareOf)
+        pJson.put("presentVillageRoad", p.presentVillageRoad)
+        pJson.put("presentDistrict", p.presentDistrict)
+        pJson.put("presentUpazila", p.presentUpazila)
+        pJson.put("presentPostOffice", p.presentPostOffice)
+        pJson.put("presentPostCode", p.presentPostCode)
+        pJson.put("permanentCareOf", p.permanentCareOf)
+        pJson.put("permanentVillageRoad", p.permanentVillageRoad)
+        pJson.put("permanentDistrict", p.permanentDistrict)
+        pJson.put("permanentUpazila", p.permanentUpazila)
+        pJson.put("permanentPostOffice", p.permanentPostOffice)
+        pJson.put("permanentPostCode", p.permanentPostCode)
         root.put("personalInfo", pJson)
 
         // Professional Profile
@@ -100,6 +113,9 @@ object AutofillRepository {
             weObj.put("designation", exp.designation)
             weObj.put("period", exp.period)
             weObj.put("responsibilities", exp.responsibilities)
+            weObj.put("serviceStart", exp.serviceStart)
+            weObj.put("serviceEnd", exp.serviceEnd)
+            weObj.put("jobDescription", exp.jobDescription)
             weArray.put(weObj)
         }
         root.put("workExperience", weArray)
@@ -112,6 +128,10 @@ object AutofillRepository {
             eduObj.put("institution", edu.institution)
             eduObj.put("year", edu.year)
             eduObj.put("result", edu.result)
+            eduObj.put("board", edu.board)
+            eduObj.put("rollNo", edu.rollNo)
+            eduObj.put("groupSubject", edu.groupSubject)
+            eduObj.put("courseDuration", edu.courseDuration)
             eduArray.put(eduObj)
         }
         root.put("education", eduArray)
@@ -188,7 +208,20 @@ object AutofillRepository {
             gender = extractString(pJson, "gender", "Male"),
             maritalStatus = extractString(pJson, "maritalStatus", ""),
             bloodGroup = pJson.optString("bloodGroup", ""),
-            height = pJson.optString("height", "")
+            height = pJson.optString("height", ""),
+            nationalId = pJson.optString("nationalId", ""),
+            presentCareOf = pJson.optString("presentCareOf", ""),
+            presentVillageRoad = pJson.optString("presentVillageRoad", ""),
+            presentDistrict = pJson.optString("presentDistrict", ""),
+            presentUpazila = pJson.optString("presentUpazila", ""),
+            presentPostOffice = pJson.optString("presentPostOffice", ""),
+            presentPostCode = pJson.optString("presentPostCode", ""),
+            permanentCareOf = pJson.optString("permanentCareOf", ""),
+            permanentVillageRoad = pJson.optString("permanentVillageRoad", ""),
+            permanentDistrict = pJson.optString("permanentDistrict", ""),
+            permanentUpazila = pJson.optString("permanentUpazila", ""),
+            permanentPostOffice = pJson.optString("permanentPostOffice", ""),
+            permanentPostCode = pJson.optString("permanentPostCode", "")
         )
 
         val profProfile = extractString(root, "professionalProfile")
@@ -205,7 +238,10 @@ object AutofillRepository {
                         employer = extractString(obj, "employer"),
                         designation = extractString(obj, "designation"),
                         period = extractString(obj, "period"),
-                        responsibilities = extractString(obj, "responsibilities")
+                        responsibilities = extractString(obj, "responsibilities"),
+                        serviceStart = obj.optString("serviceStart", ""),
+                        serviceEnd = obj.optString("serviceEnd", ""),
+                        jobDescription = obj.optString("jobDescription", "")
                     )
                 )
             }
@@ -228,7 +264,11 @@ object AutofillRepository {
                         qualification = extractString(obj, "qualification", base.qualification),
                         institution = extractString(obj, "institution", base.institution),
                         year = obj.optString("year", base.year).ifBlank { base.year },
-                        result = extractString(obj, "result", base.result)
+                        result = extractString(obj, "result", base.result),
+                        board = obj.optString("board", ""),
+                        rollNo = obj.optString("rollNo", ""),
+                        groupSubject = obj.optString("groupSubject", ""),
+                        courseDuration = obj.optString("courseDuration", "")
                     )
                 )
             }

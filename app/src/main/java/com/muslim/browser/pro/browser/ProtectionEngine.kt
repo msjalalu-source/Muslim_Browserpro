@@ -36,17 +36,11 @@ object ProtectionEngine {
         "scorecardresearch.com", "advertising.com", "adroll.com", "revcontent.com"
     )
 
-    val BLOCKED_VIDEO_EXTS: HashSet<String> = hashSetOf(
-        "mp4", "mkv", "webm", "avi", "mov", "m4v", "wmv", "flv", "3gp"
-    )
+    val BLOCKED_VIDEO_EXTS: HashSet<String> get() = DownloadPolicy.VIDEO_EXTS
 
-    val BLOCKED_AUDIO_EXTS: HashSet<String> = hashSetOf(
-        "mp3", "m4a", "wav", "flac", "ogg", "aac", "wma"
-    )
+    val BLOCKED_AUDIO_EXTS: HashSet<String> get() = DownloadPolicy.AUDIO_EXTS
 
-    val BLOCKED_APK_EXTS: HashSet<String> = hashSetOf(
-        "apk", "xapk", "apks"
-    )
+    val BLOCKED_APK_EXTS: HashSet<String> get() = DownloadPolicy.APK_EXTS
 
     val ALLOWED_IMAGE_EXTS: HashSet<String> = hashSetOf(
         "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico"
@@ -390,18 +384,19 @@ object ProtectionEngine {
     }
 
     fun checkDownloadType(url: String, mimeType: String?, contentDisposition: String?): DownloadStatus {
+        if (DownloadPolicy.isVideo(url, mimeType, contentDisposition)) {
+            return DownloadStatus.BLOCKED_VIDEO
+        }
+        if (DownloadPolicy.isAudio(url, mimeType, contentDisposition)) {
+            return DownloadStatus.BLOCKED_AUDIO
+        }
+        if (DownloadPolicy.isApk(url, mimeType, contentDisposition)) {
+            return DownloadStatus.BLOCKED_APK
+        }
+
         val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
         val ext = extractExtension(url, contentDisposition)
 
-        if (mime.startsWith("video/") || BLOCKED_VIDEO_EXTS.contains(ext)) {
-            return DownloadStatus.BLOCKED_VIDEO
-        }
-        if (mime.startsWith("audio/") || mime == "application/ogg" || BLOCKED_AUDIO_EXTS.contains(ext)) {
-            return DownloadStatus.BLOCKED_AUDIO
-        }
-        if (mime == "application/vnd.android.package-archive" || BLOCKED_APK_EXTS.contains(ext)) {
-            return DownloadStatus.BLOCKED_APK
-        }
         if (mime.startsWith("image/") || ALLOWED_IMAGE_EXTS.contains(ext)) {
             return DownloadStatus.ALLOWED_IMAGE
         }

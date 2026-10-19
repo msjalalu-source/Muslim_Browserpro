@@ -8,7 +8,10 @@ data class WorkExperienceEntry(
     val employer: String = "",
     val designation: String = "",
     val period: String = "",
-    val responsibilities: String = ""
+    val responsibilities: String = "",
+    val serviceStart: String = "",
+    val serviceEnd: String = "",
+    val jobDescription: String = ""
 )
 
 /**
@@ -19,7 +22,11 @@ data class EducationEntry(
     val qualification: String,
     val institution: String,
     val year: String, // Canonical academic year (e.g. "2020", "2015", "2013")
-    val result: String
+    val result: String,
+    val board: String = "",
+    val rollNo: String = "",
+    val groupSubject: String = "",
+    val courseDuration: String = ""
 )
 
 /**
@@ -46,7 +53,25 @@ data class PersonalInfo(
     val gender: String = "Male",
     val maritalStatus: String = "",
     val bloodGroup: String = "",
-    val height: String = ""
+    val height: String = "",
+
+    val nationalId: String = "",
+
+    // Present Address
+    val presentCareOf: String = "",
+    val presentVillageRoad: String = "",
+    val presentDistrict: String = "",
+    val presentUpazila: String = "",
+    val presentPostOffice: String = "",
+    val presentPostCode: String = "",
+
+    // Permanent Address
+    val permanentCareOf: String = "",
+    val permanentVillageRoad: String = "",
+    val permanentDistrict: String = "",
+    val permanentUpazila: String = "",
+    val permanentPostOffice: String = "",
+    val permanentPostCode: String = ""
 )
 
 /**
