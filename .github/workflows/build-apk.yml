@@ -39,18 +39,20 @@ jobs:
 
       - name: Ensure Gradle wrapper exists
         run: |
+          mkdir -p gradle/wrapper
           if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "gradle-wrapper.jar not found, generating wrapper..."
+            echo "gradle-wrapper.jar not found, generating or downloading wrapper..."
+            GRADLE_VER="8.11.1"
             if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-              GRADLE_VER=$(grep -E 'distributionUrl=.*gradle-[0-9.]+' gradle/wrapper/gradle-wrapper.properties | sed -E 's/.*gradle-([0-9.]+)-.*/\1/' | head -n 1)
-              if [ -n "$GRADLE_VER" ]; then
-                echo "Generating wrapper matching gradle-wrapper.properties version: $GRADLE_VER"
-                gradle wrapper --gradle-version "$GRADLE_VER"
-              else
-                gradle wrapper
-              fi
-            else
-              gradle wrapper
+              DETECTED_VER=$(grep -E 'distributionUrl=.*gradle-[0-9.]+' gradle/wrapper/gradle-wrapper.properties | sed -E 's/.*gradle-([0-9.]+)-.*/\1/' | head -n 1)
+              [ -n "$DETECTED_VER" ] && GRADLE_VER="$DETECTED_VER"
+            fi
+            echo "Attempting to generate wrapper for Gradle $GRADLE_VER..."
+            gradle wrapper --gradle-version "$GRADLE_VER" || true
+            if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+              echo "Downloading gradle-wrapper.jar for version $GRADLE_VER..."
+              curl -sLo gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VER}/gradle/wrapper/gradle-wrapper.jar" || \
+              curl -sLo gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar"
             fi
           fi
           chmod +x gradlew

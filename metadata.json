@@ -1,0 +1,8 @@
+{
+  "name": "Muslim Browser Pro",
+  "description": "Android Browser with Desktop Mode, Translation, and Settings Health Check",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
