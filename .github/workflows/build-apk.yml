@@ -37,6 +37,24 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Ensure Gradle wrapper exists
+        run: |
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "gradle-wrapper.jar not found, generating wrapper..."
+            if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+              GRADLE_VER=$(grep -E 'distributionUrl=.*gradle-[0-9.]+' gradle/wrapper/gradle-wrapper.properties | sed -E 's/.*gradle-([0-9.]+)-.*/\1/' | head -n 1)
+              if [ -n "$GRADLE_VER" ]; then
+                echo "Generating wrapper matching gradle-wrapper.properties version: $GRADLE_VER"
+                gradle wrapper --gradle-version "$GRADLE_VER"
+              else
+                gradle wrapper
+              fi
+            else
+              gradle wrapper
+            fi
+          fi
+          chmod +x gradlew
+
       - name: Configure release signing keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

@@ -8,3 +8,8 @@
 captures/
 .externalNativeBuild
 .cxx
+
+# Exclude jars but keep gradle-wrapper.jar and prebuilt dependencies
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+!app/libs/app-prebuilt.jar
