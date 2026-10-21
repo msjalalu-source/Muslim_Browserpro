@@ -65,10 +65,26 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openTabsDialog() { _uiState.update { it.copy(isTabsDialogOpen = true) } }
     fun closeTabsDialog() { _uiState.update { it.copy(isTabsDialogOpen = false) } }
 
-    fun openDownloads() { _uiState.update { it.copy(isDownloadsOpen = true) } }
+    fun openDownloads() {
+        _uiState.update {
+            it.copy(
+                isDownloadsOpen = true,
+                isMenuOpen = false,
+                downloadHistory = repository.getDownloads()
+            )
+        }
+    }
     fun closeDownloads() { _uiState.update { it.copy(isDownloadsOpen = false) } }
 
-    fun openHistory() { _uiState.update { it.copy(isHistoryOpen = true) } }
+    fun openHistory() {
+        _uiState.update {
+            it.copy(
+                isHistoryOpen = true,
+                isMenuOpen = false,
+                browsingHistory = repository.getHistory()
+            )
+        }
+    }
     fun closeHistory() { _uiState.update { it.copy(isHistoryOpen = false) } }
 
     fun onSearchInputChange(input: String) {

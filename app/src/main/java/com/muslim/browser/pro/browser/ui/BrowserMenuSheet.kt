@@ -428,7 +428,10 @@ fun BrowserMenuSheet(
                     title = "History",
                     icon = Icons.Default.History,
                     contentDescription = "Browsing History",
-                    onClick = onOpenHistory,
+                    onClick = {
+                        onDismiss()
+                        onOpenHistory()
+                    },
                     trailingContent = { MenuBadge(text = "View") },
                     modifier = Modifier.testTag("menu_item_history")
                 )
@@ -440,7 +443,10 @@ fun BrowserMenuSheet(
                     title = "Downloads",
                     icon = Icons.Default.Download,
                     contentDescription = "Downloads",
-                    onClick = onOpenDownloads,
+                    onClick = {
+                        onDismiss()
+                        onOpenDownloads()
+                    },
                     trailingContent = { MenuBadge(text = "View") },
                     modifier = Modifier.testTag("menu_item_downloads")
                 )

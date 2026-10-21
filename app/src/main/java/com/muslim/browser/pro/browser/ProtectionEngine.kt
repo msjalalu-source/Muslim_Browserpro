@@ -11,6 +11,7 @@ object ProtectionEngine {
     enum class DownloadStatus {
         ALLOWED_IMAGE,
         ALLOWED_PDF,
+        ALLOWED_ZIP,
         BLOCKED_VIDEO,
         BLOCKED_AUDIO,
         BLOCKED_APK,
@@ -48,6 +49,10 @@ object ProtectionEngine {
 
     val ALLOWED_PDF_EXTS: HashSet<String> = hashSetOf(
         "pdf"
+    )
+
+    val ALLOWED_ZIP_EXTS: HashSet<String> = hashSetOf(
+        "zip"
     )
 
     fun buildDuckDuckGoSafeSearchUrl(query: String): String {
@@ -402,6 +407,12 @@ object ProtectionEngine {
         }
         if (mime == "application/pdf" || ALLOWED_PDF_EXTS.contains(ext)) {
             return DownloadStatus.ALLOWED_PDF
+        }
+        val isZipMime = mime == "application/zip" ||
+            mime == "application/x-zip-compressed" ||
+            mime == "application/x-zip"
+        if (isZipMime || ALLOWED_ZIP_EXTS.contains(ext) || DownloadPolicy.isZip(url, mimeType, contentDisposition)) {
+            return DownloadStatus.ALLOWED_ZIP
         }
         return DownloadStatus.BLOCKED_OTHER
     }

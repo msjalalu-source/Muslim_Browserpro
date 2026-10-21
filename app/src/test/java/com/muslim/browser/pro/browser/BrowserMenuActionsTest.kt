@@ -178,5 +178,79 @@ class BrowserMenuActionsTest {
         // Must complete safely across Android API levels without any unhandled exceptions
         com.muslim.browser.pro.browser.ui.openDefaultBrowserSettings(context)
     }
+
+    @Test
+    fun testHistoryActionStateTransitionsAndPersistence() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = BrowserViewModel(app)
+
+        // Given: Menu is open
+        vm.openMenu()
+        assertTrue(vm.uiState.value.isMenuOpen)
+        assertFalse(vm.uiState.value.isHistoryOpen)
+
+        // When: User taps History
+        vm.openHistory()
+
+        // Then: History is open and Menu is closed
+        assertTrue(vm.uiState.value.isHistoryOpen)
+        assertFalse(vm.uiState.value.isMenuOpen)
+
+        // When: User dismisses History
+        vm.closeHistory()
+        assertFalse(vm.uiState.value.isHistoryOpen)
+
+        // Repository & entry management
+        vm.clearAllHistory()
+        assertTrue(vm.uiState.value.browsingHistory.isEmpty())
+
+        vm.onPageFinished("https://quran.com/1", "Surah Al-Fatihah", canGoBack = false, canGoForward = false)
+        val historyAfterVisit = vm.uiState.value.browsingHistory
+        assertTrue(historyAfterVisit.any { it.url == "https://quran.com/1" })
+
+        val entryId = historyAfterVisit.first { it.url == "https://quran.com/1" }.id
+        vm.deleteHistoryEntry(entryId)
+        assertFalse(vm.uiState.value.browsingHistory.any { it.id == entryId })
+    }
+
+    @Test
+    fun testDownloadsActionStateTransitionsAndPersistence() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = BrowserViewModel(app)
+
+        // Given: Menu is open
+        vm.openMenu()
+        assertTrue(vm.uiState.value.isMenuOpen)
+        assertFalse(vm.uiState.value.isDownloadsOpen)
+
+        // When: User taps Downloads
+        vm.openDownloads()
+
+        // Then: Downloads is open and Menu is closed
+        assertTrue(vm.uiState.value.isDownloadsOpen)
+        assertFalse(vm.uiState.value.isMenuOpen)
+
+        // When: User dismisses Downloads
+        vm.closeDownloads()
+        assertFalse(vm.uiState.value.isDownloadsOpen)
+
+        // Repository & download entry management
+        vm.clearAllDownloadHistory()
+        assertTrue(vm.uiState.value.downloadHistory.isEmpty())
+
+        val testEntry = DownloadEntry(
+            downloadId = 9999L,
+            fileName = "sample_book.pdf",
+            url = "https://example.com/sample_book.pdf",
+            totalBytes = 1024L,
+            downloadedBytes = 1024L,
+            status = DownloadStatus.COMPLETED
+        )
+        vm.recordDownload(testEntry)
+        assertTrue(vm.uiState.value.downloadHistory.any { it.downloadId == 9999L })
+
+        vm.deleteDownloadEntry("9999")
+        assertFalse(vm.uiState.value.downloadHistory.any { it.downloadId == 9999L })
+    }
 }
 

@@ -6,6 +6,11 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
+import android.app.DownloadManager
+import android.os.Environment
+import android.webkit.CookieManager
+import android.webkit.URLUtil
+import android.widget.Toast
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -28,6 +33,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.DesktopCore
+import com.muslim.browser.pro.browser.DownloadEntry
+import com.muslim.browser.pro.browser.DownloadPolicy
+import com.muslim.browser.pro.browser.DownloadStatus
 import com.muslim.browser.pro.browser.NavigationController
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.SslSecurityPolicy
@@ -35,6 +43,8 @@ import com.muslim.browser.pro.browser.TabWebViewManager
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
+import com.muslim.browser.pro.browser.ui.DownloadsDialog
+import com.muslim.browser.pro.browser.ui.HistoryDialog
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.TabsSelectionDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
@@ -154,8 +164,14 @@ class MainActivity : ComponentActivity() {
                             BrowserMenuSheet(
                                 uiState = uiState,
                                 onDismiss = { viewModel.closeMenu() },
-                                onOpenHistory = { viewModel.openHistory() },
-                                onOpenDownloads = { viewModel.openDownloads() },
+                                onOpenHistory = {
+                                    viewModel.closeMenu()
+                                    viewModel.openHistory()
+                                },
+                                onOpenDownloads = {
+                                    viewModel.closeMenu()
+                                    viewModel.openDownloads()
+                                },
                                 onAddKeyword = { keyword -> viewModel.addCustomKeyword(keyword) },
                                 onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
                                 onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
@@ -189,6 +205,34 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNewTab = { viewModel.openNewTab() },
                                 onDismiss = { viewModel.closeTabsDialog() }
+                            )
+                        }
+
+                        if (uiState.isHistoryOpen) {
+                            HistoryDialog(
+                                uiState = uiState,
+                                onSelectUrl = { url ->
+                                    viewModel.closeHistory()
+                                    viewModel.submitQueryOrUrl(url)
+                                    currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                },
+                                onDeleteEntry = { id -> viewModel.deleteHistoryEntry(id) },
+                                onClearAll = { viewModel.clearAllHistory() },
+                                onDismiss = { viewModel.closeHistory() }
+                            )
+                        }
+
+                        if (uiState.isDownloadsOpen) {
+                            DownloadsDialog(
+                                uiState = uiState,
+                                onSelectUrl = { url ->
+                                    viewModel.closeDownloads()
+                                    viewModel.submitQueryOrUrl(url)
+                                    currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                },
+                                onDeleteEntry = { idOrName -> viewModel.deleteDownloadEntry(idOrName) },
+                                onClearAll = { viewModel.clearAllDownloadHistory() },
+                                onDismiss = { viewModel.closeDownloads() }
                             )
                         }
                     }
@@ -228,6 +272,16 @@ class MainActivity : ComponentActivity() {
                     }
                     if (decision is com.muslim.browser.pro.browser.NavigationDecision.Redirect) {
                         view?.loadUrl(decision.url)
+                        return true
+                    }
+                    if (decision is com.muslim.browser.pro.browser.NavigationDecision.Download) {
+                        startDownload(
+                            url = decision.url,
+                            userAgent = view?.settings?.userAgentString,
+                            contentDisposition = null,
+                            mimetype = decision.mimeType,
+                            contentLength = -1L
+                        )
                         return true
                     }
                     if (ProtectionEngine.isHarmfulUrl(targetUrl)) {
@@ -310,6 +364,74 @@ class MainActivity : ComponentActivity() {
                     return true
                 }
             }
+
+            setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+                val decision = DownloadPolicy.evaluate(url, mimetype, contentDisposition)
+                if (decision is DownloadPolicy.Result.Blocked) {
+                    viewModel.setBlockedUrl(url, "Download Blocked", decision.reason)
+                    return@setDownloadListener
+                }
+                if (ProtectionEngine.isHarmfulUrl(url)) {
+                    viewModel.setBlockedUrl(url, "Blocked Content", "Safety filter blocked this URL.")
+                    return@setDownloadListener
+                }
+                startDownload(url, userAgent, contentDisposition, mimetype, contentLength)
+            }
+        }
+    }
+
+    fun startDownload(
+        url: String,
+        userAgent: String?,
+        contentDisposition: String?,
+        mimetype: String?,
+        contentLength: Long
+    ) {
+        try {
+            val fileName = DownloadPolicy.extractFileName(url, contentDisposition).ifBlank {
+                URLUtil.guessFileName(url, contentDisposition, mimetype)
+            }
+            val resolvedMime = mimetype?.takeIf { it.isNotBlank() }
+                ?: if (fileName.endsWith(".zip", ignoreCase = true)) "application/zip"
+                else if (fileName.endsWith(".pdf", ignoreCase = true)) "application/pdf"
+                else "application/octet-stream"
+
+            val downloadManager = getSystemService(DOWNLOAD_SERVICE) as? DownloadManager
+            if (downloadManager == null) {
+                Toast.makeText(this, "Download service unavailable", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val request = DownloadManager.Request(Uri.parse(url)).apply {
+                setMimeType(resolvedMime)
+                val cookie = CookieManager.getInstance().getCookie(url)
+                if (!cookie.isNullOrBlank()) {
+                    addRequestHeader("Cookie", cookie)
+                }
+                if (!userAgent.isNullOrBlank()) {
+                    addRequestHeader("User-Agent", userAgent)
+                }
+                setTitle(fileName)
+                setDescription("Downloading $fileName")
+                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            }
+
+            val downloadId = downloadManager.enqueue(request)
+
+            viewModel.recordDownload(
+                DownloadEntry(
+                    downloadId = downloadId,
+                    fileName = fileName,
+                    url = url,
+                    totalBytes = if (contentLength > 0) contentLength else 0L,
+                    status = DownloadStatus.DOWNLOADING
+                )
+            )
+
+            Toast.makeText(this, "Downloading $fileName...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 

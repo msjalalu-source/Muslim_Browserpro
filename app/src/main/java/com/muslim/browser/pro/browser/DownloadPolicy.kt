@@ -86,16 +86,29 @@ object DownloadPolicy {
         }
         val clean = url.substringBefore('?').substringBefore('#').trim()
         val candidate = clean.substringAfterLast('/')
+        if (candidate.contains('.')) {
+            return decodeFileName(candidate)
+        }
+        val query = url.substringAfter('?', "").substringBefore('#')
+        if (query.isNotEmpty()) {
+            for (param in query.split('&')) {
+                val value = param.substringAfter('=', "")
+                if (value.isNotEmpty()) {
+                    val decoded = decodeFileName(value).substringAfterLast('/')
+                    if (decoded.contains('.')) {
+                        return decoded
+                    }
+                }
+            }
+        }
         return decodeFileName(candidate)
     }
 
     fun extractExtension(url: String, contentDisposition: String? = null): String {
-        if (!contentDisposition.isNullOrBlank() && contentDisposition.contains("filename=", ignoreCase = true)) {
-            val candidate = contentDisposition.substringAfter("filename=").replace("\"", "").trim()
-            val ext = candidate.substringAfterLast('.')
-            if (ext.isNotEmpty()) {
-                return ext.lowercase(Locale.ROOT)
-            }
+        val fileName = extractFileName(url, contentDisposition)
+        val ext = fileName.substringAfterLast('.', "")
+        if (ext.isNotEmpty() && ext != fileName) {
+            return ext.lowercase(Locale.ROOT)
         }
         val clean = url.substringBefore('?').substringBefore('#').substringAfterLast('/').substringAfterLast('.')
         return clean.lowercase(Locale.ROOT)
@@ -170,14 +183,61 @@ object DownloadPolicy {
         return matchesExtensionOrPath(url, contentDisposition, AUDIO_EXTS)
     }
 
-    fun isDownloadableFileUrl(url: String): Boolean {
+    val ZIP_EXTS: HashSet<String> = hashSetOf(
+        "zip"
+    )
+
+    fun isZip(url: String, mimeType: String? = null, contentDisposition: String? = null): Boolean {
+        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (mime == "application/zip" ||
+            mime == "application/x-zip-compressed" ||
+            mime == "application/x-zip"
+        ) return true
+        return matchesExtensionOrPath(url, contentDisposition, ZIP_EXTS)
+    }
+
+    fun isDownloadableFileUrl(
+        url: String,
+        mimeType: String? = null,
+        contentDisposition: String? = null
+    ): Boolean {
         if (url.isBlank()) return false
-        if (isVideo(url)) return false
+        if (isVideo(url, mimeType, contentDisposition)) return false
+
+        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
+        if (mime == "application/zip" ||
+            mime == "application/x-zip-compressed" ||
+            mime == "application/x-zip" ||
+            mime == "application/pdf" ||
+            mime == "application/octet-stream"
+        ) {
+            return true
+        }
+
+        if (!contentDisposition.isNullOrBlank()) {
+            val dispExt = extractExtension("", contentDisposition)
+            if (DOWNLOADABLE_EXTS.contains(dispExt) || AUDIO_EXTS.contains(dispExt)) {
+                return true
+            }
+        }
+
         val cleanUrl = url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT)
         val fileName = cleanUrl.substringAfterLast('/')
-        if (!fileName.contains('.')) return false
-        val ext = fileName.substringAfterLast('.')
-        return DOWNLOADABLE_EXTS.contains(ext) || AUDIO_EXTS.contains(ext)
+        if (fileName.contains('.')) {
+            val ext = fileName.substringAfterLast('.')
+            if (DOWNLOADABLE_EXTS.contains(ext) || AUDIO_EXTS.contains(ext)) {
+                return true
+            }
+        }
+
+        val lowerUrl = url.lowercase(Locale.ROOT)
+        for (ext in DOWNLOADABLE_EXTS) {
+            if (lowerUrl.contains(".$ext") || lowerUrl.contains("=$ext") || lowerUrl.contains("%2e$ext")) {
+                return true
+            }
+        }
+
+        return false
     }
 
     fun recordTrustedOrigin(url: String) {

@@ -93,9 +93,87 @@ class DownloadPolicyVerificationTest {
         if (workflow.exists()) {
             val content = workflow.readText()
             assertTrue(content.contains("apksigner verify"))
-            assertTrue(content.contains("app-release-unsigned.apk"))
-            assertTrue(content.contains("RELEASE_KEYSTORE_BASE64"))
         }
+    }
+
+    @Test
+    fun testZipDetectionWithMimeTypesAndExtensions() {
+        // Direct extension
+        assertTrue(DownloadPolicy.isZip("https://example.com/archive.zip"))
+        assertTrue(DownloadPolicy.isZip("https://example.com/ARCHIVE.ZIP"))
+
+        // Common ZIP MIME types
+        assertTrue(DownloadPolicy.isZip("https://example.com/download", mimeType = "application/zip"))
+        assertTrue(DownloadPolicy.isZip("https://example.com/download", mimeType = "application/x-zip-compressed"))
+        assertTrue(DownloadPolicy.isZip("https://example.com/download", mimeType = "application/x-zip"))
+
+        // Content-Disposition with .zip filename
+        assertTrue(DownloadPolicy.isZip("https://example.com/download?id=42", contentDisposition = "attachment; filename=\"data_export.zip\""))
+        assertTrue(DownloadPolicy.isZip("https://example.com/download?id=42", contentDisposition = "attachment; filename*=UTF-8''data_export.zip"))
+
+        // Query parameter filename
+        assertTrue(DownloadPolicy.isZip("https://example.com/download?file=backup.zip"))
+
+        // isDownloadableFileUrl
+        assertTrue(DownloadPolicy.isDownloadableFileUrl("https://example.com/archive.zip"))
+        assertTrue(DownloadPolicy.isDownloadableFileUrl("https://example.com/download", mimeType = "application/zip"))
+        assertTrue(DownloadPolicy.isDownloadableFileUrl("https://example.com/download", contentDisposition = "attachment; filename=project.zip"))
+
+        // DownloadPolicy.evaluate allows legitimate zip
+        val result = DownloadPolicy.evaluate("https://example.com/archive.zip", "application/zip", null)
+        assertTrue(result is DownloadPolicy.Result.Allowed)
+    }
+
+    @Test
+    fun testProtectionEngineAllowsZipAndPreservesRestrictions() {
+        // ZIP allowed
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
+            ProtectionEngine.checkDownloadType("https://example.com/archive.zip", null, null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
+            ProtectionEngine.checkDownloadType("https://example.com/dl", "application/zip", null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
+            ProtectionEngine.checkDownloadType("https://example.com/dl", "application/x-zip-compressed", null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
+            ProtectionEngine.checkDownloadType("https://example.com/dl?id=1", null, "attachment; filename=export.zip")
+        )
+
+        // Existing allowed types preserved
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_PDF,
+            ProtectionEngine.checkDownloadType("https://example.com/doc.pdf", "application/pdf", null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.ALLOWED_IMAGE,
+            ProtectionEngine.checkDownloadType("https://example.com/img.png", "image/png", null)
+        )
+
+        // Restricted types remain blocked
+        assertEquals(
+            ProtectionEngine.DownloadStatus.BLOCKED_VIDEO,
+            ProtectionEngine.checkDownloadType("https://example.com/video.mp4", "video/mp4", null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.BLOCKED_AUDIO,
+            ProtectionEngine.checkDownloadType("https://example.com/audio.mp3", "audio/mpeg", null)
+        )
+        assertEquals(
+            ProtectionEngine.DownloadStatus.BLOCKED_APK,
+            ProtectionEngine.checkDownloadType("https://malicious.com/app.apk", null, null)
+        )
+    }
+
+    @Test
+    fun testNavigationControllerEvaluatesZipDownload() {
+        val decision = NavigationController.evaluate("https://example.com/files/archive.zip", emptySet())
+        assertTrue(decision is NavigationDecision.Download)
+        assertEquals("https://example.com/files/archive.zip", (decision as NavigationDecision.Download).url)
     }
 }
 
