@@ -17,7 +17,6 @@ data class BrowserUiState(
     val isTabsDialogOpen: Boolean = false,
     val isDownloadsOpen: Boolean = false,
     val isHistoryOpen: Boolean = false,
-    val isDiagnosticOpen: Boolean = false,
     val browsingHistory: List<HistoryEntry> = emptyList(),
     val downloadHistory: List<DownloadEntry> = emptyList(),
     val blockedInfo: BlockedInfo = BlockedInfo(),

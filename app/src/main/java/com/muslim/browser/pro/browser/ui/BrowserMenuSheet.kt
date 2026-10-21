@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
@@ -112,7 +111,6 @@ fun BrowserMenuSheet(
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
     onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
-    onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -128,7 +126,6 @@ fun BrowserMenuSheet(
     var showClearCacheCookiesDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAutofillDialog by remember { mutableStateOf(false) }
-    var showHealthCheckDialog by remember { mutableStateOf(false) }
     var lastPdfJobTimestamp by remember { mutableStateOf(0L) }
 
     val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(uiState.currentUrl)
@@ -148,17 +145,6 @@ fun BrowserMenuSheet(
     // Dialog: Smart Form Autofill Settings & Profile Editor
     if (showAutofillDialog) {
         AutofillSettingsDialog(onDismiss = { showAutofillDialog = false })
-    }
-
-    // Dialog: Settings Health Check (সেটিং স্বাস্থ্য পরীক্ষা)
-    if (showHealthCheckDialog) {
-        com.muslim.browser.pro.browser.SettingsHealthCheckDialog(
-            uiState = uiState,
-            onToggleAdBlocking = onToggleAdBlocking,
-            onTogglePopupBlocking = onTogglePopupBlocking,
-            onSelectTheme = onSelectTheme,
-            onDismiss = { showHealthCheckDialog = false }
-        )
     }
 
     // Dialog: Clear All Data
@@ -433,18 +419,6 @@ fun BrowserMenuSheet(
                     onClick = { showThemeDialog = true },
                     trailingContent = { MenuBadge(text = uiState.appTheme.displayName) },
                     modifier = Modifier.testTag("menu_item_theme")
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Settings Health Check (সেটিং স্বাস্থ্য পরীক্ষা)
-                MenuRow(
-                    title = "সেটিং স্বাস্থ্য পরীক্ষা",
-                    icon = Icons.Default.HealthAndSafety,
-                    contentDescription = "সেটিং স্বাস্থ্য পরীক্ষা",
-                    onClick = { showHealthCheckDialog = true },
-                    trailingContent = { MenuBadge(text = "পরীক্ষা") },
-                    modifier = Modifier.testTag("menu_item_health_check")
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

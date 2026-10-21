@@ -95,7 +95,6 @@ class MainActivity : ComponentActivity() {
                         uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
                         uiState.isDownloadsOpen -> viewModel.closeDownloads()
                         uiState.isHistoryOpen -> viewModel.closeHistory()
-                        uiState.isDiagnosticOpen -> viewModel.closeDiagnostic()
                         currentWebView.canGoBack() -> currentWebView.goBack()
                         !uiState.isHomePage -> viewModel.goHome()
                         else -> finish()
@@ -176,8 +175,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 },
                                 onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
-                                onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) },
-                                onOpenDiagnostics = { viewModel.openDiagnostic() }
+                                onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) }
                             )
                         }
 

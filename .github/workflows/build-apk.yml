@@ -40,20 +40,61 @@ jobs:
       - name: Ensure Gradle wrapper exists
         run: |
           mkdir -p gradle/wrapper
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "gradle-wrapper.jar not found, generating or downloading wrapper..."
-            GRADLE_VER="8.11.1"
-            if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
-              DETECTED_VER=$(grep -E 'distributionUrl=.*gradle-[0-9.]+' gradle/wrapper/gradle-wrapper.properties | sed -E 's/.*gradle-([0-9.]+)-.*/\1/' | head -n 1)
-              [ -n "$DETECTED_VER" ] && GRADLE_VER="$DETECTED_VER"
-            fi
-            echo "Attempting to generate wrapper for Gradle $GRADLE_VER..."
+
+          # Ensure settings file exists so Gradle recognizes root build directory
+          if [ ! -f "settings.gradle" ] && [ ! -f "settings.gradle.kts" ]; then
+            echo "settings.gradle(.kts) missing! Creating baseline settings.gradle.kts..."
+            cat << 'EOF' > settings.gradle.kts
+pluginManagement {
+    repositories {
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "Muslim Browser Pro"
+include(":app")
+EOF
+          fi
+
+          GRADLE_VER="8.11.1"
+          if [ -f "gradle/wrapper/gradle-wrapper.properties" ]; then
+            DETECTED_VER=$(grep -E 'distributionUrl=.*gradle-[0-9.]+' gradle/wrapper/gradle-wrapper.properties | sed -E 's/.*gradle-([0-9.]+)-.*/\1/' | head -n 1)
+            [ -n "$DETECTED_VER" ] && GRADLE_VER="$DETECTED_VER"
+          else
+            cat << EOF > gradle/wrapper/gradle-wrapper.properties
+distributionBase=GRADLE_USER_HOME
+distributionPath=wrapper/dists
+distributionUrl=https\://services.gradle.org/distributions/gradle-${GRADLE_VER}-bin.zip
+networkTimeout=10000
+validateDistributionUrl=true
+zipStoreBase=GRADLE_USER_HOME
+zipStorePath=wrapper/dists
+EOF
+          fi
+
+          if [ ! -s "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "gradle-wrapper.jar not found or empty, downloading directly..."
+            curl -fL -s -S "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VER}/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar || \
+            curl -fL -s -S "https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar || \
             gradle wrapper --gradle-version "$GRADLE_VER" || true
-            if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-              echo "Downloading gradle-wrapper.jar for version $GRADLE_VER..."
-              curl -sLo gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/v${GRADLE_VER}/gradle/wrapper/gradle-wrapper.jar" || \
-              curl -sLo gradle/wrapper/gradle-wrapper.jar "https://raw.githubusercontent.com/gradle/gradle/master/gradle/wrapper/gradle-wrapper.jar"
-            fi
+          fi
+
+          if [ ! -f "gradlew" ]; then
+            gradle wrapper --gradle-version "$GRADLE_VER" || true
           fi
           chmod +x gradlew
 

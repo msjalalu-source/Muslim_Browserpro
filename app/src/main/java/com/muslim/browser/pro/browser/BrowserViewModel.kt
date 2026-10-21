@@ -42,7 +42,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             isTabsDialogOpen = false,
             isDownloadsOpen = false,
             isHistoryOpen = false,
-            isDiagnosticOpen = false,
             browsingHistory = repository.getHistory(),
             downloadHistory = repository.getDownloads(),
             blockedInfo = BlockedInfo(),
@@ -71,9 +70,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun openHistory() { _uiState.update { it.copy(isHistoryOpen = true) } }
     fun closeHistory() { _uiState.update { it.copy(isHistoryOpen = false) } }
-
-    fun openDiagnostic() { _uiState.update { it.copy(isDiagnosticOpen = true) } }
-    fun closeDiagnostic() { _uiState.update { it.copy(isDiagnosticOpen = false) } }
 
     fun onSearchInputChange(input: String) {
         _uiState.update { it.copy(searchInput = input) }
