@@ -31,7 +31,7 @@ data class BrowserUiState(
     val isTranslating: Boolean = false,
     val appTheme: AppTheme = AppTheme.WHITE,
     val selectedTranslationEngine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
-    val selectedSearchEngine: SearchEngine = SearchEngine.GOOGLE,
+    val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
     val isPageContentVisible: Boolean = true
 ) {

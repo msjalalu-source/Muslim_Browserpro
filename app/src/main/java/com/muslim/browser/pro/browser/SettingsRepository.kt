@@ -24,15 +24,33 @@ class SettingsRepository(private val context: Context) {
         const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
         const val KEY_CUSTOM_KEYWORDS = "key_custom_keywords"
         const val KEY_DOWNLOAD_HISTORY = "key_download_history"
+        const val KEY_SEARCH_ENGINE = "key_search_engine"
 
         val DEFAULT_PROTECTED_KEYWORDS = listOf("vpn", "proxy", "bypass", "tor")
 
         val DEFAULT_FAVORITES = listOf(
-            FavoriteSite(id = "1", name = "Quran.com", url = "https://quran.com", iconLetter = "Q", badgeColor = 0xFF2E7D32),
-            FavoriteSite(id = "2", name = "Sunnah.com", url = "https://sunnah.com", iconLetter = "S", badgeColor = 0xFF1B5E20),
-            FavoriteSite(id = "3", name = "Wikipedia", url = "https://wikipedia.org", iconLetter = "W", badgeColor = 0xFF1976D2),
-            FavoriteSite(id = "4", name = "IslamQA", url = "https://islamqa.info", iconLetter = "I", badgeColor = 0xFF388E3C)
+            FavoriteSite(id = "1", name = "MoldovaLive", url = "https://moldovalive.md", iconLetter = "MD", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "2", name = "Moldova1", url = "https://moldova1.md", iconLetter = "M1", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "3", name = "Google AI Studio", url = "https://aistudio.google.com", iconLetter = "AI", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "4", name = "GitHub", url = "https://github.com", iconLetter = "GH", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "5", name = "Prothom Alo", url = "https://www.prothomalo.com", iconLetter = "PA", badgeColor = 0xFFD32F2F),
+            FavoriteSite(id = "6", name = "The Daily Star", url = "https://www.thedailystar.net", iconLetter = "DS", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "7", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "8", name = "BangiNews", url = "https://banginews.com", iconLetter = "BN", badgeColor = 0xFFD32F2F)
         )
+    }
+
+    fun getSearchEngine(): SearchEngine {
+        val raw = prefs.getString(KEY_SEARCH_ENGINE, null) ?: return SearchEngine.DUCKDUCKGO
+        return try {
+            SearchEngine.valueOf(raw)
+        } catch (_: Exception) {
+            SearchEngine.DUCKDUCKGO
+        }
+    }
+
+    fun setSearchEngine(engine: SearchEngine) {
+        prefs.edit().putString(KEY_SEARCH_ENGINE, engine.name).apply()
     }
 
     fun getAppTheme(): AppTheme {

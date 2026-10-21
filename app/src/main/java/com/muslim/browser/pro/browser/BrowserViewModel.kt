@@ -54,7 +54,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             desktopArchitecture = repository.getDesktopArchitecture(),
             appTheme = repository.getAppTheme(),
             selectedTranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
-            selectedSearchEngine = SearchEngine.GOOGLE,
+            selectedSearchEngine = repository.getSearchEngine(),
             isPageContentVisible = true
         )
     )
@@ -338,6 +338,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun selectSearchEngine(engine: SearchEngine) {
+        repository.setSearchEngine(engine)
         _uiState.update { it.copy(selectedSearchEngine = engine) }
     }
 

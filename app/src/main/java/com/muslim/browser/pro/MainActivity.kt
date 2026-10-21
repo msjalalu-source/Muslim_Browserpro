@@ -36,6 +36,7 @@ import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
 import com.muslim.browser.pro.browser.ui.HomePage
+import com.muslim.browser.pro.browser.ui.TabsSelectionDialog
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -179,6 +180,19 @@ class MainActivity : ComponentActivity() {
                                 onOpenDiagnostics = { viewModel.openDiagnostic() }
                             )
                         }
+
+                        if (uiState.isTabsDialogOpen) {
+                            TabsSelectionDialog(
+                                uiState = uiState,
+                                onSelectTab = { tabId -> viewModel.selectTab(tabId) },
+                                onCloseTab = { tabId ->
+                                    tabWebViewManager.destroyWebView(tabId)
+                                    viewModel.closeTab(tabId)
+                                },
+                                onNewTab = { viewModel.openNewTab() },
+                                onDismiss = { viewModel.closeTabsDialog() }
+                            )
+                        }
                     }
                 }
             }
@@ -207,7 +221,8 @@ class MainActivity : ComponentActivity() {
                     val targetUrl = request?.url?.toString() ?: return false
                     val decision = NavigationController.evaluate(
                         url = targetUrl,
-                        customKeywords = viewModel.uiState.value.customKeywords
+                        customKeywords = viewModel.uiState.value.customKeywords,
+                        searchEngine = viewModel.uiState.value.selectedSearchEngine
                     )
                     if (decision is com.muslim.browser.pro.browser.NavigationDecision.Blocked) {
                         viewModel.setBlockedUrl(targetUrl, decision.reason, decision.detail)

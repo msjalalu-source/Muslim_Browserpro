@@ -34,9 +34,16 @@ object NavigationController {
                 return NavigationDecision.Allowed
             }
 
-            // 3. Redirect all search results to DuckDuckGo SafeSearch
-            val safeUrl = ProtectionEngine.buildDuckDuckGoSafeSearchUrl(searchEngineQuery)
-            return NavigationDecision.Redirect(safeUrl)
+            // 3. Enforce Strict Safe Search on DuckDuckGo searches without hijacking other search engines
+            val isDdg = try {
+                val host = Uri.parse(trimmed).host?.lowercase(Locale.ROOT) ?: ""
+                host.contains("duckduckgo.com")
+            } catch (_: Exception) { false }
+
+            if (isDdg) {
+                val safeUrl = ProtectionEngine.buildDuckDuckGoSafeSearchUrl(searchEngineQuery)
+                return NavigationDecision.Redirect(safeUrl)
+            }
         }
 
         // Audio & Download policies
