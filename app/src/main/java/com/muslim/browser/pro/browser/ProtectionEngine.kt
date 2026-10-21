@@ -409,4 +409,8 @@ object ProtectionEngine {
     fun extractExtension(url: String, contentDisposition: String?): String {
         return DownloadPolicy.extractExtension(url, contentDisposition)
     }
+
+    fun isHarmfulUrl(url: String, customKeywords: Set<String> = emptySet()): Boolean {
+        return checkDirectUrl(url, customKeywords) is FilterResult.Blocked
+    }
 }
