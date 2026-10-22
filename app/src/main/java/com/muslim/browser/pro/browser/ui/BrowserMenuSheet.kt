@@ -215,7 +215,7 @@ fun BrowserMenuSheet(
                         showTranslationConfirmDialog = false
                         val liveWv = getActiveLiveWebView(context, uiState)
                         if (liveWv != null) {
-                            liveWv.evaluateJavascript("document.querySelector('input[type=password]') !== null") { result ->
+                            liveWv.evaluateJavascript("Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })") { result ->
                                 val hasPassword = result?.trim()?.equals("true", ignoreCase = true) == true
                                 if (hasPassword) {
                                     android.widget.Toast.makeText(
@@ -299,7 +299,7 @@ fun BrowserMenuSheet(
                         } else {
                             val liveWv = getActiveLiveWebView(context, uiState)
                             if (liveWv != null) {
-                                liveWv.evaluateJavascript("document.querySelector('input[type=password]') !== null") { result ->
+                                liveWv.evaluateJavascript("Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })") { result ->
                                     val hasPassword = result?.trim()?.equals("true", ignoreCase = true) == true
                                     if (hasPassword) {
                                         android.widget.Toast.makeText(

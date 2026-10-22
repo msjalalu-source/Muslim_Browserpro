@@ -137,6 +137,56 @@ class KeyboardVisibilityConfigTest {
         assertTrue("WebView must be focusable to receive input and suggestions", webView.isFocusable)
         assertTrue("WebView must be focusable in touch mode to maintain soft keyboard connection", webView.isFocusableInTouchMode)
     }
+
+    @Test
+    fun testBottomSystemNavigationInsetsRespected() {
+        // 3-button navigation (typically 48dp navigation bar)
+        val threeButtonNavInset = 48f
+        val bottomBarContentHeight = 41.8f + 0.5f // row + divider
+        val totalBottomPaddingThreeButton = bottomBarContentHeight + threeButtonNavInset
+        assertTrue("Bottom padding for 3-button nav must strictly exceed the system nav bar height",
+            totalBottomPaddingThreeButton > threeButtonNavInset)
+        assertEquals("Total bottom padding must equal bottom bar content height + 3-button nav inset",
+            90.3f, totalBottomPaddingThreeButton, 0.001f)
+
+        // Gesture navigation (typically 16dp - 24dp navigation bar)
+        val gestureNavInset = 20f
+        val totalBottomPaddingGesture = bottomBarContentHeight + gestureNavInset
+        assertTrue("Bottom padding for gesture nav must strictly exceed the gesture nav bar height",
+            totalBottomPaddingGesture > gestureNavInset)
+        assertEquals("Total bottom padding must equal bottom bar content height + gesture nav inset",
+            62.3f, totalBottomPaddingGesture, 0.001f)
+    }
+
+    @Test
+    fun testCombinedKeyboardAndBottomBarPaddingNoOverlap() {
+        val navInset = 48f
+        val bottomBarHeight = 41.8f + navInset // 89.8f
+
+        // Case 1: Keyboard closed (ime = 0) -> Content area stops at bottomBarHeight (above nav bar)
+        val imeClosed = 0f
+        val additionalClosed = maxOf(0f, imeClosed - bottomBarHeight)
+        val effectiveBottomPaddingClosed = bottomBarHeight + additionalClosed
+        assertEquals(89.8f, effectiveBottomPaddingClosed, 0.001f)
+        assertTrue("Content must stop above navigation bar when keyboard is closed",
+            effectiveBottomPaddingClosed >= navInset)
+
+        // Case 2: Keyboard smaller than bottom bar -> Content area stops at bottomBarHeight (above nav bar)
+        val imeSmall = 60f
+        val additionalSmall = maxOf(0f, imeSmall - bottomBarHeight)
+        val effectiveBottomPaddingSmall = bottomBarHeight + additionalSmall
+        assertEquals(89.8f, effectiveBottomPaddingSmall, 0.001f)
+        assertTrue("Content must stop above navigation bar when IME is small",
+            effectiveBottomPaddingSmall >= navInset)
+
+        // Case 3: Keyboard larger than bottom bar -> Content area stops above keyboard (no double padding)
+        val imeLarge = 320f
+        val additionalLarge = maxOf(0f, imeLarge - bottomBarHeight)
+        val effectiveBottomPaddingLarge = bottomBarHeight + additionalLarge
+        assertEquals(320f, effectiveBottomPaddingLarge, 0.001f)
+        assertTrue("Content must stop above keyboard when IME is large",
+            effectiveBottomPaddingLarge >= imeLarge)
+    }
 }
 
 

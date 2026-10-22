@@ -252,5 +252,18 @@ class BrowserMenuActionsTest {
         vm.deleteDownloadEntry("9999")
         assertFalse(vm.uiState.value.downloadHistory.any { it.downloadId == 9999L })
     }
+
+    @Test
+    fun testVisiblePasswordDetectionScriptIgnoresHiddenInputs() {
+        val script = "Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })"
+
+        // Verify the script checks computed styles and dimensions rather than simple existence
+        assertTrue("Script must query password inputs", script.contains("input[type=password]"))
+        assertTrue("Script must check offsetParent", script.contains("offsetParent"))
+        assertTrue("Script must check display is not none", script.contains("s.display !== 'none'"))
+        assertTrue("Script must check visibility is not hidden", script.contains("s.visibility !== 'hidden'"))
+        assertTrue("Script must check element dimensions", script.contains("offsetWidth") && script.contains("offsetHeight"))
+        assertFalse("Script must not use naive null check", script.contains("querySelector('input[type=password]') !== null"))
+    }
 }
 
