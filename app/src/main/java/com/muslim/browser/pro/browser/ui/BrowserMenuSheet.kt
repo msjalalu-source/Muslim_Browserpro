@@ -93,7 +93,6 @@ import kotlinx.coroutines.launch
 import com.muslim.browser.pro.browser.AutofillEngine
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.DesktopArchitecture
-import com.muslim.browser.pro.browser.LibreTranslateClient
 import com.muslim.browser.pro.browser.ShareIntentHandler
 import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.LocalAppColors
@@ -406,10 +405,7 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // LibreTranslate Settings Section
-                LibreTranslateSettingsSection()
 
-                Spacer(modifier = Modifier.height(6.dp))
 
                 // Settings -> Theme (Centralized Theme Selection: White, Black & White)
                 MenuRow(
@@ -470,7 +466,10 @@ fun BrowserMenuSheet(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 // Experimental Browser Identity Profile: Windows 10 Touch
-                DesktopSection(uiState = uiState)
+                DesktopSection(
+                    uiState = uiState,
+                    onToggleWindows10Touch = onToggleWindows10Touch
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -841,162 +840,13 @@ private fun AutofillSection(
     }
 }
 
-@Composable
-private fun LibreTranslateSettingsSection() {
-    val context = LocalContext.current
-    val colors = LocalAppColors.current
-    val scope = rememberCoroutineScope()
 
-    var serverUrl by remember { mutableStateOf(LibreTranslateClient.getServerUrl(context)) }
-    var apiKey by remember { mutableStateOf(LibreTranslateClient.getApiKey(context)) }
-    var isTesting by remember { mutableStateOf(false) }
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("section_libre_translate_settings"),
-        shape = RoundedCornerShape(8.dp),
-        color = colors.surfaceVariant,
-        border = BorderStroke(1.dp, colors.border)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Translate,
-                    contentDescription = null,
-                    tint = colors.iconTint,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "LibreTranslate Settings",
-                    color = colors.textPrimary,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "Server URL",
-                color = colors.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            OutlinedTextField(
-                value = serverUrl,
-                onValueChange = {
-                    serverUrl = it
-                    LibreTranslateClient.setServerUrl(context, it)
-                },
-                placeholder = {
-                    Text("https://libretranslate.com", color = colors.textSecondary, fontSize = 11.sp)
-                },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("libre_server_url_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = colors.textPrimary,
-                    unfocusedTextColor = colors.textPrimary,
-                    focusedBorderColor = colors.accent,
-                    unfocusedBorderColor = colors.border,
-                    cursorColor = colors.accent
-                )
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "API Key (Optional)",
-                color = colors.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = {
-                    apiKey = it
-                    LibreTranslateClient.setApiKey(context, it)
-                },
-                placeholder = {
-                    Text("Leave blank if not required", color = colors.textSecondary, fontSize = 11.sp)
-                },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("libre_api_key_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = colors.textPrimary,
-                    unfocusedTextColor = colors.textPrimary,
-                    focusedBorderColor = colors.accent,
-                    unfocusedBorderColor = colors.border,
-                    cursorColor = colors.accent
-                )
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Button(
-                onClick = {
-                    if (isTesting) return@Button
-                    isTesting = true
-                    scope.launch {
-                        val result = LibreTranslateClient.testConnection(serverUrl, apiKey)
-                        isTesting = false
-                        when (result) {
-                            is LibreTranslateClient.TranslationResult.Success -> {
-                                val translated = result.translations.firstOrNull() ?: "হ্যালো"
-                                Toast.makeText(context, "সংযোগ সফল! Hello -> $translated", Toast.LENGTH_LONG).show()
-                            }
-                            is LibreTranslateClient.TranslationResult.Error -> {
-                                Toast.makeText(context, "সংযোগ ব্যর্থ: ${result.messageBn}", Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
-                },
-                enabled = !isTesting,
-                shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.accent,
-                    contentColor = colors.buttonText
-                ),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .testTag("btn_test_libre_connection")
-            ) {
-                if (isTesting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
-                        strokeWidth = 1.5.dp,
-                        color = colors.buttonText
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("পরীক্ষা চলছে...", fontSize = 11.sp)
-                } else {
-                    Text("Test Connection", fontSize = 11.sp)
-                }
-            }
-        }
-    }
-}
 
 @Composable
-private fun DesktopSection(uiState: BrowserUiState) {
-    val context = LocalContext.current
+private fun DesktopSection(
+    uiState: BrowserUiState,
+    onToggleWindows10Touch: (Boolean) -> Unit
+) {
     val colors = LocalAppColors.current
     MenuToggleRow(
         title = "Windows 10 Desktop",
@@ -1004,14 +854,9 @@ private fun DesktopSection(uiState: BrowserUiState) {
         icon = Icons.Default.DesktopWindows,
         contentDescription = "Windows 10 Desktop",
         checked = uiState.isWindows10TouchEnabled,
-        onCheckedChange = { checked ->
-            val target = if (checked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
-            notifyArchitectureChange(context, target)
-        },
+        onCheckedChange = onToggleWindows10Touch,
         onRowClick = {
-            val isChecked = uiState.isWindows10TouchEnabled
-            val target = if (!isChecked) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
-            notifyArchitectureChange(context, target)
+            onToggleWindows10Touch(!uiState.isWindows10TouchEnabled)
         },
         surfaceColor = colors.surface,
         borderColor = colors.border.copy(alpha = 0.5f),
@@ -1634,68 +1479,6 @@ fun DownloadItemCompact(label: String, isBlocked: Boolean) {
     }
 }
 
-private fun notifyArchitectureChange(context: android.content.Context, architecture: DesktopArchitecture) {
-    try {
-        var currentContext: android.content.Context? = context
-        while (currentContext != null) {
-            if (currentContext is com.muslim.browser.pro.MainActivity) {
-                break
-            }
-            if (currentContext is android.content.ContextWrapper) {
-                currentContext = currentContext.baseContext
-            } else {
-                break
-            }
-        }
-
-        val effectiveArchitecture = if (architecture == DesktopArchitecture.WINDOWS_10_TOUCH) {
-            DesktopArchitecture.WINDOWS_10_TOUCH
-        } else {
-            DesktopArchitecture.NONE
-        }
-
-        if (currentContext is com.muslim.browser.pro.MainActivity) {
-            val twm = try {
-                currentContext.tabWebViewManager
-            } catch (_: Throwable) {
-                null
-            }
-            twm?.syncAllLiveWebViewsArchitecture(effectiveArchitecture)
-
-            val currentWebView = try {
-                val field = currentContext.javaClass.getDeclaredField("webViewInstance")
-                field.isAccessible = true
-                field.get(currentContext) as? android.webkit.WebView
-            } catch (_: Throwable) {
-                null
-            }
-
-            if (currentWebView != null) {
-                com.muslim.browser.pro.browser.DesktopCore.synchronizeDesktopWebView(
-                    currentWebView,
-                    currentWebView.url,
-                    effectiveArchitecture,
-                    true
-                )
-            }
-
-            val viewModel = try {
-                val m = currentContext.javaClass.getDeclaredMethod("getViewModel")
-                m.isAccessible = true
-                m.invoke(currentContext) as? com.muslim.browser.pro.browser.BrowserViewModel
-            } catch (_: Throwable) {
-                null
-            }
-            viewModel?.selectDesktopArchitecture(effectiveArchitecture)
-            return
-        }
-
-        val method = currentContext?.javaClass?.methods?.firstOrNull {
-            it.name.startsWith("setDesktopArchitecture") && it.parameterTypes.size == 1
-        }
-        method?.invoke(currentContext, effectiveArchitecture)
-    } catch (_: Throwable) {}
-}
 
 internal fun sanitizePdfJobName(title: String?, url: String?): String {
     val baseName = if (!title.isNullOrBlank()) {

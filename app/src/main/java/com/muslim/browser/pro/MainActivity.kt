@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.muslim.browser.pro.browser.BrowserViewModel
+import com.muslim.browser.pro.browser.DesktopArchitecture
 import com.muslim.browser.pro.browser.DesktopCore
 import com.muslim.browser.pro.browser.DownloadEntry
 import com.muslim.browser.pro.browser.DownloadPolicy
@@ -81,9 +82,12 @@ class MainActivity : ComponentActivity() {
             context = this,
             webViewFactory = { tabId -> createConfiguredWebView(tabId) },
             onSyncDesktopMode = { webView, isDesktop ->
+                val arch = if (isDesktop) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
                 DesktopCore.applyCommonDesktopWebViewSettings(webView)
+                DesktopCore.synchronizeDesktopWebView(webView, webView.url ?: "", arch, true)
             },
             onSyncArchitecture = { webView, arch ->
+                DesktopCore.applyCommonDesktopWebViewSettings(webView)
                 DesktopCore.synchronizeDesktopWebView(
                     webView,
                     webView.url ?: "",
@@ -125,7 +129,9 @@ class MainActivity : ComponentActivity() {
                             onNewTab = { viewModel.openNewTab() },
                             onShowTabs = { viewModel.openTabsDialog() },
                             onToggleDesktopMode = {
-                                viewModel.toggleDesktopMode(!uiState.desktopArchitecture.isAnyDesktop())
+                                val newEnabled = !uiState.desktopArchitecture.isAnyDesktop()
+                                val target = if (newEnabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                                applyDesktopArchitecture(target, currentWebView)
                             },
                             onOpenMenu = { viewModel.openMenu() }
                         )
@@ -187,9 +193,18 @@ class MainActivity : ComponentActivity() {
                                     viewModel.clearAllHistory()
                                 },
                                 onClearCacheAndCookies = { tabWebViewManager.clearAllData() },
-                                onToggleDesktopMode = { enabled -> viewModel.toggleDesktopMode(enabled) },
-                                onToggleDesktopMode4 = { enabled -> viewModel.toggleDesktopMode4(enabled) },
-                                onToggleWindows10Touch = { enabled -> viewModel.toggleWindows10Touch(enabled) },
+                                onToggleDesktopMode = { enabled ->
+                                    val target = if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                                    applyDesktopArchitecture(target, currentWebView)
+                                },
+                                onToggleDesktopMode4 = { enabled ->
+                                    val target = if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                                    applyDesktopArchitecture(target, currentWebView)
+                                },
+                                onToggleWindows10Touch = { enabled ->
+                                    val target = if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
+                                    applyDesktopArchitecture(target, currentWebView)
+                                },
                                 onTranslateToBengali = {
                                     viewModel.translateCurrentPage(
                                         evalScript = { script, cb ->
@@ -247,6 +262,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun applyDesktopArchitecture(architecture: DesktopArchitecture, currentWebView: WebView?) {
+        viewModel.selectDesktopArchitecture(architecture)
+        tabWebViewManager.syncAllLiveWebViewsArchitecture(architecture)
+        if (!viewModel.uiState.value.isHomePage && currentWebView != null && !currentWebView.url.isNullOrBlank()) {
+            currentWebView.reload()
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun createConfiguredWebView(tabId: String): WebView {
         return WebView(this).apply {
@@ -265,6 +288,12 @@ class MainActivity : ComponentActivity() {
             }
 
             DesktopCore.applyCommonDesktopWebViewSettings(this)
+            DesktopCore.synchronizeDesktopWebView(
+                this,
+                null,
+                viewModel.uiState.value.desktopArchitecture,
+                true
+            )
 
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(

@@ -553,7 +553,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         evalScript(extractScript) { rawResult ->
             if (rawResult == null) {
                 _uiState.update { it.copy(isTranslating = false) }
-                Toast.makeText(getApplication(), "পেজ থেকে টেক্সট পড়া যায়নি", Toast.LENGTH_SHORT).show()
                 return@evalScript
             }
 
@@ -572,7 +571,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
             if (items.isEmpty()) {
                 _uiState.update { it.copy(isTranslating = false) }
-                Toast.makeText(getApplication(), "অনুবাদ করার মতো কোনো টেক্সট পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                 return@evalScript
             }
 
@@ -581,7 +579,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
             activeTranslationJob?.cancel()
             activeTranslationJob = viewModelScope.launch(Dispatchers.IO) {
-                val batches = items.chunked(20)
+                val batches = items.chunked(15)
                 val semaphore = Semaphore(2)
                 var hasFailed = false
 
@@ -613,8 +611,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                                 }
                                 is LibreTranslateClient.TranslationResult.Error -> {
                                     hasFailed = true
+                                    android.util.Log.w("BrowserViewModel", "LibreTranslate translation failed: ${res.messageBn}")
                                     withContext(Dispatchers.Main) {
-                                        Toast.makeText(getApplication(), res.messageBn, Toast.LENGTH_LONG).show()
                                         _uiState.update { it.copy(isTranslating = false) }
                                     }
                                     activeTranslationJob?.cancel()

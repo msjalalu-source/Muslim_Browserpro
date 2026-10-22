@@ -80,4 +80,12 @@ class LibreTranslateClientTest {
         val error = LibreTranslateClient.parseLibreTranslateError(json)
         assertEquals("Rate limit exceeded", error)
     }
+
+    @Test
+    fun testPortalErrorIsSanitizedWithoutLeakingUrl() {
+        val json = """{"error": "Visit https://portal.libretranslate.com to get an API key"}"""
+        val error = LibreTranslateClient.parseLibreTranslateError(json)
+        assertEquals("API key required", error)
+        assertTrue(!error.contains("portal.libretranslate.com"))
+    }
 }

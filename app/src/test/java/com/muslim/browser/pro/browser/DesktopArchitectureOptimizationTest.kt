@@ -207,4 +207,72 @@ class DesktopArchitectureOptimizationTest {
         DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.NONE, true)
         assertNull(webView.settings.userAgentString)
     }
+
+    @Test
+    fun test9_windows10DesktopModeStateAndPersistence() {
+        val app = context as android.app.Application
+        val repository = SettingsRepository(app)
+        val vm = BrowserViewModel(app)
+
+        // Initial default: Mobile (NONE)
+        assertEquals(DesktopArchitecture.NONE, vm.uiState.value.desktopArchitecture)
+        assertFalse(vm.uiState.value.isWindows10TouchEnabled)
+
+        // Toggle to Windows 10 Desktop
+        vm.toggleWindows10Touch(true)
+        assertEquals(DesktopArchitecture.WINDOWS_10_TOUCH, vm.uiState.value.desktopArchitecture)
+        assertTrue(vm.uiState.value.isWindows10TouchEnabled)
+        assertEquals(DesktopArchitecture.WINDOWS_10_TOUCH, repository.getDesktopArchitecture())
+
+        // Toggle back to Mobile
+        vm.toggleWindows10Touch(false)
+        assertEquals(DesktopArchitecture.NONE, vm.uiState.value.desktopArchitecture)
+        assertFalse(vm.uiState.value.isWindows10TouchEnabled)
+        assertEquals(DesktopArchitecture.NONE, repository.getDesktopArchitecture())
+    }
+
+    @Test
+    fun test10_tabWebViewManagerSynchronizeArchitecture() {
+        val twm = TabWebViewManager(
+            context = context,
+            webViewFactory = { tabId ->
+                WebView(context).apply {
+                    DesktopCore.applyCommonDesktopWebViewSettings(this)
+                }
+            },
+            onSyncArchitecture = { webView, arch ->
+                DesktopCore.applyCommonDesktopWebViewSettings(webView)
+                DesktopCore.synchronizeDesktopWebView(webView, webView.url ?: "", arch, true)
+            }
+        )
+
+        val wv1 = twm.getOrCreateWebView("tab1", "https://example.com").first
+        val wv2 = twm.getOrCreateWebView("tab2", "https://example.org").first
+
+        // Sync to Windows 10 Desktop
+        twm.syncAllLiveWebViewsArchitecture(DesktopArchitecture.WINDOWS_10_TOUCH)
+        assertEquals(DesktopCore.WINDOWS_10_TOUCH_USER_AGENT, wv1.settings.userAgentString)
+        assertEquals(DesktopCore.WINDOWS_10_TOUCH_USER_AGENT, wv2.settings.userAgentString)
+        assertTrue(wv1.settings.useWideViewPort)
+        assertTrue(wv2.settings.useWideViewPort)
+
+        // Sync back to Mobile
+        twm.syncAllLiveWebViewsArchitecture(DesktopArchitecture.NONE)
+        assertNull(wv1.settings.userAgentString)
+        assertNull(wv2.settings.userAgentString)
+    }
+
+    @Test
+    fun test11_initialWebViewCreationRespectsSavedArchitecture() {
+        val app = context as android.app.Application
+        val repository = SettingsRepository(app)
+        repository.setDesktopArchitecture(DesktopArchitecture.WINDOWS_10_TOUCH)
+
+        val vm = BrowserViewModel(app)
+        assertEquals(DesktopArchitecture.WINDOWS_10_TOUCH, vm.uiState.value.desktopArchitecture)
+        assertTrue(vm.uiState.value.isWindows10TouchEnabled)
+
+        // Clean up preference
+        repository.setDesktopArchitecture(DesktopArchitecture.NONE)
+    }
 }
