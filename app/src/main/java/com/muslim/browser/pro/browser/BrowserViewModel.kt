@@ -582,6 +582,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val batches = items.chunked(15)
                 val semaphore = Semaphore(2)
                 var hasFailed = false
+                var hasModifiedDom = false
 
                 val jobs = batches.map { batch ->
                     launch {
@@ -593,6 +594,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
                             when (res) {
                                 is LibreTranslateClient.TranslationResult.Success -> {
+                                    hasModifiedDom = true
                                     val updatesJson = org.json.JSONArray().apply {
                                         for (i in batch.indices) {
                                             val translated = res.translations.getOrNull(i) ?: batch[i].text
@@ -615,7 +617,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                                     withContext(Dispatchers.Main) {
                                         _uiState.update { it.copy(isTranslating = false) }
                                     }
-                                    activeTranslationJob?.cancel()
                                 }
                             }
                         }
@@ -624,9 +625,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
                 jobs.joinAll()
 
-                if (!hasFailed) {
-                    withContext(Dispatchers.Main) {
-                        _uiState.update { it.copy(isTranslating = false, isPageTranslated = true) }
+                withContext(Dispatchers.Main) {
+                    _uiState.update {
+                        it.copy(
+                            isTranslating = false,
+                            isPageTranslated = if (hasModifiedDom) true else it.isPageTranslated
+                        )
+                    }
+                    if (!hasFailed && hasModifiedDom) {
                         Toast.makeText(getApplication(), "পেজটি বাংলায় অনুবাদ করা হয়েছে", Toast.LENGTH_SHORT).show()
                         onComplete()
                     }

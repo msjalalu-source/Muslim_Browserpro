@@ -50,6 +50,29 @@ object LibreTranslateClient {
         data class Error(val messageBn: String) : TranslationResult()
     }
 
+    fun buildJsonRequestBody(
+        texts: List<String>,
+        sourceLang: String = "auto",
+        targetLang: String = "bn",
+        apiKey: String = ""
+    ): JSONObject {
+        return JSONObject().apply {
+            if (texts.size == 1) {
+                put("q", texts[0])
+            } else {
+                val qArray = JSONArray()
+                texts.forEach { qArray.put(it) }
+                put("q", qArray)
+            }
+            put("source", sourceLang)
+            put("target", targetLang)
+            put("format", "text")
+            if (apiKey.isNotBlank()) {
+                put("api_key", apiKey.trim())
+            }
+        }
+    }
+
     suspend fun translateBatch(
         serverUrl: String,
         apiKey: String,
@@ -66,46 +89,34 @@ object LibreTranslateClient {
         }
 
         val endpoint = if (base.endsWith("/translate", ignoreCase = true)) base else "$base/translate"
-        
-        // Attempt translation with source = "auto"
+
+        // Primary translation attempt with automatic language detection (source = "auto")
         val result = executeTranslateRequest(endpoint, apiKey, texts, sourceLang = "auto")
         if (result is TranslationResult.Success) {
             return@withContext result
         }
 
-        // If "auto" language detection returned 400 or failed, fallback to source = "en"
-        android.util.Log.i(TAG, "Attempting fallback to source language 'en'")
-        val fallbackResult = executeTranslateRequest(endpoint, apiKey, texts, sourceLang = "en")
-        if (fallbackResult is TranslationResult.Success) {
-            return@withContext fallbackResult
+        val err = result as TranslationResult.Error
+
+        // Fast-fail: Never perform retries on authentication, rate-limit, or network reachability errors
+        if (err.messageBn.contains("API Key") ||
+            err.messageBn.contains("সীমা") ||
+            err.messageBn.contains("নেটওয়ার্ক") ||
+            err.messageBn.contains("সার্ভার পাওয়া যাচ্ছে না")
+        ) {
+            return@withContext result
         }
 
-        // If batch array format failed with 400 and texts has multiple items, attempt item-by-item
-        if (texts.size > 1) {
-            android.util.Log.i(TAG, "Attempting sequential single-string translation fallback")
-            val singleTranslations = mutableListOf<String>()
-            var allSucceeded = true
-            for (text in texts) {
-                val singleRes = executeTranslateRequest(endpoint, apiKey, listOf(text), sourceLang = "auto")
-                val resolvedSingle = if (singleRes is TranslationResult.Success) {
-                    singleRes
-                } else {
-                    executeTranslateRequest(endpoint, apiKey, listOf(text), sourceLang = "en")
-                }
-
-                if (resolvedSingle is TranslationResult.Success && resolvedSingle.translations.isNotEmpty()) {
-                    singleTranslations.add(resolvedSingle.translations[0])
-                } else {
-                    allSucceeded = false
-                    break
-                }
-            }
-            if (allSucceeded && singleTranslations.size == texts.size) {
-                return@withContext TranslationResult.Success(singleTranslations)
+        // Only retry with source='en' if the failure was specifically due to language detection unavailability
+        if (err.messageBn.contains("শনাক্ত")) {
+            android.util.Log.i(TAG, "Language detection unavailable; attempting fallback to source language 'en'")
+            val fallbackResult = executeTranslateRequest(endpoint, apiKey, texts, sourceLang = "en")
+            if (fallbackResult is TranslationResult.Success) {
+                return@withContext fallbackResult
             }
         }
 
-        fallbackResult
+        result
     }
 
     private fun executeTranslateRequest(
@@ -130,27 +141,9 @@ object LibreTranslateClient {
                     "User-Agent",
                     "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
                 )
-                if (apiKey.isNotBlank()) {
-                    setRequestProperty("api-key", apiKey.trim())
-                    setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
-                }
             }
 
-            val jsonBody = JSONObject().apply {
-                if (texts.size == 1) {
-                    put("q", texts[0])
-                } else {
-                    val qArray = JSONArray()
-                    texts.forEach { qArray.put(it) }
-                    put("q", qArray)
-                }
-                put("source", sourceLang)
-                put("target", "bn")
-                put("format", "text")
-                if (apiKey.isNotBlank()) {
-                    put("api_key", apiKey.trim())
-                }
-            }
+            val jsonBody = buildJsonRequestBody(texts, sourceLang = sourceLang, targetLang = "bn", apiKey = apiKey)
 
             conn.outputStream.use { os ->
                 os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
@@ -172,11 +165,24 @@ object LibreTranslateClient {
                 } catch (_: Exception) { "" }
                 val parsedError = parseLibreTranslateError(errorBody)
                 android.util.Log.w(TAG, "HTTP $responseCode from $endpoint: $parsedError")
-                val errorMsg = when (responseCode) {
-                    400 -> "অনুরোধে ত্রুটি (Bad Request)"
-                    403 -> "API Key প্রয়োজন বা অননুমোদিত"
-                    429 -> "অনুরোধের সীমা অতিক্রম করেছে"
-                    in 500..599 -> "সার্ভারে সমস্যা হয়েছে (HTTP $responseCode)"
+
+                val isApiKeyErr = responseCode == 403 ||
+                        (responseCode == 400 && (
+                                parsedError.contains("API key", ignoreCase = true) ||
+                                errorBody.contains("API key", ignoreCase = true) ||
+                                errorBody.contains("portal.libretranslate.com", ignoreCase = true)
+                        ))
+                val isDetectionErr = responseCode == 400 && (
+                        parsedError.contains("detect", ignoreCase = true) ||
+                        errorBody.contains("detect", ignoreCase = true)
+                )
+
+                val errorMsg = when {
+                    isApiKeyErr -> "API Key প্রয়োজন বা অননুমোদিত"
+                    isDetectionErr -> "ভাষা শনাক্ত করা যায়নি"
+                    responseCode == 400 -> "অনুরোধে ত্রুটি (Bad Request)"
+                    responseCode == 429 -> "অনুরোধের সীমা অতিক্রম করেছে"
+                    responseCode in 500..599 -> "সার্ভারে সমস্যা হয়েছে (HTTP $responseCode)"
                     else -> "অনুবাদ ব্যর্থ হয়েছে (HTTP $responseCode)"
                 }
                 return TranslationResult.Error(errorMsg)
@@ -206,7 +212,7 @@ object LibreTranslateClient {
             return@withContext TranslationResult.Error("সার্ভার URL সঠিক নয় (http:// বা https:// দিয়ে শুরু হতে হবে)")
         }
 
-        val endpoint = "$base/translate"
+        val endpoint = if (base.endsWith("/translate", ignoreCase = true)) base else "$base/translate"
         var conn: HttpURLConnection? = null
 
         try {
@@ -219,17 +225,13 @@ object LibreTranslateClient {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "application/json")
+                setRequestProperty(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                )
             }
 
-            val jsonBody = JSONObject().apply {
-                put("q", "Hello")
-                put("source", "en")
-                put("target", "bn")
-                put("format", "text")
-                if (apiKey.isNotBlank()) {
-                    put("api_key", apiKey.trim())
-                }
-            }
+            val jsonBody = buildJsonRequestBody(listOf("Hello"), sourceLang = "en", targetLang = "bn", apiKey = apiKey)
 
             conn.outputStream.use { os ->
                 os.write(jsonBody.toString().toByteArray(Charsets.UTF_8))
@@ -240,18 +242,28 @@ object LibreTranslateClient {
             if (responseCode in 200..299) {
                 val responseBody = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val parsed = parseLibreTranslateResponse(responseBody, 1)
-                TranslationResult.Success(parsed)
+                if (parsed.isNotEmpty()) {
+                    TranslationResult.Success(parsed)
+                } else {
+                    TranslationResult.Error("ফলাফল পার্স করা যায়নি")
+                }
             } else {
                 val errorBody = try {
                     conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 } catch (_: Exception) { "" }
                 val parsedError = parseLibreTranslateError(errorBody)
-                val errorMsg = when (responseCode) {
-                    400 -> "অনুরোধে ত্রুটি (Bad Request${if (parsedError.isNotBlank()) ": $parsedError" else ""})"
-                    403 -> "API Key প্রয়োজন বা ভুল API Key (HTTP 403)"
-                    429 -> "অনুরোধের সীমা অতিক্রম করেছে (Rate limit - HTTP 429)"
-                    in 500..599 -> "সার্ভারে সমস্যা হয়েছে (Server Error: HTTP $responseCode)"
-                    else -> "সংযোগ ব্যর্থ (HTTP $responseCode${if (parsedError.isNotBlank()) ": $parsedError" else ""})"
+                val isApiKeyErr = responseCode == 403 ||
+                        (responseCode == 400 && (
+                                parsedError.contains("API key", ignoreCase = true) ||
+                                errorBody.contains("API key", ignoreCase = true) ||
+                                errorBody.contains("portal.libretranslate.com", ignoreCase = true)
+                        ))
+                val errorMsg = when {
+                    isApiKeyErr -> "API Key প্রয়োজন বা ভুল API Key"
+                    responseCode == 400 -> "অনুরোধে ত্রুটি (Bad Request)"
+                    responseCode == 429 -> "অনুরোধের সীমা অতিক্রম করেছে (Rate limit)"
+                    responseCode in 500..599 -> "সার্ভারে সমস্যা হয়েছে (HTTP $responseCode)"
+                    else -> "সংযোগ ব্যর্থ (HTTP $responseCode)"
                 }
                 TranslationResult.Error(errorMsg)
             }
