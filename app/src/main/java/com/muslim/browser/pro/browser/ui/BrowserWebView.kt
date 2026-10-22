@@ -27,13 +27,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,7 +49,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -241,69 +236,10 @@ fun BrowserWebView(
             }
         }
 
-        // IME insets calculation to ensure the WebView resizes dynamically above the keyboard
-        // without double-padding the navigation bar or bottom bar.
-        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
-        val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-        val bottomBarHeight = 41.8.dp + navBottom
-        val additionalKeyboardPadding = maxOf(0.dp, imeBottom - bottomBarHeight)
-
-        // Non-invasive keyboard & focus diagnostics for Phase 2 investigation
-        LaunchedEffect(imeBottom) {
-            val imeDp = imeBottom.value
-            val isFocused = webView.hasFocus()
-            val hasWinFocus = webView.hasWindowFocus()
-            Log.d(
-                "MB_KEYBOARD_DIAG",
-                "[ImeInsetsChanged] imeBottom=${imeDp}dp, padding=${additionalKeyboardPadding.value}dp, webViewFocused=$isFocused, windowFocused=$hasWinFocus"
-            )
-        }
-
-        DisposableEffect(webView) {
-            val focusListener = View.OnFocusChangeListener { v, hasFocus ->
-                Log.d(
-                    "MB_KEYBOARD_DIAG",
-                    "[WebViewFocusChanged] hasFocus=$hasFocus, hasWindowFocus=${v.hasWindowFocus()}"
-                )
-            }
-            val windowFocusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasWindowFocus ->
-                Log.d(
-                    "MB_KEYBOARD_DIAG",
-                    "[WindowFocusChanged] hasWindowFocus=$hasWindowFocus, webViewFocused=${webView.hasFocus()}"
-                )
-            }
-            val globalFocusListener = ViewTreeObserver.OnGlobalFocusChangeListener { oldFocus, newFocus ->
-                val oldName = oldFocus?.javaClass?.simpleName ?: "null"
-                val newName = newFocus?.javaClass?.simpleName ?: "null"
-                if (oldFocus != newFocus) {
-                    Log.d(
-                        "MB_KEYBOARD_DIAG",
-                        "[GlobalFocusChanged] oldFocus=$oldName, newFocus=$newName, webViewFocused=${webView.hasFocus()}"
-                    )
-                }
-            }
-
-            webView.onFocusChangeListener = focusListener
-            val observer = webView.viewTreeObserver
-            if (observer.isAlive) {
-                observer.addOnWindowFocusChangeListener(windowFocusListener)
-                observer.addOnGlobalFocusChangeListener(globalFocusListener)
-            }
-
-            onDispose {
-                webView.onFocusChangeListener = null
-                if (observer.isAlive) {
-                    observer.removeOnWindowFocusChangeListener(windowFocusListener)
-                    observer.removeOnGlobalFocusChangeListener(globalFocusListener)
-                }
-            }
-        }
-
         // Web Content Viewport Container
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = additionalKeyboardPadding)
                 .background(appColors.background)
         ) {
             AndroidView(
