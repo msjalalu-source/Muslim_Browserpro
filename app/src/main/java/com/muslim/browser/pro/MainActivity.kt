@@ -47,12 +47,9 @@ import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
 import com.muslim.browser.pro.browser.ui.DownloadsDialog
-import android.content.res.Configuration
 import com.muslim.browser.pro.browser.ui.HistoryDialog
 import com.muslim.browser.pro.browser.ui.HomePage
 import com.muslim.browser.pro.browser.ui.TabsSelectionDialog
-import com.muslim.browser.pro.browser.ui.DebugKeyboardOverlay
-import com.muslim.browser.pro.browser.ui.DebugOverlayView
 import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -79,9 +76,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-            DebugKeyboardOverlay.log("ACT", "onCreate")
-        }
 
         tabWebViewManager = TabWebViewManager(
             context = this,
@@ -203,8 +197,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 },
-                                onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
-                                onSelectTranslationEngine = { engine -> viewModel.selectTranslationEngine(engine) }
+                                onSelectTheme = { theme -> viewModel.setAppTheme(theme) }
                             )
                         }
 
@@ -248,10 +241,6 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = { viewModel.closeDownloads() }
                             )
                         }
-
-                        if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-                            DebugOverlayView()
-                        }
                     }
                 }
             }
@@ -260,15 +249,7 @@ class MainActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun createConfiguredWebView(tabId: String): WebView {
-        val webView = object : WebView(this) {
-            override fun clearFocus() {
-                if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-                    DebugKeyboardOverlay.log("CALL", "WebView.clearFocus()")
-                }
-                super.clearFocus()
-            }
-        }
-        return webView.apply {
+        return WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
@@ -281,32 +262,6 @@ class MainActivity : ComponentActivity() {
             // Test to find out whether system autofill causes the window focus loss and keyboard closing
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-            }
-
-            if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-                addJavascriptInterface(DebugKeyboardOverlay.DomBridge(), "DebugKeyboardBridge")
-                addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-                    val w = right - left
-                    val h = bottom - top
-                    val oldW = oldRight - oldLeft
-                    val oldH = oldBottom - oldTop
-                    if (w != oldW || h != oldH) {
-                        DebugKeyboardOverlay.log("WV_SIZE", "${w}x${h}px")
-                    }
-                }
-                setOnFocusChangeListener { _, hasFocus ->
-                    DebugKeyboardOverlay.log("FOCUS", "WebView: $hasFocus")
-                }
-                viewTreeObserver.addOnWindowFocusChangeListener { hasFocus ->
-                    DebugKeyboardOverlay.log("FOCUS", "Window: $hasFocus")
-                }
-                if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                    androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
-                        this,
-                        DebugKeyboardOverlay.DOM_INSPECTION_SCRIPT,
-                        setOf("*")
-                    )
-                }
             }
 
             DesktopCore.applyCommonDesktopWebViewSettings(this)
@@ -368,9 +323,6 @@ class MainActivity : ComponentActivity() {
                         canGoBack = view?.canGoBack() ?: false,
                         canGoForward = view?.canGoForward() ?: false
                     )
-                    if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-                        view?.evaluateJavascript(DebugKeyboardOverlay.DOM_INSPECTION_SCRIPT, null)
-                    }
                 }
 
                 override fun onReceivedSslError(
@@ -491,27 +443,6 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Downloading $fileName...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-            DebugKeyboardOverlay.log("ACT", "onResume")
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-            DebugKeyboardOverlay.log("ACT", "onPause")
-        }
-    }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
-            DebugKeyboardOverlay.log("ACT", "onConfigChanged ori=${newConfig.orientation}")
         }
     }
 

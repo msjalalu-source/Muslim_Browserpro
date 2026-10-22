@@ -86,11 +86,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.muslim.browser.pro.browser.AutofillEngine
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.DesktopArchitecture
+import com.muslim.browser.pro.browser.LibreTranslateClient
 import com.muslim.browser.pro.browser.ShareIntentHandler
-import com.muslim.browser.pro.browser.TranslationEngine
 import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.LocalAppColors
 
@@ -110,7 +114,6 @@ fun BrowserMenuSheet(
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
-    onSelectTranslationEngine: (TranslationEngine) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -403,11 +406,8 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Translation Engine Selection (3 Selectable Switches, Single Active Engine)
-                TranslationEngineSection(
-                    selectedEngine = uiState.selectedTranslationEngine,
-                    onSelectTranslationEngine = onSelectTranslationEngine
-                )
+                // LibreTranslate Settings Section
+                LibreTranslateSettingsSection()
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -842,15 +842,19 @@ private fun AutofillSection(
 }
 
 @Composable
-private fun TranslationEngineSection(
-    selectedEngine: TranslationEngine,
-    onSelectTranslationEngine: (TranslationEngine) -> Unit
-) {
+private fun LibreTranslateSettingsSection() {
+    val context = LocalContext.current
     val colors = LocalAppColors.current
+    val scope = rememberCoroutineScope()
+
+    var serverUrl by remember { mutableStateOf(LibreTranslateClient.getServerUrl(context)) }
+    var apiKey by remember { mutableStateOf(LibreTranslateClient.getApiKey(context)) }
+    var isTesting by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("section_translation_engine"),
+            .testTag("section_libre_translate_settings"),
         shape = RoundedCornerShape(8.dp),
         color = colors.surfaceVariant,
         border = BorderStroke(1.dp, colors.border)
@@ -872,72 +876,119 @@ private fun TranslationEngineSection(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Translation Engine",
+                    text = "LibreTranslate Settings",
                     color = colors.textPrimary,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            // 1. LibreTranslate Switch (Default)
-            Row(
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "Server URL",
+                color = colors.textSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            OutlinedTextField(
+                value = serverUrl,
+                onValueChange = {
+                    serverUrl = it
+                    LibreTranslateClient.setServerUrl(context, it)
+                },
+                placeholder = {
+                    Text("https://libretranslate.com", color = colors.textSecondary, fontSize = 11.sp)
+                },
+                singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 1.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "LibreTranslate",
-                    color = colors.textPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = if (selectedEngine == TranslationEngine.LIBRE_TRANSLATE) FontWeight.Bold else FontWeight.Normal
+                    .height(48.dp)
+                    .testTag("libre_server_url_input"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.border,
+                    cursorColor = colors.accent
                 )
-                Switch(
-                    checked = selectedEngine == TranslationEngine.LIBRE_TRANSLATE,
-                    onCheckedChange = { checked ->
-                        if (checked || selectedEngine != TranslationEngine.LIBRE_TRANSLATE) {
-                            onSelectTranslationEngine(TranslationEngine.LIBRE_TRANSLATE)
-                        }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colors.buttonText,
-                        checkedTrackColor = colors.accent,
-                        uncheckedThumbColor = colors.textSecondary,
-                        uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                    ),
-                    modifier = Modifier.testTag("switch_engine_libre")
-                )
-            }
-            // 2. MyMemory Translate Switch
-            Row(
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "API Key (Optional)",
+                color = colors.textSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = {
+                    apiKey = it
+                    LibreTranslateClient.setApiKey(context, it)
+                },
+                placeholder = {
+                    Text("Leave blank if not required", color = colors.textSecondary, fontSize = 11.sp)
+                },
+                singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 1.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "MyMemory Translate",
-                    color = colors.textPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = if (selectedEngine == TranslationEngine.MYMEMORY) FontWeight.Bold else FontWeight.Normal
+                    .height(48.dp)
+                    .testTag("libre_api_key_input"),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = colors.textPrimary,
+                    unfocusedTextColor = colors.textPrimary,
+                    focusedBorderColor = colors.accent,
+                    unfocusedBorderColor = colors.border,
+                    cursorColor = colors.accent
                 )
-                Switch(
-                    checked = selectedEngine == TranslationEngine.MYMEMORY,
-                    onCheckedChange = { checked ->
-                        if (checked || selectedEngine != TranslationEngine.MYMEMORY) {
-                            onSelectTranslationEngine(TranslationEngine.MYMEMORY)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    if (isTesting) return@Button
+                    isTesting = true
+                    scope.launch {
+                        val result = LibreTranslateClient.testConnection(serverUrl, apiKey)
+                        isTesting = false
+                        when (result) {
+                            is LibreTranslateClient.TranslationResult.Success -> {
+                                val translated = result.translations.firstOrNull() ?: "হ্যালো"
+                                Toast.makeText(context, "সংযোগ সফল! Hello -> $translated", Toast.LENGTH_LONG).show()
+                            }
+                            is LibreTranslateClient.TranslationResult.Error -> {
+                                Toast.makeText(context, "সংযোগ ব্যর্থ: ${result.messageBn}", Toast.LENGTH_LONG).show()
+                            }
                         }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = colors.buttonText,
-                        checkedTrackColor = colors.accent,
-                        uncheckedThumbColor = colors.textSecondary,
-                        uncheckedTrackColor = colors.border.copy(alpha = 0.5f)
-                    ),
-                    modifier = Modifier.testTag("switch_engine_mymemory")
-                )
+                    }
+                },
+                enabled = !isTesting,
+                shape = RoundedCornerShape(6.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent,
+                    contentColor = colors.buttonText
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .testTag("btn_test_libre_connection")
+            ) {
+                if (isTesting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = colors.buttonText
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("পরীক্ষা চলছে...", fontSize = 11.sp)
+                } else {
+                    Text("Test Connection", fontSize = 11.sp)
+                }
             }
         }
     }

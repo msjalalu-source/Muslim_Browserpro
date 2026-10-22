@@ -5,12 +5,18 @@ import android.os.Bundle
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.muslim.browser.pro.ui.theme.AppTheme
+import android.widget.Toast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 class BrowserViewModel(application: Application) : AndroidViewModel(application) {
@@ -52,7 +58,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             isPopupBlockingEnabled = repository.isPopupBlockingEnabled(),
             desktopArchitecture = repository.getDesktopArchitecture(),
             appTheme = repository.getAppTheme(),
-            selectedTranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
             selectedSearchEngine = repository.getSearchEngine(),
             isPageContentVisible = true
         )
@@ -345,10 +350,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(appTheme = theme) }
     }
 
-    fun selectTranslationEngine(engine: TranslationEngine) {
-        _uiState.update { it.copy(selectedTranslationEngine = engine) }
-    }
-
     fun selectSearchEngine(engine: SearchEngine) {
         repository.setSearchEngine(engine)
         _uiState.update { it.copy(selectedSearchEngine = engine) }
@@ -446,22 +447,214 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         onComplete: () -> Unit = {}
     ) {
         if (_uiState.value.isTranslating) return
+
+        // If the page is already translated, restore original page text
+        if (_uiState.value.isPageTranslated) {
+            val restoreScript = """
+                (function() {
+                    try {
+                        if (window.__mbNodes) {
+                            for (var id in window.__mbNodes) {
+                                var item = window.__mbNodes[id];
+                                if (item && item.node && item.original !== undefined) {
+                                    item.node.nodeValue = item.original;
+                                }
+                            }
+                        }
+                        window.__mbTranslated = false;
+                    } catch(e) {}
+                })();
+            """.trimIndent()
+            evalScript(restoreScript) {
+                _uiState.update { it.copy(isPageTranslated = false) }
+                Toast.makeText(getApplication(), "আসল পেজ পুনরুদ্ধার করা হয়েছে", Toast.LENGTH_SHORT).show()
+                onComplete()
+            }
+            return
+        }
+
         _uiState.update { it.copy(isTranslating = true) }
-        activeTranslationJob = viewModelScope.launch {
-            try {
-                val script = """
-                    (function() {
-                        const translateElement = document.createElement('script');
-                        translateElement.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
-                        document.head.appendChild(translateElement);
-                    })();
-                """.trimIndent()
-                evalScript(script) {
-                    _uiState.update { it.copy(isTranslating = false, isPageTranslated = true) }
-                    onComplete()
+
+        // Collect visible text nodes, excluding script, style, code, inputs, and visible password containers
+        val extractScript = """
+            (function() {
+                try {
+                    window.__mbNodes = {};
+                    var nextId = 0;
+
+                    function hasVisiblePasswordChild(container) {
+                        if (!container || !container.querySelector) return false;
+                        var pass = container.querySelector('input[type=password]');
+                        if (!pass) return false;
+                        var s = window.getComputedStyle(pass);
+                        return (pass.offsetParent !== null || s.position === 'fixed') && 
+                               s.display !== 'none' && 
+                               s.visibility !== 'hidden' && 
+                               (pass.offsetWidth > 0 || pass.offsetHeight > 0);
+                    }
+
+                    function isExcluded(el) {
+                        var curr = el;
+                        while (curr && curr !== document.body && curr !== document.documentElement) {
+                            var tag = (curr.tagName || '').toLowerCase();
+                            if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'code' || tag === 'textarea' || tag === 'input') {
+                                return true;
+                            }
+                            if (curr.getAttribute && curr.getAttribute('translate') === 'no') {
+                                return true;
+                            }
+                            if (curr.className && typeof curr.className === 'string' && curr.className.indexOf('notranslate') !== -1) {
+                                return true;
+                            }
+                            if ((tag === 'form' || curr.parentElement === document.body) && hasVisiblePasswordChild(curr)) {
+                                return true;
+                            }
+                            curr = curr.parentElement;
+                        }
+                        return false;
+                    }
+
+                    var walker = document.createTreeWalker(
+                        document.body,
+                        NodeFilter.SHOW_TEXT,
+                        {
+                            acceptNode: function(node) {
+                                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                                var parent = node.parentElement;
+                                if (!parent) return NodeFilter.FILTER_REJECT;
+                                var s = window.getComputedStyle(parent);
+                                if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) {
+                                    return NodeFilter.FILTER_REJECT;
+                                }
+                                if (isExcluded(parent)) return NodeFilter.FILTER_REJECT;
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                        },
+                        false
+                    );
+
+                    var items = [];
+                    var node;
+                    while (node = walker.nextNode()) {
+                        var text = node.nodeValue.trim();
+                        if (text.length > 0) {
+                            var id = 'mb_t_' + (++nextId);
+                            window.__mbNodes[id] = { node: node, original: node.nodeValue };
+                            items.push({ id: id, text: text });
+                        }
+                    }
+                    return JSON.stringify(items);
+                } catch(e) {
+                    return JSON.stringify([]);
                 }
-            } catch (_: Exception) {
+            })();
+        """.trimIndent()
+
+        evalScript(extractScript) { rawResult ->
+            if (rawResult == null) {
                 _uiState.update { it.copy(isTranslating = false) }
+                Toast.makeText(getApplication(), "পেজ থেকে টেক্সট পড়া যায়নি", Toast.LENGTH_SHORT).show()
+                return@evalScript
+            }
+
+            val unquoted = unescapeJsJson(rawResult)
+            val items = try {
+                val jsonArr = org.json.JSONArray(unquoted)
+                val list = mutableListOf<TextNodeItem>()
+                for (i in 0 until jsonArr.length()) {
+                    val obj = jsonArr.getJSONObject(i)
+                    list.add(TextNodeItem(id = obj.getString("id"), text = obj.getString("text")))
+                }
+                list
+            } catch (_: Exception) {
+                emptyList()
+            }
+
+            if (items.isEmpty()) {
+                _uiState.update { it.copy(isTranslating = false) }
+                Toast.makeText(getApplication(), "অনুবাদ করার মতো কোনো টেক্সট পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                return@evalScript
+            }
+
+            val serverUrl = LibreTranslateClient.getServerUrl(getApplication())
+            val apiKey = LibreTranslateClient.getApiKey(getApplication())
+
+            activeTranslationJob?.cancel()
+            activeTranslationJob = viewModelScope.launch(Dispatchers.IO) {
+                val batches = items.chunked(20)
+                val semaphore = Semaphore(2)
+                var hasFailed = false
+
+                val jobs = batches.map { batch ->
+                    launch {
+                        semaphore.withPermit {
+                            if (hasFailed) return@withPermit
+                            val texts = batch.map { it.text }
+                            val res = LibreTranslateClient.translateBatch(serverUrl, apiKey, texts)
+                            if (hasFailed) return@withPermit
+
+                            when (res) {
+                                is LibreTranslateClient.TranslationResult.Success -> {
+                                    val updatesJson = org.json.JSONArray().apply {
+                                        for (i in batch.indices) {
+                                            val translated = res.translations.getOrNull(i) ?: batch[i].text
+                                            put(org.json.JSONObject().apply {
+                                                put("id", batch[i].id)
+                                                put("text", translated)
+                                            })
+                                        }
+                                    }.toString()
+
+                                    val updateScript = "(function(){ try { var u = $updatesJson; if (!window.__mbNodes) return; for (var i = 0; i < u.length; i++) { var item = window.__mbNodes[u[i].id]; if (item && item.node) { item.node.nodeValue = u[i].text; } } window.__mbTranslated = true; } catch(e){} })();"
+
+                                    withContext(Dispatchers.Main) {
+                                        evalScript(updateScript) {}
+                                    }
+                                }
+                                is LibreTranslateClient.TranslationResult.Error -> {
+                                    hasFailed = true
+                                    withContext(Dispatchers.Main) {
+                                        Toast.makeText(getApplication(), res.messageBn, Toast.LENGTH_LONG).show()
+                                        _uiState.update { it.copy(isTranslating = false) }
+                                    }
+                                    activeTranslationJob?.cancel()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                jobs.joinAll()
+
+                if (!hasFailed) {
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(isTranslating = false, isPageTranslated = true) }
+                        Toast.makeText(getApplication(), "পেজটি বাংলায় অনুবাদ করা হয়েছে", Toast.LENGTH_SHORT).show()
+                        onComplete()
+                    }
+                }
+            }
+        }
+    }
+
+    private data class TextNodeItem(val id: String, val text: String)
+
+    private fun unescapeJsJson(raw: String): String {
+        val trimmed = raw.trim()
+        return try {
+            val tokener = org.json.JSONTokener(trimmed)
+            val value = tokener.nextValue()
+            value.toString()
+        } catch (_: Exception) {
+            if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length >= 2) {
+                trimmed.substring(1, trimmed.length - 1)
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\")
+                    .replace("\\n", "\n")
+                    .replace("\\r", "\r")
+                    .replace("\\t", "\t")
+            } else {
+                trimmed
             }
         }
     }
