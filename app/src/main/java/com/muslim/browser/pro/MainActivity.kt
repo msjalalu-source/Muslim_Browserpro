@@ -5,9 +5,11 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
 import android.app.DownloadManager
 import android.os.Environment
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.URLUtil
 import android.widget.Toast
@@ -275,6 +277,11 @@ class MainActivity : ComponentActivity() {
             settings.displayZoomControls = false
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+
+            // Test to find out whether system autofill causes the window focus loss and keyboard closing
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            }
 
             if (DebugKeyboardOverlay.DEBUG_OVERLAY) {
                 addJavascriptInterface(DebugKeyboardOverlay.DomBridge(), "DebugKeyboardBridge")
