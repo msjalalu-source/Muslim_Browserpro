@@ -103,6 +103,17 @@ class BrowserMenuActionsTest {
     }
 
     @Test
+    fun testBlockedInfoStateGuards() {
+        val normalBlockedInfo = BlockedInfo()
+        val isBlockedNormal = normalBlockedInfo.targetUrl.isNotBlank()
+        assertFalse("Default BlockedInfo must not be considered blocked", isBlockedNormal)
+
+        val restrictedBlockedInfo = BlockedInfo(targetUrl = "https://restricted.com", reason = "Blocked")
+        val isBlockedRestricted = restrictedBlockedInfo.targetUrl.isNotBlank()
+        assertTrue("Restricted BlockedInfo must be considered blocked", isBlockedRestricted)
+    }
+
+    @Test
     fun testFillFormExecutionGuards() {
         fun canExecuteFillForm(isHomePage: Boolean, isBlocked: Boolean, hasLiveWebView: Boolean): Boolean {
             return hasLiveWebView && !isHomePage && !isBlocked

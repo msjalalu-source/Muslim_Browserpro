@@ -177,6 +177,7 @@ class MainActivity : ComponentActivity() {
                         if (uiState.isMenuOpen) {
                             BrowserMenuSheet(
                                 uiState = uiState,
+                                currentWebView = currentWebView,
                                 onDismiss = { viewModel.closeMenu() },
                                 onOpenHistory = {
                                     viewModel.closeMenu()

@@ -113,6 +113,7 @@ fun BrowserMenuSheet(
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
+    currentWebView: android.webkit.WebView? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -130,8 +131,9 @@ fun BrowserMenuSheet(
     var showAutofillDialog by remember { mutableStateOf(false) }
     var lastPdfJobTimestamp by remember { mutableStateOf(0L) }
 
-    val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(uiState.currentUrl)
-    val isBlocked = uiState.blockedInfo != null
+    val effectiveUrl = uiState.currentUrl.ifBlank { currentWebView?.url ?: "" }
+    val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(effectiveUrl)
+    val isBlocked = uiState.blockedInfo.targetUrl.isNotBlank()
     val isShareEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid
     val isSavePdfEnabled = !uiState.isHomePage && !isBlocked && isWebUrlValid && !uiState.isLoading
 
@@ -353,9 +355,15 @@ fun BrowserMenuSheet(
                     contentDescription = "Share",
                     enabled = isShareEnabled,
                     onClick = {
-                        if (isShareEnabled) {
+                        if (uiState.isHomePage || effectiveUrl.isBlank()) {
+                            Toast.makeText(context, "শেয়ার করার জন্য একটি ওয়েব পৃষ্ঠা খুলুন", Toast.LENGTH_SHORT).show()
+                        } else if (isBlocked) {
+                            Toast.makeText(context, "অবরুদ্ধ পৃষ্ঠা শেয়ার করা যাবে না", Toast.LENGTH_SHORT).show()
+                        } else if (!isWebUrlValid) {
+                            Toast.makeText(context, "অবৈধ ওয়েব লিঙ্ক", Toast.LENGTH_SHORT).show()
+                        } else {
                             onDismiss()
-                            performShare(context, uiState.currentUrl, uiState.pageTitle)
+                            performShare(context, effectiveUrl, uiState.pageTitle)
                         }
                     },
                     modifier = Modifier.testTag("menu_item_share")
@@ -370,11 +378,19 @@ fun BrowserMenuSheet(
                     contentDescription = "Save as PDF",
                     enabled = isSavePdfEnabled,
                     onClick = {
-                        if (isSavePdfEnabled) {
+                        if (uiState.isHomePage || effectiveUrl.isBlank()) {
+                            Toast.makeText(context, "PDF তৈরি করার জন্য একটি ওয়েব পৃষ্ঠা খুলুন", Toast.LENGTH_SHORT).show()
+                        } else if (isBlocked) {
+                            Toast.makeText(context, "অবরুদ্ধ পৃষ্ঠা PDF তৈরি করা যাবে না", Toast.LENGTH_SHORT).show()
+                        } else if (uiState.isLoading) {
+                            Toast.makeText(context, "পৃষ্ঠা লোড হওয়া পর্যন্ত অপেক্ষা করুন", Toast.LENGTH_SHORT).show()
+                        } else if (!isWebUrlValid) {
+                            Toast.makeText(context, "অবৈধ ওয়েব লিঙ্ক", Toast.LENGTH_SHORT).show()
+                        } else {
                             val now = System.currentTimeMillis()
                             if (now - lastPdfJobTimestamp >= 1500L) {
                                 lastPdfJobTimestamp = now
-                                val success = performSaveAsPdf(context, uiState)
+                                val success = performSaveAsPdf(context, uiState, currentWebView)
                                 if (success) {
                                     onDismiss()
                                 }
@@ -547,7 +563,7 @@ private fun MenuRow(
     val colors = LocalAppColors.current
     Surface(
         onClick = onClick,
-        enabled = enabled,
+        enabled = true,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         color = surfaceColor,
@@ -1516,7 +1532,7 @@ private fun performShare(context: android.content.Context, url: String, title: S
                 putExtra(Intent.EXTRA_TITLE, title)
             }
         }
-        val chooser = Intent.createChooser(sendIntent, "Share Webpage")
+        val chooser = Intent.createChooser(sendIntent, "পৃষ্ঠা শেয়ার করুন")
         var currentContext: android.content.Context? = context
         while (currentContext != null) {
             if (currentContext is android.app.Activity) break
@@ -1531,7 +1547,10 @@ private fun performShare(context: android.content.Context, url: String, title: S
             chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         launchContext.startActivity(chooser)
-    } catch (_: Throwable) {}
+    } catch (e: Throwable) {
+        android.util.Log.e("BrowserMenuSheet", "Share failed", e)
+        Toast.makeText(context, "শেয়ার করা যায়নি", Toast.LENGTH_SHORT).show()
+    }
 }
 
 internal fun getActiveLiveWebView(context: android.content.Context, uiState: BrowserUiState): android.webkit.WebView? {
@@ -1546,44 +1565,68 @@ internal fun getActiveLiveWebView(context: android.content.Context, uiState: Bro
     }
     val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return null
     return try {
-        mainActivity.tabWebViewManager?.getLiveWebView(uiState.currentTabId)
+        mainActivity.tabWebViewManager.getLiveWebView(uiState.currentTabId)
     } catch (_: Throwable) {
         null
     } ?: try {
-        val field = mainActivity.javaClass.getDeclaredField("webViewInstance")
-        field.isAccessible = true
-        field.get(mainActivity) as? android.webkit.WebView
+        mainActivity.tabWebViewManager.getOrCreateWebView(uiState.currentTabId, uiState.currentUrl).first
     } catch (_: Throwable) {
         null
     }
 }
 
-private fun performSaveAsPdf(context: android.content.Context, uiState: BrowserUiState): Boolean {
+private fun performSaveAsPdf(
+    context: android.content.Context,
+    uiState: BrowserUiState,
+    passedWebView: android.webkit.WebView? = null
+): Boolean {
     try {
         var currentContext: android.content.Context? = context
         while (currentContext != null) {
-            if (currentContext is com.muslim.browser.pro.MainActivity) break
+            if (currentContext is android.app.Activity) break
             if (currentContext is android.content.ContextWrapper) {
                 currentContext = currentContext.baseContext
             } else {
                 break
             }
         }
-        val mainActivity = currentContext as? com.muslim.browser.pro.MainActivity ?: return false
-        val liveWebView = getActiveLiveWebView(context, uiState) ?: return false
+        val activity = (currentContext as? android.app.Activity)
+            ?: (if (context is android.app.Activity) context else null)
+            ?: run {
+                android.util.Log.e("BrowserMenuSheet", "Save as PDF failed: Activity context not found")
+                Toast.makeText(context, "PDF তৈরি করা যায়নি: অ্যাক্টিভিটি পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                return false
+            }
 
-        val wvUrl = liveWebView.url
-        if (wvUrl.isNullOrBlank() || !ShareIntentHandler.isDirectHttpUrl(wvUrl)) {
+        val liveWebView = passedWebView ?: getActiveLiveWebView(context, uiState)
+        if (liveWebView == null) {
+            android.util.Log.e("BrowserMenuSheet", "Save as PDF failed: liveWebView is null")
+            Toast.makeText(context, "PDF তৈরি করা যায়নি: ওয়েবভিউ পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
             return false
         }
 
-        val printManager = mainActivity.getSystemService(android.content.Context.PRINT_SERVICE) as? PrintManager ?: return false
+        val wvUrl = liveWebView.url?.takeIf { it.isNotBlank() } ?: uiState.currentUrl
+        if (wvUrl.isBlank() || !ShareIntentHandler.isDirectHttpUrl(wvUrl)) {
+            android.util.Log.e("BrowserMenuSheet", "Save as PDF failed: wvUrl is blank or invalid: $wvUrl")
+            Toast.makeText(context, "PDF তৈরি করা যায়নি: অবৈধ ওয়েব লিঙ্ক", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        val printManager = activity.getSystemService(android.content.Context.PRINT_SERVICE) as? PrintManager
+        if (printManager == null) {
+            android.util.Log.e("BrowserMenuSheet", "Save as PDF failed: PrintManager is null")
+            Toast.makeText(context, "PDF প্রিন্ট সেবা পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
         val jobName = sanitizePdfJobName(uiState.pageTitle.ifBlank { liveWebView.title ?: "" }, wvUrl)
         val printAdapter = liveWebView.createPrintDocumentAdapter(jobName)
         val printAttributes = PrintAttributes.Builder().build()
         printManager.print(jobName, printAdapter, printAttributes)
         return true
-    } catch (_: Throwable) {
+    } catch (e: Throwable) {
+        android.util.Log.e("BrowserMenuSheet", "Save as PDF failed with exception", e)
+        Toast.makeText(context, "PDF তৈরি করা যায়নি", Toast.LENGTH_SHORT).show()
         return false
     }
 }
