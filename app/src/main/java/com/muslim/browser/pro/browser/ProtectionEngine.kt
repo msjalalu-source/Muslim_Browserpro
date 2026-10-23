@@ -30,11 +30,28 @@ object ProtectionEngine {
     )
 
     val KNOWN_AD_DOMAINS: HashSet<String> = hashSetOf(
+        // Google Ad & Tracking Services
         "doubleclick.net", "googlesyndication.com", "googleadservices.com", "adservice.google.com",
-        "pagead2.googlesyndication.com", "adnxs.com", "adsystem.amazon.com", "amazon-adsystem.com",
-        "criteo.com", "criteo.net", "taboola.com", "outbrain.com", "popads.net", "adsterra.com",
-        "propellerads.com", "inmobi.com", "applovin.com", "unityads.unity3d.com",
-        "scorecardresearch.com", "advertising.com", "adroll.com", "revcontent.com"
+        "pagead2.googlesyndication.com", "google-analytics.com", "analytics.google.com",
+        // Amazon & Microsoft
+        "adsystem.amazon.com", "amazon-adsystem.com", "aax.amazon-adsystem.com",
+        "clarity.ms", "bingads.microsoft.com",
+        // Ad Exchanges, SSPs, DSPs & Native Ads
+        "adnxs.com", "criteo.com", "criteo.net", "taboola.com", "outbrain.com",
+        "rubiconproject.com", "pubmatic.com", "openx.net", "casalemedia.com",
+        "smartadserver.com", "bidswitch.net", "triplelift.com", "indexexchange.com",
+        "sharethrough.com", "sovrn.com", "yieldmo.com", "media.net", "exponential.com",
+        // Mobile & In-App Ad Networks
+        "inmobi.com", "applovin.com", "unityads.unity3d.com", "vungle.com", "ironsrc.com",
+        "chartboost.com", "mopub.com", "adcolony.com", "fyber.com",
+        // Aggressive Pop-up, Pop-under & Redirect Networks
+        "popads.net", "popcash.net", "adsterra.com", "propellerads.com", "hilltopads.com",
+        "clickadu.com", "exoclick.com", "trafficjunky.com", "juicyads.com", "ero-advertising.com",
+        "yllix.com", "adcash.com", "richads.com", "monetag.com",
+        // Telemetry & Tracking
+        "scorecardresearch.com", "advertising.com", "adroll.com", "revcontent.com",
+        "hotjar.com", "mouseflow.com", "segment.io", "mixpanel.com", "quantserve.com",
+        "moatads.com", "adsrvr.org", "zemanta.com", "teads.tv"
     )
 
     val BLOCKED_VIDEO_EXTS: HashSet<String> get() = DownloadPolicy.VIDEO_EXTS
@@ -284,7 +301,8 @@ object ProtectionEngine {
     fun checkDirectUrl(
         url: String,
         customKeywords: Set<String>,
-        normalizedKeywords: Collection<String>? = null
+        normalizedKeywords: Collection<String>? = null,
+        isAdBlockingEnabled: Boolean = true
     ): FilterResult {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
@@ -309,7 +327,7 @@ object ProtectionEngine {
             )
         }
 
-        if (isAdRequest(trimmed)) {
+        if (isAdBlockingEnabled && isAdRequest(trimmed)) {
             return FilterResult.Blocked(
                 "Ad Protection",
                 "Ad network URL blocked: \"${host ?: trimmed}\""
@@ -322,7 +340,8 @@ object ProtectionEngine {
     fun checkUrlOrQuery(
         input: String,
         customKeywords: Set<String>,
-        normalizedKeywords: Collection<String>? = null
+        normalizedKeywords: Collection<String>? = null,
+        isAdBlockingEnabled: Boolean = true
     ): FilterResult {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return FilterResult.Allowed
@@ -333,7 +352,7 @@ object ProtectionEngine {
                 "Input blocked due to protected keyword: \"$blockedKw\""
             )
         }
-        return checkDirectUrl(trimmed, customKeywords, normalizedKeywords)
+        return checkDirectUrl(trimmed, customKeywords, normalizedKeywords, isAdBlockingEnabled)
     }
 
     fun extractHost(url: String): String? {
@@ -360,32 +379,45 @@ object ProtectionEngine {
         return false
     }
 
-    fun isAdRequest(uri: Uri): Boolean {
-        val host = uri.host?.lowercase(Locale.ROOT)
-        if (host != null && host.isNotEmpty() && matchesDomainOrSubdomain(host, KNOWN_AD_DOMAINS)) {
+    fun isAdOrTracker(host: String?, path: String? = null): Boolean {
+        if (host.isNullOrBlank()) return false
+        val cleanHost = host.trim().lowercase(Locale.ROOT)
+        if (matchesDomainOrSubdomain(cleanHost, KNOWN_AD_DOMAINS)) {
             return true
         }
-        if (uri.query != null) {
-            val normalized = uri.toString().lowercase(Locale.ROOT)
-            for (adDomain in KNOWN_AD_DOMAINS) {
-                if (normalized.contains(adDomain)) return true
+        if (path != null && isGoogleHost(cleanHost)) {
+            val lowerPath = path.lowercase(Locale.ROOT)
+            if (lowerPath.startsWith("/pagead/") || lowerPath.startsWith("/adservice/")) {
+                return true
             }
         }
         return false
     }
 
-    fun isAdRequest(url: String): Boolean {
-        val host = extractHost(url)
-        if (host != null && host.isNotEmpty() && matchesDomainOrSubdomain(host, KNOWN_AD_DOMAINS)) {
-            return true
-        }
-        if (host == null || url.indexOf('?') != -1) {
-            val normalized = url.lowercase(Locale.ROOT)
-            for (adDomain in KNOWN_AD_DOMAINS) {
-                if (normalized.contains(adDomain)) return true
+    fun isAdOrTracker(uri: Uri): Boolean {
+        return isAdOrTracker(uri.host, uri.path)
+    }
+
+    fun isAdOrTracker(url: String): Boolean {
+        return try {
+            val candidate = if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+                "https://$url"
+            } else {
+                url
             }
+            val uri = Uri.parse(candidate)
+            isAdOrTracker(uri)
+        } catch (_: Exception) {
+            false
         }
-        return false
+    }
+
+    fun isAdRequest(uri: Uri): Boolean {
+        return isAdOrTracker(uri)
+    }
+
+    fun isAdRequest(url: String): Boolean {
+        return isAdOrTracker(url)
     }
 
     fun checkDownloadType(url: String, mimeType: String?, contentDisposition: String?): DownloadStatus {

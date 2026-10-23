@@ -12,13 +12,16 @@ import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.URLUtil
+import android.os.Message
 import android.widget.Toast
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import java.io.ByteArrayInputStream
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -57,6 +60,9 @@ class MainActivity : ComponentActivity() {
 
     val viewModel: BrowserViewModel by viewModels()
     lateinit var tabWebViewManager: TabWebViewManager
+
+    private var lastPopupCreatedTimestamp: Long = 0L
+    private val emptyAdBytes = ByteArray(0)
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher: ActivityResultLauncher<Intent> =
@@ -188,7 +194,12 @@ class MainActivity : ComponentActivity() {
                                     viewModel.openDownloads()
                                 },
                                 onAddKeyword = { keyword -> viewModel.addCustomKeyword(keyword) },
-                                onTogglePopupBlocking = { enabled -> viewModel.togglePopupBlocking(enabled) },
+                                onTogglePopupBlocking = { enabled ->
+                                    viewModel.togglePopupBlocking(enabled)
+                                    tabWebViewManager.forEachLiveWebView { webView ->
+                                        webView.settings.javaScriptCanOpenWindowsAutomatically = !enabled
+                                    }
+                                },
                                 onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
                                 onClearAllData = {
                                     tabWebViewManager.clearAllData()
@@ -286,6 +297,8 @@ class MainActivity : ComponentActivity() {
             settings.displayZoomControls = false
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
+            settings.setSupportMultipleWindows(true)
+            settings.javaScriptCanOpenWindowsAutomatically = !viewModel.uiState.value.isPopupBlockingEnabled
 
             // Test to find out whether system autofill causes the window focus loss and keyboard closing
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -301,6 +314,24 @@ class MainActivity : ComponentActivity() {
             )
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    if (!viewModel.uiState.value.isAdBlockingEnabled) {
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    val uri = request?.url ?: return super.shouldInterceptRequest(view, request)
+                    if (ProtectionEngine.isAdOrTracker(uri)) {
+                        return WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            ByteArrayInputStream(emptyAdBytes)
+                        )
+                    }
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
@@ -309,7 +340,8 @@ class MainActivity : ComponentActivity() {
                     val decision = NavigationController.evaluate(
                         url = targetUrl,
                         customKeywords = viewModel.uiState.value.customKeywords,
-                        searchEngine = viewModel.uiState.value.selectedSearchEngine
+                        searchEngine = viewModel.uiState.value.selectedSearchEngine,
+                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled
                     )
                     if (decision is com.muslim.browser.pro.browser.NavigationDecision.Blocked) {
                         viewModel.setBlockedUrl(targetUrl, decision.reason, decision.detail)
@@ -329,7 +361,7 @@ class MainActivity : ComponentActivity() {
                         )
                         return true
                     }
-                    if (ProtectionEngine.isHarmfulUrl(targetUrl)) {
+                    if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isHarmfulUrl(targetUrl)) {
                         viewModel.setBlockedUrl(targetUrl, "Blocked Content", "Safety filter blocked this URL.")
                         return true
                     }
@@ -401,6 +433,37 @@ class MainActivity : ComponentActivity() {
 
                 override fun onReceivedTitle(view: WebView?, title: String?) {
                     super.onReceivedTitle(view, title)
+                }
+
+                override fun onCreateWindow(
+                    view: WebView?,
+                    isDialog: Boolean,
+                    isUserGesture: Boolean,
+                    resultMsg: Message?
+                ): Boolean {
+                    val isBlocking = viewModel.uiState.value.isPopupBlockingEnabled
+                    val now = System.currentTimeMillis()
+
+                    if (isBlocking && !isUserGesture) {
+                        return false
+                    }
+
+                    if (isBlocking && (now - lastPopupCreatedTimestamp < 500L)) {
+                        return false
+                    }
+
+                    if (resultMsg != null) {
+                        lastPopupCreatedTimestamp = now
+                        val newTab = viewModel.openNewTab()
+                        val newWebView = tabWebViewManager.getOrCreateWebView(newTab.id, "").first
+                        val transport = resultMsg.obj as? WebView.WebViewTransport
+                        if (transport != null) {
+                            transport.webView = newWebView
+                            resultMsg.sendToTarget()
+                            return true
+                        }
+                    }
+                    return false
                 }
 
                 override fun onShowFileChooser(

@@ -61,11 +61,11 @@ val BlackWhiteColors = AppColors(
     isMonochrome = true
 )
 
-val LocalAppColors: ProvidableCompositionLocal<AppColors> = staticCompositionLocalOf { WhiteColors }
+val LocalAppColors: ProvidableCompositionLocal<AppColors> = staticCompositionLocalOf { BlackWhiteColors }
 
 @Composable
 fun MyApplicationTheme(
-    appTheme: AppTheme = AppTheme.WHITE,
+    appTheme: AppTheme = AppTheme.BLACK_WHITE,
     content: @Composable () -> Unit
 ) {
     val colors = when (appTheme) {

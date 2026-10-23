@@ -423,7 +423,7 @@ fun BrowserMenuSheet(
 
 
 
-                // Settings -> Theme (Centralized Theme Selection: White, Black & White)
+                // Settings -> Theme (Theme Selection: Black & White)
                 MenuRow(
                     title = "Theme",
                     icon = Icons.Default.Settings,
@@ -1257,8 +1257,8 @@ private fun ThemeSelectionDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
-                    val isSelected = currentTheme == theme || (currentTheme == AppTheme.FORCE_DARK_ON && theme == AppTheme.WHITE)
+                listOf(AppTheme.BLACK_WHITE).forEach { theme ->
+                    val isSelected = currentTheme == theme || currentTheme == AppTheme.FORCE_DARK_ON
                     Surface(
                         onClick = {
                             onSelectTheme(theme)

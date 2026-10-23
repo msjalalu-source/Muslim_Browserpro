@@ -115,4 +115,22 @@ class LegacyThemeMigrationTest {
         assertFalse(secondRun)
         assertEquals("WHITE", prefs.getString(MuslimBrowserApp.KEY_APP_THEME, null))
     }
+
+    @Test
+    fun testDefaultThemeIsBlackAndWhite() {
+        val repo = SettingsRepository(context)
+        assertEquals(AppTheme.BLACK_WHITE, repo.getAppTheme())
+
+        val uiState = BrowserUiState()
+        assertEquals(AppTheme.BLACK_WHITE, uiState.appTheme)
+    }
+
+    @Test
+    fun testThemePersistenceAcrossRestarts() {
+        val repo1 = SettingsRepository(context)
+        repo1.setAppTheme(AppTheme.BLACK_WHITE)
+
+        val repo2 = SettingsRepository(context)
+        assertEquals(AppTheme.BLACK_WHITE, repo2.getAppTheme())
+    }
 }

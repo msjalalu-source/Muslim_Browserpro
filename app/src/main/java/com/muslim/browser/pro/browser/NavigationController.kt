@@ -9,7 +9,8 @@ object NavigationController {
         url: String,
         customKeywords: Set<String>,
         normalizedKeywords: Collection<String>? = null,
-        searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO
+        searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
+        isAdBlockingEnabled: Boolean = true
     ): NavigationDecision {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) {
@@ -60,7 +61,7 @@ object NavigationController {
         }
 
         // Destination protection: Direct URL check against adult content, ad networks, and keywords
-        val check = ProtectionEngine.checkDirectUrl(trimmed, customKeywords, normalizedKeywords)
+        val check = ProtectionEngine.checkDirectUrl(trimmed, customKeywords, normalizedKeywords, isAdBlockingEnabled)
         if (check is ProtectionEngine.FilterResult.Blocked) {
             return NavigationDecision.Blocked(check.reason, check.detail)
         }

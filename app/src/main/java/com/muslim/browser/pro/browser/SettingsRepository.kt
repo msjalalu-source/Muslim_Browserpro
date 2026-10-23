@@ -54,11 +54,11 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getAppTheme(): AppTheme {
-        val raw = prefs.getString(KEY_APP_THEME, AppTheme.WHITE.name)
+        val raw = prefs.getString(KEY_APP_THEME, AppTheme.BLACK_WHITE.name)
         return try {
-            AppTheme.valueOf(raw ?: AppTheme.WHITE.name)
+            AppTheme.valueOf(raw ?: AppTheme.BLACK_WHITE.name)
         } catch (_: Exception) {
-            AppTheme.WHITE
+            AppTheme.BLACK_WHITE
         }
     }
 

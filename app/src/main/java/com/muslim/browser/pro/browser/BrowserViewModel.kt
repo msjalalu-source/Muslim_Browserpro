@@ -168,7 +168,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun openNewTab(url: String = "") {
+    fun openNewTab(url: String = ""): BrowserTab {
         val newTab = BrowserTab(
             id = UUID.randomUUID().toString(),
             url = url,
@@ -189,6 +189,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        return newTab
     }
 
     fun closeTab(tabId: String) {
