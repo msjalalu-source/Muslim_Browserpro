@@ -443,222 +443,99 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun translateCurrentPage(
-        evalScript: (String, (String?) -> Unit) -> Unit,
+        evaluateJs: ((script: String, callback: ((String?) -> Unit)?) -> Unit)? = null,
+        reloadPage: () -> Unit = {},
+        evalScript: ((String, (String?) -> Unit) -> Unit)? = null,
         onComplete: () -> Unit = {}
     ) {
-        if (_uiState.value.isTranslating) return
+        val execJs: (String, ((String?) -> Unit)?) -> Unit = evaluateJs ?: { script, cb ->
+            evalScript?.invoke(script) { res -> cb?.invoke(res) }
+        }
 
-        // If the page is already translated, restore original page text
-        if (_uiState.value.isPageTranslated) {
-            val restoreScript = """
-                (function() {
-                    try {
-                        if (window.__mbNodes) {
-                            for (var id in window.__mbNodes) {
-                                var item = window.__mbNodes[id];
-                                if (item && item.node && item.original !== undefined) {
-                                    item.node.nodeValue = item.original;
-                                }
-                            }
-                        }
-                        window.__mbTranslated = false;
-                    } catch(e) {}
-                })();
-            """.trimIndent()
-            evalScript(restoreScript) {
-                _uiState.update { it.copy(isPageTranslated = false) }
-                Toast.makeText(getApplication(), "আসল পেজ পুনরুদ্ধার করা হয়েছে", Toast.LENGTH_SHORT).show()
-                onComplete()
-            }
+        closeMenu()
+        val state = _uiState.value
+        if (state.isHomePage || state.currentUrl.isBlank() || state.currentUrl.startsWith("about:", ignoreCase = false)) {
+            showToast("Translate works on active webpages")
+            return
+        }
+        if (state.isTranslating) {
+            showToast("Translation in progress...")
+            return
+        }
+        if (state.isPageTranslated) {
+            reloadPage()
+            _uiState.update { it.copy(isPageTranslated = false, isTranslating = false) }
+            showToast("Original page restored")
+            onComplete()
             return
         }
 
         _uiState.update { it.copy(isTranslating = true) }
+        showToast("Translating to বাংলা...")
 
-        // Collect visible text nodes, excluding script, style, code, inputs, and visible password containers
-        val extractScript = """
-            (function() {
-                try {
-                    window.__mbNodes = {};
-                    var nextId = 0;
-
-                    function hasVisiblePasswordChild(container) {
-                        if (!container || !container.querySelector) return false;
-                        var pass = container.querySelector('input[type=password]');
-                        if (!pass) return false;
-                        var s = window.getComputedStyle(pass);
-                        return (pass.offsetParent !== null || s.position === 'fixed') && 
-                               s.display !== 'none' && 
-                               s.visibility !== 'hidden' && 
-                               (pass.offsetWidth > 0 || pass.offsetHeight > 0);
-                    }
-
-                    function isExcluded(el) {
-                        var curr = el;
-                        while (curr && curr !== document.body && curr !== document.documentElement) {
-                            var tag = (curr.tagName || '').toLowerCase();
-                            if (tag === 'script' || tag === 'style' || tag === 'noscript' || tag === 'code' || tag === 'textarea' || tag === 'input') {
-                                return true;
-                            }
-                            if (curr.getAttribute && curr.getAttribute('translate') === 'no') {
-                                return true;
-                            }
-                            if (curr.className && typeof curr.className === 'string' && curr.className.indexOf('notranslate') !== -1) {
-                                return true;
-                            }
-                            if ((tag === 'form' || curr.parentElement === document.body) && hasVisiblePasswordChild(curr)) {
-                                return true;
-                            }
-                            curr = curr.parentElement;
-                        }
-                        return false;
-                    }
-
-                    var walker = document.createTreeWalker(
-                        document.body,
-                        NodeFilter.SHOW_TEXT,
-                        {
-                            acceptNode: function(node) {
-                                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-                                var parent = node.parentElement;
-                                if (!parent) return NodeFilter.FILTER_REJECT;
-                                var s = window.getComputedStyle(parent);
-                                if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) {
-                                    return NodeFilter.FILTER_REJECT;
-                                }
-                                if (isExcluded(parent)) return NodeFilter.FILTER_REJECT;
-                                return NodeFilter.FILTER_ACCEPT;
-                            }
-                        },
-                        false
-                    );
-
-                    var items = [];
-                    var node;
-                    while (node = walker.nextNode()) {
-                        var text = node.nodeValue.trim();
-                        if (text.length > 0) {
-                            var id = 'mb_t_' + (++nextId);
-                            window.__mbNodes[id] = { node: node, original: node.nodeValue };
-                            items.push({ id: id, text: text });
-                        }
-                    }
-                    return JSON.stringify(items);
-                } catch(e) {
-                    return JSON.stringify([]);
-                }
-            })();
-        """.trimIndent()
-
-        evalScript(extractScript) { rawResult ->
-            if (rawResult == null) {
+        execJs(BengaliTranslator.buildExtractScript()) { jsonResult ->
+            if (jsonResult.isNullOrBlank() || jsonResult == "null") {
                 _uiState.update { it.copy(isTranslating = false) }
-                return@evalScript
+                return@execJs
             }
-
-            val unquoted = unescapeJsJson(rawResult)
-            val items = try {
-                val jsonArr = org.json.JSONArray(unquoted)
-                val list = mutableListOf<TextNodeItem>()
-                for (i in 0 until jsonArr.length()) {
-                    val obj = jsonArr.getJSONObject(i)
-                    list.add(TextNodeItem(id = obj.getString("id"), text = obj.getString("text")))
-                }
-                list
-            } catch (_: Exception) {
-                emptyList()
-            }
-
-            if (items.isEmpty()) {
-                _uiState.update { it.copy(isTranslating = false) }
-                return@evalScript
-            }
-
-            val serverUrl = LibreTranslateClient.getServerUrl(getApplication())
-            val apiKey = LibreTranslateClient.getApiKey(getApplication())
 
             activeTranslationJob?.cancel()
             activeTranslationJob = viewModelScope.launch(Dispatchers.IO) {
-                val batches = items.chunked(15)
-                val semaphore = Semaphore(2)
-                var hasFailed = false
-                var hasModifiedDom = false
-
-                val jobs = batches.map { batch ->
-                    launch {
-                        semaphore.withPermit {
-                            if (hasFailed) return@withPermit
-                            val texts = batch.map { it.text }
-                            val res = LibreTranslateClient.translateBatch(serverUrl, apiKey, texts)
-                            if (hasFailed) return@withPermit
-
-                            when (res) {
-                                is LibreTranslateClient.TranslationResult.Success -> {
-                                    hasModifiedDom = true
-                                    val updatesJson = org.json.JSONArray().apply {
-                                        for (i in batch.indices) {
-                                            val translated = res.translations.getOrNull(i) ?: batch[i].text
-                                            put(org.json.JSONObject().apply {
-                                                put("id", batch[i].id)
-                                                put("text", translated)
-                                            })
-                                        }
-                                    }.toString()
-
-                                    val updateScript = "(function(){ try { var u = $updatesJson; if (!window.__mbNodes) return; for (var i = 0; i < u.length; i++) { var item = window.__mbNodes[u[i].id]; if (item && item.node) { item.node.nodeValue = u[i].text; } } window.__mbTranslated = true; } catch(e){} })();"
-
-                                    withContext(Dispatchers.Main) {
-                                        evalScript(updateScript) {}
-                                    }
-                                }
-                                is LibreTranslateClient.TranslationResult.Error -> {
-                                    hasFailed = true
-                                    android.util.Log.w("BrowserViewModel", "LibreTranslate translation failed: ${res.messageBn}")
-                                    withContext(Dispatchers.Main) {
-                                        _uiState.update { it.copy(isTranslating = false) }
-                                    }
-                                }
-                            }
+                try {
+                    var cleanJson = jsonResult.trim()
+                    if (cleanJson.startsWith("\"") && cleanJson.endsWith("\"")) {
+                        try {
+                            cleanJson = org.json.JSONTokener(cleanJson).nextValue() as String
+                        } catch (_: Exception) {
+                            cleanJson = jsonResult
                         }
                     }
-                }
-
-                jobs.joinAll()
-
-                withContext(Dispatchers.Main) {
-                    _uiState.update {
-                        it.copy(
-                            isTranslating = false,
-                            isPageTranslated = if (hasModifiedDom) true else it.isPageTranslated
-                        )
+                    val jsonObject = org.json.JSONObject(cleanJson)
+                    val textsJsonArray = jsonObject.optJSONArray("texts")
+                    if (textsJsonArray == null || textsJsonArray.length() == 0) {
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
+                            showToast("No translatable text found")
+                        }
+                        return@launch
                     }
-                    if (!hasFailed && hasModifiedDom) {
-                        Toast.makeText(getApplication(), "পেজটি বাংলায় অনুবাদ করা হয়েছে", Toast.LENGTH_SHORT).show()
-                        onComplete()
+
+                    val texts = ArrayList<String>(textsJsonArray.length())
+                    for (i in 0 until textsJsonArray.length()) {
+                        texts.add(textsJsonArray.getString(i))
+                    }
+
+                    val result = BengaliTranslator.translateBatch(texts)
+                    if (result.isSuccess) {
+                        val translatedList = result.getOrThrow()
+                        val replaceScript = BengaliTranslator.buildReplaceScript(translatedList)
+                        withContext(Dispatchers.Main) {
+                            execJs(replaceScript) {
+                                _uiState.update { current ->
+                                    current.copy(
+                                        isPageTranslated = true,
+                                        isTranslating = false
+                                    )
+                                }
+                                showToast("বাংলায় অনুবাদ সম্পন্ন হয়েছে")
+                                onComplete()
+                            }
+                        }
+                    } else {
+                        val err = result.exceptionOrNull()
+                        android.util.Log.e("BrowserViewModel", "Translation failed: ${err?.message}", err)
+                        withContext(Dispatchers.Main) {
+                            _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
+                            showToast("Translation unavailable. Please try again.")
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("BrowserViewModel", "Translation exception: ${e.message}", e)
+                    withContext(Dispatchers.Main) {
+                        _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
+                        showToast("Translation unavailable. Please try again.")
                     }
                 }
-            }
-        }
-    }
-
-    private data class TextNodeItem(val id: String, val text: String)
-
-    private fun unescapeJsJson(raw: String): String {
-        val trimmed = raw.trim()
-        return try {
-            val tokener = org.json.JSONTokener(trimmed)
-            val value = tokener.nextValue()
-            value.toString()
-        } catch (_: Exception) {
-            if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length >= 2) {
-                trimmed.substring(1, trimmed.length - 1)
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\")
-                    .replace("\\n", "\n")
-                    .replace("\\r", "\r")
-                    .replace("\\t", "\t")
-            } else {
-                trimmed
             }
         }
     }

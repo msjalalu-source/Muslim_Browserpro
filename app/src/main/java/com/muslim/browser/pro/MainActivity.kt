@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DesktopCore.migrateSavedArchitecture(this)
 
         tabWebViewManager = TabWebViewManager(
             context = this,
@@ -207,8 +208,11 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onTranslateToBengali = {
                                     viewModel.translateCurrentPage(
-                                        evalScript = { script, cb ->
-                                            currentWebView.evaluateJavascript(script) { res -> cb(res) }
+                                        evaluateJs = { script, cb ->
+                                            currentWebView.evaluateJavascript(script) { res -> cb?.invoke(res) }
+                                        },
+                                        reloadPage = {
+                                            currentWebView.reload()
                                         }
                                     )
                                 },
@@ -343,8 +347,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                override fun onPageCommitVisible(view: WebView?, url: String?) {
+                    super.onPageCommitVisible(view, url)
+                    view?.settings?.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                    val arch = viewModel.uiState.value.desktopArchitecture
+                    view?.let {
+                        DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                    }
+                    viewModel.onPageCommitVisible()
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
+                    val arch = viewModel.uiState.value.desktopArchitecture
+                    view?.let {
+                        DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                    }
                     val current = url ?: ""
                     viewModel.onPageFinished(
                         url = current,

@@ -20,6 +20,7 @@ class MuslimBrowserApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.muslim.browser.pro.browser.DesktopCore.migrateSavedArchitecture(this)
         migrateLegacyTheme(this)
         registerShareIntentDispatcher()
     }

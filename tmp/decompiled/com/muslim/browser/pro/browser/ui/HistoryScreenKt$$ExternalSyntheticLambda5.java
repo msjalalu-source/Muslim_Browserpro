@@ -1,0 +1,32 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  androidx.compose.runtime.MutableState
+ *  com.android.tools.r8.annotations.LambdaMethod
+ *  com.android.tools.r8.annotations.SynthesizedClassV2
+ *  kotlin.jvm.functions.Function0
+ */
+package com.muslim.browser.pro.browser.ui;
+
+import androidx.compose.runtime.MutableState;
+import com.android.tools.r8.annotations.LambdaMethod;
+import com.android.tools.r8.annotations.SynthesizedClassV2;
+import com.muslim.browser.pro.browser.ui.HistoryScreenKt;
+import kotlin.jvm.functions.Function0;
+
+@LambdaMethod(holder="Lcom/muslim/browser/pro/browser/ui/HistoryScreenKt;", method="HistoryScreen$lambda$34$lambda$33$lambda$18$lambda$17$lambda$16$lambda$15", proto="(Landroidx/compose/runtime/MutableState;)Lkotlin/Unit;")
+@SynthesizedClassV2(apiLevel=-2, kind=19, versionHash="7bbc1d7254613ffaa026de47d975f73968361ef3e5d7b818ce0a83a33039c6b8")
+public final class HistoryScreenKt$$ExternalSyntheticLambda5
+implements Function0 {
+    public final MutableState f$0;
+
+    public /* synthetic */ HistoryScreenKt$$ExternalSyntheticLambda5(MutableState mutableState) {
+        this.f$0 = mutableState;
+    }
+
+    public final Object invoke() {
+        return HistoryScreenKt.HistoryScreen$lambda$34$lambda$33$lambda$18$lambda$17$lambda$16$lambda$15(this.f$0);
+    }
+}
+
