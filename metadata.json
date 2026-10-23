@@ -1,6 +1,6 @@
 {
   "name": "Muslim Browser Pro",
-  "description": "Android Browser with Desktop Mode, Translation, and Settings Health Check",
+  "description": "Ultra-lightweight protected Android browser with Windows 10 Touch Desktop Mode, Bengali translation, and smart security",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

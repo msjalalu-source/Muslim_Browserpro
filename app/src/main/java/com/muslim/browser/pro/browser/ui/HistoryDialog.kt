@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -206,8 +207,9 @@ private fun HistoryItemCard(
     onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
-    val timeFormatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-    val formattedTime = timeFormatter.format(Date(entry.timestamp))
+    val formattedTime = remember(entry.timestamp) {
+        SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
+    }
 
     Card(
         modifier = Modifier

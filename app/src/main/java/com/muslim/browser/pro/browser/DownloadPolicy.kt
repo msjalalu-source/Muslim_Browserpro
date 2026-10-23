@@ -150,16 +150,22 @@ object DownloadPolicy {
         }
         val extFromUrl = extractExtension(url, null)
         if (extensions.contains(extFromUrl)) return true
-        val extFromDisp = extractFileName(url, contentDisposition).substringAfterLast('.')
-        if (extensions.contains(extFromDisp)) return true
+        val extFromDisp = extractFileName(url, contentDisposition).substringAfterLast('.', "")
+        if (extFromDisp.isNotEmpty() && extensions.contains(extFromDisp)) return true
 
         val cleanPath = try {
             Uri.parse(url.trim()).path?.lowercase(Locale.ROOT) ?: ""
         } catch (_: Exception) { "" }
 
-        for (ext in extensions) {
-            if (cleanPath.endsWith(".$ext") || cleanPath.contains(".$ext/") || cleanPath.contains(".$ext?")) {
-                return true
+        if (cleanPath.isNotEmpty()) {
+            val pathExt = cleanPath.substringAfterLast('.', "")
+            if (pathExt.isNotEmpty() && extensions.contains(pathExt)) return true
+            if (cleanPath.contains('.')) {
+                for (ext in extensions) {
+                    if (cleanPath.endsWith(".$ext") || cleanPath.contains(".$ext/")) {
+                        return true
+                    }
+                }
             }
         }
         return false

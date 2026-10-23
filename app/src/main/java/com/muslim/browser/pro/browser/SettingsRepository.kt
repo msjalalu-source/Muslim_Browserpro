@@ -11,6 +11,18 @@ class SettingsRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    @Volatile
+    private var cachedHistory: MutableList<HistoryEntry>? = null
+
+    @Volatile
+    private var cachedDownloads: MutableList<DownloadEntry>? = null
+
+    @Volatile
+    private var cachedFavorites: List<FavoriteSite>? = null
+
+    @Volatile
+    private var cachedKeywords: MutableSet<String>? = null
+
     companion object {
         const val PREFS_NAME = "focus_shield_prefs"
         const val KEY_APP_THEME = "key_app_theme"
@@ -34,7 +46,7 @@ class SettingsRepository(private val context: Context) {
             FavoriteSite(id = "3", name = "Google AI Studio", url = "https://aistudio.google.com", iconLetter = "AI", badgeColor = 0xFFFFFFFF),
             FavoriteSite(id = "4", name = "GitHub", url = "https://github.com", iconLetter = "GH", badgeColor = 0xFFFFFFFF),
             FavoriteSite(id = "5", name = "Prothom Alo", url = "https://www.prothomalo.com", iconLetter = "PA", badgeColor = 0xFFD32F2F),
-            FavoriteSite(id = "6", name = "The Daily Star", url = "https://www.thedailystar.net", iconLetter = "DS", badgeColor = 0xFFFFFFFF),
+            FavoriteSite(id = "6", name = "The Daily Star", url = "https://www.thedailystar.net", iconLetter = "Star", badgeColor = 0xFFFFFFFF),
             FavoriteSite(id = "7", name = "Ittefaq", url = "https://www.ittefaq.com.bd", iconLetter = "IT", badgeColor = 0xFFFFFFFF),
             FavoriteSite(id = "8", name = "BangiNews", url = "https://banginews.com", iconLetter = "BN", badgeColor = 0xFFD32F2F)
         )
@@ -92,7 +104,10 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getCustomKeywords(): Set<String> {
-        return prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()
+        cachedKeywords?.let { return it.toSet() }
+        val loaded = (prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()).toMutableSet()
+        cachedKeywords = loaded
+        return loaded.toSet()
     }
 
     fun addCustomKeyword(keyword: String): Boolean {
@@ -100,6 +115,7 @@ class SettingsRepository(private val context: Context) {
         val trimmed = keyword.trim().lowercase()
         if (trimmed.isEmpty() || current.contains(trimmed)) return false
         current.add(trimmed)
+        cachedKeywords = current
         prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, current).apply()
         return true
     }
@@ -115,38 +131,47 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getFavoriteSites(): List<FavoriteSite> {
-        val json = prefs.getString(KEY_FAVORITES, null) ?: return DEFAULT_FAVORITES
-        return try {
-            val arr = JSONArray(json)
-            val list = mutableListOf<FavoriteSite>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                list.add(
-                    FavoriteSite(
-                        id = obj.optString("id"),
-                        name = obj.optString("name"),
-                        url = obj.optString("url"),
-                        iconLetter = obj.optString("iconLetter"),
-                        badgeColor = obj.optLong("badgeColor", 0xFF2E7D32)
-                    )
-                )
-            }
-            if (list.isEmpty()) DEFAULT_FAVORITES else list
-        } catch (_: Exception) {
+        cachedFavorites?.let { return it }
+        val json = prefs.getString(KEY_FAVORITES, null)
+        val loaded = if (json == null) {
             DEFAULT_FAVORITES
+        } else {
+            try {
+                val arr = JSONArray(json)
+                val list = mutableListOf<FavoriteSite>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        FavoriteSite(
+                            id = obj.optString("id"),
+                            name = obj.optString("name"),
+                            url = obj.optString("url"),
+                            iconLetter = obj.optString("iconLetter"),
+                            badgeColor = obj.optLong("badgeColor", 0xFF2E7D32)
+                        )
+                    )
+                }
+                if (list.isEmpty()) DEFAULT_FAVORITES else list
+            } catch (_: Exception) {
+                DEFAULT_FAVORITES
+            }
         }
+        cachedFavorites = loaded
+        return loaded
     }
 
     fun addFavoriteSite(name: String, url: String): FavoriteSite {
         val current = getFavoriteSites().toMutableList()
         val site = FavoriteSite(name = name, url = url)
         current.add(site)
+        cachedFavorites = current
         saveFavorites(current)
         return site
     }
 
     fun removeFavoriteSite(id: String) {
         val current = getFavoriteSites().filterNot { it.id == id }
+        cachedFavorites = current
         saveFavorites(current)
     }
 
@@ -165,42 +190,53 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getHistory(): List<HistoryEntry> {
-        val json = prefs.getString(KEY_HISTORY, null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(json)
-            val list = mutableListOf<HistoryEntry>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                list.add(
-                    HistoryEntry(
-                        id = obj.optString("id"),
-                        title = obj.optString("title"),
-                        url = obj.optString("url"),
-                        timestamp = obj.optLong("timestamp")
+        cachedHistory?.let { return ArrayList(it) }
+        val json = prefs.getString(KEY_HISTORY, null)
+        val loaded = if (json == null) {
+            mutableListOf()
+        } else {
+            try {
+                val arr = JSONArray(json)
+                val list = mutableListOf<HistoryEntry>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        HistoryEntry(
+                            id = obj.optString("id"),
+                            title = obj.optString("title"),
+                            url = obj.optString("url"),
+                            timestamp = obj.optLong("timestamp")
+                        )
                     )
-                )
+                }
+                list
+            } catch (_: Exception) {
+                mutableListOf()
             }
-            list
-        } catch (_: Exception) {
-            emptyList()
         }
+        cachedHistory = loaded
+        return ArrayList(loaded)
     }
 
     fun addHistoryEntry(title: String, url: String): HistoryEntry {
-        val current = getHistory().toMutableList()
+        val current = if (cachedHistory != null) cachedHistory!! else getHistory().toMutableList()
         val entry = HistoryEntry(title = title, url = url)
         current.add(0, entry)
         if (current.size > 200) current.removeAt(current.size - 1)
+        cachedHistory = current
         saveHistory(current)
         return entry
     }
 
     fun deleteHistoryEntry(id: String) {
-        val current = getHistory().filterNot { it.id == id }
+        val current = if (cachedHistory != null) cachedHistory!! else getHistory().toMutableList()
+        current.removeAll { it.id == id }
+        cachedHistory = current
         saveHistory(current)
     }
 
     fun clearHistory() {
+        cachedHistory = mutableListOf()
         prefs.edit().remove(KEY_HISTORY).apply()
     }
 
@@ -218,51 +254,62 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getDownloads(): List<DownloadEntry> {
-        val json = prefs.getString(KEY_DOWNLOAD_HISTORY, null) ?: return emptyList()
-        return try {
-            val arr = JSONArray(json)
-            val list = mutableListOf<DownloadEntry>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                list.add(
-                    DownloadEntry(
-                        downloadId = obj.optLong("downloadId"),
-                        fileName = obj.optString("fileName"),
-                        url = obj.optString("url"),
-                        filePath = obj.optString("filePath"),
-                        totalBytes = obj.optLong("totalBytes"),
-                        downloadedBytes = obj.optLong("downloadedBytes"),
-                        status = try {
-                            DownloadStatus.valueOf(obj.optString("status", DownloadStatus.COMPLETED.name))
-                        } catch (_: Exception) {
-                            DownloadStatus.COMPLETED
-                        },
-                        timestamp = obj.optLong("timestamp")
+        cachedDownloads?.let { return ArrayList(it) }
+        val json = prefs.getString(KEY_DOWNLOAD_HISTORY, null)
+        val loaded = if (json == null) {
+            mutableListOf()
+        } else {
+            try {
+                val arr = JSONArray(json)
+                val list = mutableListOf<DownloadEntry>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    list.add(
+                        DownloadEntry(
+                            downloadId = obj.optLong("downloadId"),
+                            fileName = obj.optString("fileName"),
+                            url = obj.optString("url"),
+                            filePath = obj.optString("filePath"),
+                            totalBytes = obj.optLong("totalBytes"),
+                            downloadedBytes = obj.optLong("downloadedBytes"),
+                            status = try {
+                                DownloadStatus.valueOf(obj.optString("status", DownloadStatus.COMPLETED.name))
+                            } catch (_: Exception) {
+                                DownloadStatus.COMPLETED
+                            },
+                            timestamp = obj.optLong("timestamp")
+                        )
                     )
-                )
+                }
+                list
+            } catch (_: Exception) {
+                mutableListOf()
             }
-            list
-        } catch (_: Exception) {
-            emptyList()
         }
+        cachedDownloads = loaded
+        return ArrayList(loaded)
     }
 
     fun addDownloadEntry(entry: DownloadEntry): DownloadEntry {
-        val current = getDownloads().toMutableList()
+        val current = if (cachedDownloads != null) cachedDownloads!! else getDownloads().toMutableList()
         current.removeAll { it.downloadId == entry.downloadId }
         current.add(0, entry)
+        cachedDownloads = current
         saveDownloads(current)
         return entry
     }
 
     fun deleteDownloadEntry(idOrName: String) {
-        val current = getDownloads().filterNot {
+        val current = if (cachedDownloads != null) cachedDownloads!! else getDownloads().toMutableList()
+        current.removeAll {
             it.downloadId.toString() == idOrName || it.fileName == idOrName
         }
+        cachedDownloads = current
         saveDownloads(current)
     }
 
     fun clearAllDownloadHistory() {
+        cachedDownloads = mutableListOf()
         prefs.edit().remove(KEY_DOWNLOAD_HISTORY).apply()
     }
 

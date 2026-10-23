@@ -51,6 +51,11 @@ object BengaliTranslator {
         } catch (_: Exception) {}
     }
 
+    private val NON_ASCII_WORD_REGEX = Regex("[^a-zA-Z]+")
+    private val PUNCTUATION_CHARS: HashSet<Char> = hashSetOf(
+        '.', ',', '$', '%', '-', '+', '/', ':', '#', '(', ')', '[', ']', '{', '}', '|', '\\', '@', '!', '?', '\'', '"'
+    )
+
     private val ENGLISH_INDICATORS = hashSetOf(
         "the", "be", "to", "of", "and", "a", "in", "that", "have", "it", "for", "not", "on", "with", "he",
         "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
@@ -171,7 +176,7 @@ object BengaliTranslator {
             return false
         }
 
-        val words = Regex("[^a-zA-Z]+").split(trimmed).filter { it.isNotBlank() }
+        val words = NON_ASCII_WORD_REGEX.split(trimmed).filter { it.isNotBlank() }
         if (words.isEmpty()) return false
 
         for (word in words) {
@@ -207,7 +212,7 @@ object BengaliTranslator {
         var allDigitsPunct = true
         for (i in 0 until trimmed.length) {
             val c = trimmed[i]
-            if (!(c.isDigit() || c.isWhitespace() || ".,$%-+/:#()[]{}|\\@!?'\"".contains(c))) {
+            if (!(c.isDigit() || c.isWhitespace() || PUNCTUATION_CHARS.contains(c))) {
                 allDigitsPunct = false
                 break
             }
@@ -371,7 +376,9 @@ object BengaliTranslator {
         val result = translateWithLibreTranslate(trimmed)
 
         val duration = System.currentTimeMillis() - startTime
-        TranslationStats.requestDurations.add(duration)
+        if (TranslationStats.requestDurations.size < 100) {
+            TranslationStats.requestDurations.add(duration)
+        }
 
         if (result.isSuccess) {
             TranslationStats.successfulRequests++

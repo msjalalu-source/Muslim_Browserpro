@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -218,8 +219,9 @@ private fun DownloadItemCard(
     onDelete: () -> Unit
 ) {
     val colors = LocalAppColors.current
-    val timeFormatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-    val formattedTime = timeFormatter.format(Date(entry.timestamp))
+    val formattedTime = remember(entry.timestamp) {
+        SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(entry.timestamp))
+    }
 
     val statusColor = when (entry.status) {
         DownloadStatus.COMPLETED -> colors.accent
@@ -320,14 +322,15 @@ private fun DownloadItemCard(
     }
 }
 
+private val FILE_SIZE_UNITS = arrayOf("B", "KB", "MB", "GB")
+
 private fun formatFileSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB")
     var size = bytes.toDouble()
     var unitIndex = 0
-    while (size >= 1024 && unitIndex < units.size - 1) {
+    while (size >= 1024 && unitIndex < FILE_SIZE_UNITS.size - 1) {
         size /= 1024
         unitIndex++
     }
-    return String.format(Locale.US, "%.1f %s", size, units[unitIndex])
+    return String.format(Locale.US, "%.1f %s", size, FILE_SIZE_UNITS[unitIndex])
 }

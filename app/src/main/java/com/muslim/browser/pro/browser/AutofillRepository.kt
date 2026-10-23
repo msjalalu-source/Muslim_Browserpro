@@ -17,6 +17,9 @@ object AutofillRepository {
     private const val KEY_PROFILE_JSON = "key_profile_json"
     private const val KEY_HAS_SAVED = "key_has_saved_profile"
 
+    @Volatile
+    private var cachedProfile: AutofillProfile? = null
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
@@ -33,14 +36,17 @@ object AutofillRepository {
      * Enforces schema bounds on loaded data and performs migration if needed.
      */
     fun loadProfile(context: Context): AutofillProfile {
+        cachedProfile?.let { return it }
         val prefs = getPrefs(context)
         val jsonStr = prefs.getString(KEY_PROFILE_JSON, null) ?: return AutofillProfile()
 
-        return try {
+        val loaded = try {
             deserializeProfile(jsonStr)
         } catch (_: Exception) {
             AutofillProfile()
         }
+        cachedProfile = loaded
+        return loaded
     }
 
     /**
@@ -48,6 +54,7 @@ object AutofillRepository {
      * Synchronously commits to ensure durability across app restarts.
      */
     fun saveProfile(context: Context, profile: AutofillProfile): Boolean {
+        cachedProfile = profile
         val jsonStr = serializeProfile(profile)
         return getPrefs(context).edit()
             .putString(KEY_PROFILE_JSON, jsonStr)
@@ -59,6 +66,7 @@ object AutofillRepository {
      * Clears all saved profile data from private local storage.
      */
     fun clearProfile(context: Context): Boolean {
+        cachedProfile = null
         return getPrefs(context).edit()
             .clear()
             .commit()
