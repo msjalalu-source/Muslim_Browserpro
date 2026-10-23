@@ -38,7 +38,33 @@ class SettingsRepository(private val context: Context) {
         const val KEY_DOWNLOAD_HISTORY = "key_download_history"
         const val KEY_SEARCH_ENGINE = "key_search_engine"
 
-        val DEFAULT_PROTECTED_KEYWORDS = listOf("vpn", "proxy", "bypass", "tor")
+        val DEFAULT_PROTECTED_KEYWORDS = listOf(
+            "Aashiq Banaya",
+            "hot",
+            "intimate",
+            "adult",
+            "kiss",
+            "video",
+            "anonymous",
+            "anonymity",
+            "18+",
+            "download",
+            "apk"
+        )
+
+        val LEGACY_PROTECTED_KEYWORDS = listOf("vpn", "proxy", "bypass", "tor")
+
+        val ALL_PROTECTED_KEYWORDS = DEFAULT_PROTECTED_KEYWORDS + LEGACY_PROTECTED_KEYWORDS
+
+        fun normalizeKeyword(kw: String): String {
+            return kw.replace(Regex("\\s+"), " ").trim().lowercase(java.util.Locale.ROOT)
+        }
+
+        fun isProtected(keyword: String): Boolean {
+            val norm = normalizeKeyword(keyword)
+            if (norm.isEmpty()) return false
+            return ALL_PROTECTED_KEYWORDS.any { normalizeKeyword(it) == norm }
+        }
 
         val DEFAULT_FAVORITES = listOf(
             FavoriteSite(id = "1", name = "MoldovaLive", url = "https://moldovalive.md", iconLetter = "MD", badgeColor = 0xFFFFFFFF),
@@ -103,28 +129,62 @@ class SettingsRepository(private val context: Context) {
         prefs.edit().putString(KEY_DESKTOP_ARCHITECTURE, arch.name).apply()
     }
 
+    fun isProtectedKeyword(keyword: String): Boolean = isProtected(keyword)
+
     fun getCustomKeywords(): Set<String> {
         cachedKeywords?.let { return it.toSet() }
-        val loaded = (prefs.getStringSet(KEY_CUSTOM_KEYWORDS, emptySet()) ?: emptySet()).toMutableSet()
-        cachedKeywords = loaded
-        return loaded.toSet()
+        val saved = prefs.getStringSet(KEY_CUSTOM_KEYWORDS, null)
+        val result = LinkedHashSet<String>()
+        if (saved == null) {
+            // Fresh installation: include all 11 required built-in keywords
+            result.addAll(DEFAULT_PROTECTED_KEYWORDS)
+            prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, result).apply()
+        } else {
+            // Existing installation: preserve all existing keywords, safely add any missing built-in keywords
+            result.addAll(saved)
+            var modified = false
+            for (defaultKw in DEFAULT_PROTECTED_KEYWORDS) {
+                val exists = result.any { normalizeKeyword(it) == normalizeKeyword(defaultKw) }
+                if (!exists) {
+                    result.add(defaultKw)
+                    modified = true
+                }
+            }
+            if (modified) {
+                prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, result).apply()
+            }
+        }
+        cachedKeywords = result
+        return result.toSet()
     }
 
     fun addCustomKeyword(keyword: String): Boolean {
+        val norm = normalizeKeyword(keyword)
+        if (norm.isEmpty()) return false
         val current = getCustomKeywords().toMutableSet()
-        val trimmed = keyword.trim().lowercase()
-        if (trimmed.isEmpty() || current.contains(trimmed)) return false
-        current.add(trimmed)
+        // Prevent duplicate entries using case-insensitive comparison and normalized whitespace
+        if (current.any { normalizeKeyword(it) == norm }) {
+            return false
+        }
+        val cleaned = keyword.trim().replace(Regex("\\s+"), " ")
+        current.add(cleaned)
         cachedKeywords = current
         prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, current).apply()
         return true
     }
 
     fun removeCustomKeyword(keyword: String): Boolean {
+        val norm = normalizeKeyword(keyword)
+        if (norm.isEmpty()) return false
+        // Built-in protected keywords cannot be removed
+        if (isProtectedKeyword(keyword)) {
+            return false
+        }
         val current = getCustomKeywords().toMutableSet()
-        val trimmed = keyword.trim().lowercase()
-        val removed = current.remove(trimmed)
+        val match = current.firstOrNull { normalizeKeyword(it) == norm } ?: return false
+        val removed = current.remove(match)
         if (removed) {
+            cachedKeywords = current
             prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, current).apply()
         }
         return removed

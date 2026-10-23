@@ -550,10 +550,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         return removed
     }
 
+    fun isProtectedKeyword(keyword: String): Boolean {
+        return repository.isProtectedKeyword(keyword)
+    }
+
     fun getNormalizedKeywords(): List<String> {
-        val defaultKeywords = SettingsRepository.DEFAULT_PROTECTED_KEYWORDS
+        val defaultKeywords = SettingsRepository.ALL_PROTECTED_KEYWORDS
         val custom = repository.getCustomKeywords()
-        return (defaultKeywords + custom).distinct().sorted()
+        return (defaultKeywords + custom).map { SettingsRepository.normalizeKeyword(it) }.distinct().sorted()
     }
 
     fun translateCurrentPage(

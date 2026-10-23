@@ -20,6 +20,10 @@ class CustomKeywordBlockingTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        context.getSharedPreferences(SettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .commit()
     }
 
     @Test
@@ -130,5 +134,209 @@ class CustomKeywordBlockingTest {
 
         // Must distinguish search inputs from ordinary textareas/fields
         assertTrue(script.contains("isSearchInput"))
+    }
+
+    @Test
+    fun testAllElevenRequiredBuiltInKeywordsExistByDefault() {
+        val repo = SettingsRepository(context)
+        val keywords = repo.getCustomKeywords()
+
+        val expectedBuiltInKeywords = listOf(
+            "Aashiq Banaya",
+            "hot",
+            "intimate",
+            "adult",
+            "kiss",
+            "video",
+            "anonymous",
+            "anonymity",
+            "18+",
+            "download",
+            "apk"
+        )
+
+        assertEquals(11, expectedBuiltInKeywords.size)
+
+        for (expected in expectedBuiltInKeywords) {
+            val found = keywords.any {
+                SettingsRepository.normalizeKeyword(it) == SettingsRepository.normalizeKeyword(expected)
+            }
+            assertTrue("Expected built-in keyword '$expected' to be present by default", found)
+            assertTrue(
+                "Expected '$expected' to be identified as protected",
+                SettingsRepository.isProtected(expected)
+            )
+            assertTrue(
+                "Expected repo.isProtectedKeyword('$expected') to be true",
+                repo.isProtectedKeyword(expected)
+            )
+        }
+    }
+
+    @Test
+    fun testMissingDefaultsAddedSafelyToExistingInstallationsAndUserKeywordsPreserved() {
+        val existingKeywords = setOf("my_custom_tag", "hot", "saved_vpn_item")
+        context.getSharedPreferences(SettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet(SettingsRepository.KEY_CUSTOM_KEYWORDS, existingKeywords)
+            .commit()
+
+        val repo = SettingsRepository(context)
+        val loaded = repo.getCustomKeywords()
+
+        // 1. Existing user-added keywords preserved
+        assertTrue("Expected user custom keyword to be preserved", loaded.contains("my_custom_tag"))
+        assertTrue("Expected existing keyword to be preserved", loaded.contains("saved_vpn_item"))
+        assertTrue("Expected existing keyword to be preserved", loaded.contains("hot"))
+
+        // 2. All 11 default keywords now present
+        val expectedBuiltInKeywords = listOf(
+            "Aashiq Banaya", "hot", "intimate", "adult", "kiss", "video",
+            "anonymous", "anonymity", "18+", "download", "apk"
+        )
+        for (kw in expectedBuiltInKeywords) {
+            val exists = loaded.any {
+                SettingsRepository.normalizeKeyword(it) == SettingsRepository.normalizeKeyword(kw)
+            }
+            assertTrue("Expected missing default '$kw' to be added safely", exists)
+        }
+
+        // 3. "hot" was already present, must not be duplicated
+        val hotCount = loaded.count { SettingsRepository.normalizeKeyword(it) == "hot" }
+        assertEquals("Duplicate 'hot' must not be created", 1, hotCount)
+    }
+
+    @Test
+    fun testBuiltInKeywordsCannotBeRemovedThroughRepositoryRemovalOperations() {
+        val repo = SettingsRepository(context)
+        val initialKeywords = repo.getCustomKeywords()
+
+        val builtInKeywords = listOf(
+            "Aashiq Banaya", "hot", "intimate", "adult", "kiss", "video",
+            "anonymous", "anonymity", "18+", "download", "apk"
+        )
+
+        for (kw in builtInKeywords) {
+            // Attempt standard removal
+            val removeResult = repo.removeCustomKeyword(kw)
+            assertFalse("Repository removal of built-in keyword '$kw' must return false", removeResult)
+
+            // Attempt uppercase / whitespace varied removal
+            val upperRemove = repo.removeCustomKeyword(kw.uppercase())
+            assertFalse("Repository removal of uppercase '$kw' must return false", upperRemove)
+
+            val spacedRemove = repo.removeCustomKeyword("   $kw   ")
+            assertFalse("Repository removal of spaced '$kw' must return false", spacedRemove)
+        }
+
+        val afterAttempt = repo.getCustomKeywords()
+        for (kw in builtInKeywords) {
+            val exists = afterAttempt.any {
+                SettingsRepository.normalizeKeyword(it) == SettingsRepository.normalizeKeyword(kw)
+            }
+            assertTrue("Built-in keyword '$kw' must remain present after removal attempts", exists)
+        }
+    }
+
+    @Test
+    fun testUserAddedCustomKeywordsRemainRemovable() {
+        val repo = SettingsRepository(context)
+
+        val userKeyword = "custom-tracker-block"
+        val added = repo.addCustomKeyword(userKeyword)
+        assertTrue("User keyword addition must return true", added)
+
+        val withUser = repo.getCustomKeywords()
+        assertTrue("User keyword must be present in repository", withUser.contains(userKeyword))
+        assertFalse("User keyword must NOT be marked as protected", repo.isProtectedKeyword(userKeyword))
+
+        val removed = repo.removeCustomKeyword(userKeyword)
+        assertTrue("User keyword removal must return true", removed)
+
+        val afterRemove = repo.getCustomKeywords()
+        assertFalse("User keyword must be removed from repository", afterRemove.contains(userKeyword))
+    }
+
+    @Test
+    fun testDuplicateBuiltInEntriesAreNotCreated() {
+        val repo = SettingsRepository(context)
+        val initialSize = repo.getCustomKeywords().size
+
+        // Attempt to add duplicates with different case and whitespace
+        assertFalse(repo.addCustomKeyword("hot"))
+        assertFalse(repo.addCustomKeyword("HOT"))
+        assertFalse(repo.addCustomKeyword("  hot  "))
+        assertFalse(repo.addCustomKeyword("aashiq banaya"))
+        assertFalse(repo.addCustomKeyword("Aashiq Banaya"))
+        assertFalse(repo.addCustomKeyword("   Aashiq    Banaya   "))
+        assertFalse(repo.addCustomKeyword("18+"))
+        assertFalse(repo.addCustomKeyword("  18+  "))
+        assertFalse(repo.addCustomKeyword("download"))
+        assertFalse(repo.addCustomKeyword("apk"))
+
+        assertEquals("Repository size must remain unchanged when adding duplicate entries", initialSize, repo.getCustomKeywords().size)
+    }
+
+    @Test
+    fun testExistingKeywordMatchingAndSearchBlockingFunctionalWithRequiredKeywords() {
+        val repo = SettingsRepository(context)
+        val keywords = repo.getCustomKeywords()
+
+        // 1. "Aashiq Banaya" phrase search blocking
+        val aashiqUrl = "https://www.google.com/search?q=Aashiq+Banaya+video+song"
+        val decision1 = NavigationController.evaluate(aashiqUrl, keywords)
+        assertTrue(decision1 is NavigationDecision.Blocked)
+
+        // 2. "18+" search blocking
+        val plusUrl = "https://duckduckgo.com/?q=top+movies+18%2B"
+        val decision2 = NavigationController.evaluate(plusUrl, keywords)
+        assertTrue(decision2 is NavigationDecision.Blocked)
+
+        // 3. "hot" search blocking
+        val hotUrl = "https://www.google.com/search?q=hot+scenes"
+        val decision3 = NavigationController.evaluate(hotUrl, keywords)
+        assertTrue(decision3 is NavigationDecision.Blocked)
+
+        // 4. "adult" search blocking on website search
+        val adultUrl = "https://en.wikipedia.org/w/index.php?search=adult+content"
+        val decision4 = NavigationController.evaluate(adultUrl, keywords)
+        assertTrue(decision4 is NavigationDecision.Blocked)
+
+        // 5. "download" search blocking
+        val downloadUrl = "https://www.bing.com/search?q=download+crack"
+        val decision5 = NavigationController.evaluate(downloadUrl, keywords)
+        assertTrue(decision5 is NavigationDecision.Blocked)
+
+        // 6. "apk" search blocking
+        val apkUrl = "https://duckduckgo.com/?q=game+mod+apk"
+        val decision6 = NavigationController.evaluate(apkUrl, keywords)
+        assertTrue(decision6 is NavigationDecision.Blocked)
+
+        // 7. Allowed searches without protected keywords
+        val safeSearchUrl = "https://www.google.com/search?q=islamic+history+and+architecture"
+        val safeDecision = NavigationController.evaluate(safeSearchUrl, keywords)
+        assertTrue(safeDecision is NavigationDecision.Allowed)
+    }
+
+    @Test
+    fun testUiNonDeletableProtectionDistinction() {
+        // Built-in keywords are identified as protected (UI renders Lock icon without Delete button)
+        assertTrue(SettingsRepository.isProtected("Aashiq Banaya"))
+        assertTrue(SettingsRepository.isProtected("aashiq banaya"))
+        assertTrue(SettingsRepository.isProtected("hot"))
+        assertTrue(SettingsRepository.isProtected("HOT"))
+        assertTrue(SettingsRepository.isProtected("  intimate  "))
+        assertTrue(SettingsRepository.isProtected("adult"))
+        assertTrue(SettingsRepository.isProtected("kiss"))
+        assertTrue(SettingsRepository.isProtected("video"))
+        assertTrue(SettingsRepository.isProtected("anonymous"))
+        assertTrue(SettingsRepository.isProtected("anonymity"))
+        assertTrue(SettingsRepository.isProtected("18+"))
+        assertTrue(SettingsRepository.isProtected("download"))
+        assertTrue(SettingsRepository.isProtected("apk"))
+
+        // User-added custom keyword is NOT protected (UI renders Delete button)
+        assertFalse(SettingsRepository.isProtected("my_temporary_block"))
+        assertFalse(SettingsRepository.isProtected("user_tag"))
     }
 }

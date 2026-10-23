@@ -104,6 +104,7 @@ fun BrowserMenuSheet(
     onOpenHistory: () -> Unit,
     onOpenDownloads: () -> Unit = {},
     onAddKeyword: (String) -> Boolean,
+    onRemoveKeyword: (String) -> Boolean = { false },
     onTogglePopupBlocking: (Boolean) -> Unit,
     onToggleAdBlocking: (Boolean) -> Unit,
     onClearAllData: () -> Unit,
@@ -529,7 +530,8 @@ fun BrowserMenuSheet(
                 // Custom Keyword Blocking (Compact)
                 CustomKeywordSection(
                     customKeywords = uiState.customKeywords,
-                    onAddKeyword = onAddKeyword
+                    onAddKeyword = onAddKeyword,
+                    onRemoveKeyword = onRemoveKeyword
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -1061,7 +1063,8 @@ private fun ClearDataSection(
 @Composable
 private fun CustomKeywordSection(
     customKeywords: Set<String>,
-    onAddKeyword: (String) -> Boolean
+    onAddKeyword: (String) -> Boolean,
+    onRemoveKeyword: ((String) -> Boolean)? = null
 ) {
     val colors = LocalAppColors.current
     var newKeywordInput by remember { mutableStateOf("") }
@@ -1162,29 +1165,66 @@ private fun CustomKeywordSection(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     customKeywords.forEach { kw ->
-                        Surface(
-                            shape = RoundedCornerShape(5.dp),
-                            color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33FF7043),
-                            border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x66FF7043)),
-                            modifier = Modifier.testTag("protected_keyword_$kw")
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        val isProtected = com.muslim.browser.pro.browser.SettingsRepository.isProtected(kw)
+                        if (isProtected) {
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33FF7043),
+                                border = BorderStroke(1.dp, if (colors.isMonochrome) colors.border else Color(0x66FF7043)),
+                                modifier = Modifier.testTag("protected_keyword_$kw")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Protected",
-                                    tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF7043),
-                                    modifier = Modifier.size(9.dp)
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text(
-                                    text = kw,
-                                    color = colors.textPrimary,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Protected",
+                                        tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFFF7043),
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = kw,
+                                        color = colors.textPrimary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.2f) else colors.surface,
+                                border = BorderStroke(1.dp, colors.border),
+                                modifier = Modifier.testTag("custom_keyword_$kw")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 5.dp, end = 2.dp, top = 2.dp, bottom = 2.dp)
+                                ) {
+                                    Text(
+                                        text = kw,
+                                        color = colors.textPrimary,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clickable { onRemoveKeyword?.invoke(kw) }
+                                            .testTag("remove_keyword_$kw"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Remove $kw",
+                                            tint = colors.textSecondary,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

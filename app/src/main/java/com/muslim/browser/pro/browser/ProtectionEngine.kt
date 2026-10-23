@@ -302,25 +302,15 @@ object ProtectionEngine {
         return kw.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
     }
 
-    fun isBlockedByCustomKeywords(
-        text: String,
+    private fun findKeywordMatch(
+        normalizedText: String,
         customKeywords: Set<String>,
-        normalizedKeywords: Collection<String>? = null
+        normalizedKeywords: Collection<String>?
     ): String? {
-        if (customKeywords.isEmpty() || text.isBlank()) return null
-        val plusReplaced = text.replace('+', ' ')
-        val decoded = try {
-            Uri.decode(plusReplaced) ?: plusReplaced
-        } catch (_: Exception) {
-            plusReplaced
-        }
-        val normalized = decoded.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
-        if (normalized.isEmpty()) return null
-
         if (!normalizedKeywords.isNullOrEmpty()) {
             for (kwNorm in normalizedKeywords) {
                 val cleanKwNorm = normalizeKeyword(kwNorm)
-                if (cleanKwNorm.isNotEmpty() && normalized.contains(cleanKwNorm)) {
+                if (cleanKwNorm.isNotEmpty() && normalizedText.contains(cleanKwNorm)) {
                     val original = customKeywords.firstOrNull { normalizeKeyword(it) == cleanKwNorm }
                     return original ?: kwNorm
                 }
@@ -328,11 +318,41 @@ object ProtectionEngine {
         } else {
             for (kw in customKeywords) {
                 val kwNormalized = normalizeKeyword(kw)
-                if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
+                if (kwNormalized.isNotEmpty() && normalizedText.contains(kwNormalized)) {
                     return kw
                 }
             }
         }
+        return null
+    }
+
+    fun isBlockedByCustomKeywords(
+        text: String,
+        customKeywords: Set<String>,
+        normalizedKeywords: Collection<String>? = null
+    ): String? {
+        if (customKeywords.isEmpty() || text.isBlank()) return null
+
+        // 1. Check with URL-decoded text preserving '+' (crucial for phrases and symbols like "18+")
+        val decoded = try {
+            Uri.decode(text) ?: text
+        } catch (_: Exception) {
+            text
+        }
+        val normalizedRaw = decoded.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        if (normalizedRaw.isNotEmpty()) {
+            val match = findKeywordMatch(normalizedRaw, customKeywords, normalizedKeywords)
+            if (match != null) return match
+        }
+
+        // 2. Also check with '+' treated as space (for URL search query parameters like "hot+scenes")
+        val plusReplaced = decoded.replace('+', ' ')
+        val normalizedPlus = plusReplaced.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        if (normalizedPlus.isNotEmpty() && normalizedPlus != normalizedRaw) {
+            val match = findKeywordMatch(normalizedPlus, customKeywords, normalizedKeywords)
+            if (match != null) return match
+        }
+
         return null
     }
 

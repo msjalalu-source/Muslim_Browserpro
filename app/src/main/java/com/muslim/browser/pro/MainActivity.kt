@@ -217,6 +217,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel.openDownloads()
                                 },
                                 onAddKeyword = { keyword -> viewModel.addCustomKeyword(keyword) },
+                                onRemoveKeyword = { keyword -> viewModel.removeCustomKeyword(keyword) },
                                 onTogglePopupBlocking = { enabled ->
                                     viewModel.togglePopupBlocking(enabled)
                                     tabWebViewManager.forEachLiveWebView { webView ->
