@@ -79,7 +79,7 @@ fun TabsSelectionDialog(
         ) {
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth(0.90f)
                     .heightIn(max = 380.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .testTag("tabs_dialog"),

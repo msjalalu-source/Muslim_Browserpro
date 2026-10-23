@@ -576,7 +576,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         texts.add(textsJsonArray.getString(i))
                     }
 
-                    val result = BengaliTranslator.translateBatch(texts)
+                    val result = BengaliTranslator.translateBatch(texts) { partialList ->
+                        val progressiveScript = BengaliTranslator.buildReplaceScript(partialList)
+                        withContext(Dispatchers.Main) {
+                            execJs(progressiveScript, null)
+                        }
+                    }
                     if (result.isSuccess) {
                         val translatedList = result.getOrThrow()
                         val replaceScript = BengaliTranslator.buildReplaceScript(translatedList)

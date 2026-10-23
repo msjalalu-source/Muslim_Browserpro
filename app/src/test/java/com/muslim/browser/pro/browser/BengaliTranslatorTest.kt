@@ -2,6 +2,8 @@ package com.muslim.browser.pro.browser
 
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -150,5 +152,75 @@ class BengaliTranslatorTest {
 
         assertFalse(vm.uiState.value.isTranslating)
         assertFalse(vm.uiState.value.isPageTranslated)
+    }
+
+    @Test
+    fun testBengaliTranslatorCacheHitSpeed() = runBlocking {
+        // Pre-populate cache
+        BengaliTranslator.putInCache(BengaliTranslator.cacheKey("Fast Title"), "দ্রুত শিরোনাম")
+        BengaliTranslator.putInCache(BengaliTranslator.cacheKey("Fast Body"), "দ্রুত বডি")
+
+        val startTime = System.currentTimeMillis()
+        val result = BengaliTranslator.translateBatch(listOf("Fast Title", "Fast Body"))
+        val duration = System.currentTimeMillis() - startTime
+
+        assertTrue(result.isSuccess)
+        val translations = result.getOrThrow()
+        assertEquals("দ্রুত শিরোনাম", translations[0])
+        assertEquals("দ্রুত বডি", translations[1])
+        // Cache hit must resolve virtually instantaneously (< 50ms)
+        assertTrue("Cache hit duration was ${duration}ms, expected < 50ms", duration < 50)
+    }
+
+    @Test
+    fun testBengaliTranslatorProgressiveCallback() = runBlocking {
+        BengaliTranslator.putInCache(BengaliTranslator.cacheKey("Cached Item"), "ক্যাশ আইটেম")
+
+        BengaliTranslator.testTranslatorOverride = { text ->
+            when (text) {
+                "Uncached Item" -> "নতুন আইটেম"
+                else -> text
+            }
+        }
+
+        val progressiveUpdates = mutableListOf<List<String>>()
+        val result = BengaliTranslator.translateBatch(listOf("Cached Item", "Uncached Item")) { partial ->
+            progressiveUpdates.add(partial)
+        }
+
+        assertTrue(result.isSuccess)
+        // Should have received progressive updates
+        assertTrue(progressiveUpdates.isNotEmpty())
+        // First update should already contain the cached translation
+        assertEquals("ক্যাশ আইটেম", progressiveUpdates[0][0])
+        val finalResult = result.getOrThrow()
+        assertEquals("ক্যাশ আইটেম", finalResult[0])
+        assertEquals("নতুন আইটেম", finalResult[1])
+    }
+
+    @Test
+    fun testBengaliTranslatorDuplicateInFlightCoalescing() = runBlocking {
+        var callCount = 0
+        BengaliTranslator.testTranslatorOverride = { text ->
+            callCount++
+            Thread.sleep(20)
+            "অনুবাদ $text"
+        }
+
+        // Run concurrent single-text translations for the same string
+        val d1 = async(Dispatchers.IO) {
+            BengaliTranslator.translateSingleTextCoalesced("Concurrent Word")
+        }
+        val d2 = async(Dispatchers.IO) {
+            BengaliTranslator.translateSingleTextCoalesced("Concurrent Word")
+        }
+
+        val r1 = d1.await()
+        val r2 = d2.await()
+
+        assertTrue(r1.isSuccess)
+        assertTrue(r2.isSuccess)
+        assertEquals("অনুবাদ Concurrent Word", r1.getOrThrow())
+        assertEquals("অনুবাদ Concurrent Word", r2.getOrThrow())
     }
 }

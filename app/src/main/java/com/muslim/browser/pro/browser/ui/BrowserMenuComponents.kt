@@ -233,7 +233,8 @@ fun MenuToggleRow(
                         text = title,
                         color = colors.textPrimary,
                         fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
                     )
                     if (subtitle != null) {
                         Text(
@@ -327,13 +328,13 @@ fun AutofillSection(
             ) {
                 Icon(
                     imageVector = Icons.Default.Badge,
-                    contentDescription = "Autofill Profile",
+                    contentDescription = "Autofill",
                     tint = colors.iconTint,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Autofill Profile (CV)",
+                    text = "Autofill",
                     color = colors.textPrimary,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold

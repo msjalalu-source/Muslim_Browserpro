@@ -15,10 +15,10 @@ fun DesktopSection(
 ) {
     val colors = LocalAppColors.current
     MenuToggleRow(
-        title = "Windows 10 Desktop",
+        title = "Windows 10",
         subtitle = "Experimental browser identity profile",
         icon = Icons.Default.DesktopWindows,
-        contentDescription = "Windows 10 Desktop",
+        contentDescription = "Windows 10",
         checked = uiState.isWindows10TouchEnabled,
         onCheckedChange = onToggleWindows10Touch,
         onRowClick = {

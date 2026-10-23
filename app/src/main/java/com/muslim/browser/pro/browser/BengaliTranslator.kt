@@ -44,7 +44,7 @@ object BengaliTranslator {
 
     private val dispatchMutex = Mutex()
     private var lastDispatchTimeMs: Long = 0L
-    private val lruCache = TranslationLruCache(500)
+    private val lruCache = TranslationLruCache(1000)
     private val inFlightRequests = ConcurrentHashMap<String, CompletableDeferred<Result<String>>>()
 
     var testTranslatorOverride: ((String) -> String)? = null
@@ -239,23 +239,20 @@ object BengaliTranslator {
             return true
         }
 
-        val lettersOnly = StringBuilder()
+        var totalLetters = 0
+        var bengaliChars = 0
         for (i in 0 until trimmed.length) {
             val c = trimmed[i]
-            if (c.isLetter()) lettersOnly.append(c)
-        }
-        val lettersStr = lettersOnly.toString()
-        if (lettersStr.isNotEmpty()) {
-            var bengaliChars = 0
-            for (i in 0 until lettersStr.length) {
-                val code = lettersStr[i].code
+            if (c.isLetter()) {
+                totalLetters++
+                val code = c.code
                 if (code in 2432 until 2560) {
                     bengaliChars++
                 }
             }
-            if (bengaliChars.toDouble() / lettersStr.length.toDouble() > 0.6) {
-                return true
-            }
+        }
+        if (totalLetters > 0 && (bengaliChars.toDouble() / totalLetters.toDouble() > 0.6)) {
+            return true
         }
 
         return false
@@ -394,7 +391,8 @@ object BengaliTranslator {
     ): Result<List<String>> = translateBatch(texts)
 
     suspend fun translateBatch(
-        texts: List<String>
+        texts: List<String>,
+        onProgress: (suspend (List<String>) -> Unit)? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         if (texts.isEmpty()) {
             return@withContext Result.success(emptyList())
@@ -402,6 +400,7 @@ object BengaliTranslator {
 
         val translationMap = ConcurrentHashMap<String, String>()
         val neededTexts = LinkedHashSet<String>()
+        var cachedCount = 0
 
         for (item in texts) {
             val trimmed = item.trim()
@@ -410,9 +409,14 @@ object BengaliTranslator {
             val cached = lruCache.get(key)
             if (cached != null) {
                 translationMap[trimmed] = cached
+                cachedCount++
             } else {
                 neededTexts.add(trimmed)
             }
+        }
+
+        if (cachedCount > 0 && onProgress != null) {
+            onProgress.invoke(mapFinalResults(texts, translationMap))
         }
 
         if (neededTexts.isEmpty()) {
@@ -426,7 +430,9 @@ object BengaliTranslator {
                     lruCache.put(cacheKey(needed), translated)
                     translationMap[needed] = translated
                 }
-                Result.success(mapFinalResults(texts, translationMap))
+                val finalRes = mapFinalResults(texts, translationMap)
+                onProgress?.invoke(finalRes)
+                Result.success(finalRes)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -439,7 +445,11 @@ object BengaliTranslator {
             batches.map { batch ->
                 async {
                     semaphore.withPermit {
-                        processBatchWithFallback(batch, translationMap)
+                        val res = processBatchWithFallback(batch, translationMap)
+                        if (res.first > 0 && onProgress != null) {
+                            onProgress.invoke(mapFinalResults(texts, translationMap))
+                        }
+                        res
                     }
                 }
             }.awaitAll()
@@ -538,9 +548,10 @@ object BengaliTranslator {
                 val url = URL(LIBRE_TRANSLATE_URL)
                 conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
+                    setRequestProperty("Connection", "keep-alive")
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
                     doOutput = true
@@ -559,9 +570,12 @@ object BengaliTranslator {
                     put("format", "text")
                 }
 
-                OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use { writer ->
-                    writer.write(jsonBody.toString())
-                    writer.flush()
+                val postBytes = jsonBody.toString().toByteArray(StandardCharsets.UTF_8)
+                conn.setFixedLengthStreamingMode(postBytes.size)
+
+                conn.outputStream.use { os ->
+                    os.write(postBytes)
+                    os.flush()
                 }
 
                 val code = conn.responseCode
@@ -632,9 +646,10 @@ object BengaliTranslator {
                 val url = URL(LIBRE_TRANSLATE_URL)
                 conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
                     setRequestProperty("Accept", "application/json")
                     setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
+                    setRequestProperty("Connection", "keep-alive")
                     connectTimeout = CONNECT_TIMEOUT_MS
                     readTimeout = READ_TIMEOUT_MS
                     doOutput = true
@@ -648,9 +663,12 @@ object BengaliTranslator {
                     put("format", "text")
                 }
 
-                OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use { writer ->
-                    writer.write(jsonBody.toString())
-                    writer.flush()
+                val postBytes = jsonBody.toString().toByteArray(StandardCharsets.UTF_8)
+                conn.setFixedLengthStreamingMode(postBytes.size)
+
+                conn.outputStream.use { os ->
+                    os.write(postBytes)
+                    os.flush()
                 }
 
                 val code = conn.responseCode
