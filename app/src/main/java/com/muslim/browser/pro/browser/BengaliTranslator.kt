@@ -3,9 +3,14 @@ package com.muslim.browser.pro.browser
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,9 +37,9 @@ object BengaliTranslator {
 
     private const val CONNECT_TIMEOUT_MS: Int = 5000
     private const val READ_TIMEOUT_MS: Int = 7000
-    private const val MAX_BATCH_CHARS: Int = 2500
-    private const val MAX_BATCH_ITEMS: Int = 25
-    private const val MIN_DISPATCH_INTERVAL_MS: Long = 600L
+    private const val MAX_BATCH_CHARS: Int = 4000
+    private const val MAX_BATCH_ITEMS: Int = 40
+    private const val MIN_DISPATCH_INTERVAL_MS: Long = 200L
     private const val TAG: String = "BengaliTranslator"
 
     private val dispatchMutex = Mutex()
@@ -428,36 +433,24 @@ object BengaliTranslator {
         }
 
         val batches = chunkIntoBatches(neededTexts.toList())
+        val semaphore = Semaphore(3)
+
+        val batchResults = coroutineScope {
+            batches.map { batch ->
+                async {
+                    semaphore.withPermit {
+                        processBatchWithFallback(batch, translationMap)
+                    }
+                }
+            }.awaitAll()
+        }
+
         var successCount = 0
         var lastError: Throwable? = null
-
-        for (batch in batches) {
-            val batchRes = translateBatchWithLibreTranslate(batch)
-            if (batchRes.isSuccess) {
-                val transList = batchRes.getOrNull() ?: emptyList()
-                for (i in batch.indices) {
-                    val original = batch[i]
-                    val trans = transList.getOrNull(i)?.trim() ?: original
-                    if (trans.isNotBlank() && trans != original) {
-                        putInCache(cacheKey(original), trans)
-                        translationMap[original] = trans
-                        successCount++
-                    }
-                }
-            } else {
-                lastError = batchRes.exceptionOrNull()
-                Log.w(TAG, "LibreTranslate batch error: ${lastError?.message}")
-                for (needed in batch) {
-                    val singleRes = translateSingleTextCoalesced(needed)
-                    if (singleRes.isSuccess) {
-                        val singleTrans = singleRes.getOrNull()
-                        if (!singleTrans.isNullOrBlank()) {
-                            putInCache(cacheKey(needed), singleTrans)
-                            translationMap[needed] = singleTrans
-                            successCount++
-                        }
-                    }
-                }
+        for ((s, err) in batchResults) {
+            successCount += s
+            if (err != null) {
+                lastError = err
             }
         }
 
@@ -486,6 +479,51 @@ object BengaliTranslator {
             } else {
                 text
             }
+        }
+    }
+
+    private suspend fun processBatchWithFallback(
+        batch: List<String>,
+        translationMap: ConcurrentHashMap<String, String>
+    ): Pair<Int, Throwable?> {
+        if (batch.isEmpty()) return Pair(0, null)
+
+        val batchRes = translateBatchWithLibreTranslate(batch)
+        if (batchRes.isSuccess) {
+            val transList = batchRes.getOrNull() ?: emptyList()
+            var successes = 0
+            for (i in batch.indices) {
+                val original = batch[i]
+                val trans = transList.getOrNull(i)?.trim() ?: original
+                if (trans.isNotBlank() && trans != original) {
+                    putInCache(cacheKey(original), trans)
+                    translationMap[original] = trans
+                    successes++
+                }
+            }
+            return Pair(successes, null)
+        }
+
+        val error = batchRes.exceptionOrNull()
+        Log.w(TAG, "LibreTranslate batch (${batch.size} items) error: ${error?.message}")
+
+        if (batch.size > 1) {
+            val mid = batch.size / 2
+            val (s1, e1) = processBatchWithFallback(batch.subList(0, mid), translationMap)
+            val (s2, e2) = processBatchWithFallback(batch.subList(mid, batch.size), translationMap)
+            return Pair(s1 + s2, e1 ?: e2 ?: error)
+        } else {
+            val single = batch[0]
+            val singleRes = translateSingleTextCoalesced(single)
+            if (singleRes.isSuccess) {
+                val trans = singleRes.getOrNull()
+                if (!trans.isNullOrBlank() && trans != single) {
+                    putInCache(cacheKey(single), trans)
+                    translationMap[single] = trans
+                    return Pair(1, null)
+                }
+            }
+            return Pair(0, singleRes.exceptionOrNull() ?: error)
         }
     }
 
@@ -557,7 +595,7 @@ object BengaliTranslator {
                         TranslationStats.http429Count++
                         if (attempts < maxAttempts) {
                             TranslationStats.retryCount++
-                            delay(1000L)
+                            delay(700L)
                             continue
                         } else {
                             return Result.failure(IllegalStateException("LibreTranslate rate limit (HTTP 429)"))
@@ -637,7 +675,7 @@ object BengaliTranslator {
                         TranslationStats.http429Count++
                         if (attempts < maxAttempts) {
                             TranslationStats.retryCount++
-                            delay(1000L)
+                            delay(700L)
                             continue
                         } else {
                             return Result.failure(IllegalStateException("LibreTranslate rate limit (HTTP 429)"))

@@ -31,14 +31,9 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -128,88 +123,7 @@ fun BrowserMenuSheet(
         )
     }
 
-    var showTranslationConfirmDialog by remember { mutableStateOf(false) }
-    var dontAskAgainTranslation by remember { mutableStateOf(false) }
 
-    // Dialog: Translation Privacy Confirmation
-    if (showTranslationConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showTranslationConfirmDialog = false },
-            title = {
-                Text(
-                    text = "অনুবাদ নিশ্চিতকরণ",
-                    fontWeight = FontWeight.Bold,
-                    color = colors.textPrimary,
-                    fontSize = 15.sp
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "অনুবাদের জন্য এই পেজের লেখা বাইরের সার্ভারে যাবে। চালিয়ে যাবেন?",
-                        color = colors.textPrimary,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { dontAskAgainTranslation = !dontAskAgainTranslation }
-                    ) {
-                        Checkbox(
-                            checked = dontAskAgainTranslation,
-                            onCheckedChange = { dontAskAgainTranslation = it }
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "আর জিজ্ঞাসা করো না",
-                            color = colors.textSecondary,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (dontAskAgainTranslation) {
-                            context.getSharedPreferences("translation_privacy_prefs", android.content.Context.MODE_PRIVATE)
-                                .edit()
-                                .putBoolean("key_skip_translation_confirmation", true)
-                                .apply()
-                        }
-                        showTranslationConfirmDialog = false
-                        val liveWv = getActiveLiveWebView(context, uiState)
-                        if (liveWv != null) {
-                            liveWv.evaluateJavascript("Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })") { result ->
-                                val hasPassword = result?.trim()?.equals("true", ignoreCase = true) == true
-                                if (hasPassword) {
-                                    android.widget.Toast.makeText(
-                                        context,
-                                        "এই পেজে অনুবাদ বন্ধ (পাসওয়ার্ড ঘর আছে)",
-                                        android.widget.Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    onTranslateToBengali()
-                                }
-                            }
-                        } else {
-                            onTranslateToBengali()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.accent)
-                ) {
-                    Text("চালিয়ে যান", color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showTranslationConfirmDialog = false }) {
-                    Text("বাতিল", color = colors.textSecondary)
-                }
-            },
-            containerColor = colors.surface,
-            shape = RoundedCornerShape(12.dp)
-        )
-    }
 
     // Semi-transparent overlay to ensure background home page/web page is visible outside the compact floating panel
     Box(
@@ -273,23 +187,11 @@ fun BrowserMenuSheet(
                                             android.widget.Toast.LENGTH_SHORT
                                         ).show()
                                     } else {
-                                        val prefs = context.getSharedPreferences("translation_privacy_prefs", android.content.Context.MODE_PRIVATE)
-                                        val skipConfirm = prefs.getBoolean("key_skip_translation_confirmation", false)
-                                        if (skipConfirm) {
-                                            onTranslateToBengali()
-                                        } else {
-                                            showTranslationConfirmDialog = true
-                                        }
+                                        onTranslateToBengali()
                                     }
                                 }
                             } else {
-                                val prefs = context.getSharedPreferences("translation_privacy_prefs", android.content.Context.MODE_PRIVATE)
-                                val skipConfirm = prefs.getBoolean("key_skip_translation_confirmation", false)
-                                if (skipConfirm) {
-                                    onTranslateToBengali()
-                                } else {
-                                    showTranslationConfirmDialog = true
-                                }
+                                onTranslateToBengali()
                             }
                         }
                     },

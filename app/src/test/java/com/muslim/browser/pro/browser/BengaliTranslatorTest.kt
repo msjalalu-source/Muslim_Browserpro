@@ -96,12 +96,12 @@ class BengaliTranslatorTest {
 
     @Test
     fun testBengaliTranslatorChunkIntoBatches() {
-        val texts = (1..30).map { "Item $it" }
+        val texts = (1..50).map { "Item $it" }
         val batches = BengaliTranslator.chunkIntoBatches(texts)
         assertTrue(batches.isNotEmpty())
-        assertEquals(2, batches.size) // 25 items max per batch
-        assertEquals(25, batches[0].size)
-        assertEquals(5, batches[1].size)
+        assertEquals(2, batches.size) // 40 items max per batch
+        assertEquals(40, batches[0].size)
+        assertEquals(10, batches[1].size)
     }
 
     @Test

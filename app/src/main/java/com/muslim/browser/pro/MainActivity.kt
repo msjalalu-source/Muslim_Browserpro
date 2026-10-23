@@ -274,7 +274,6 @@ class MainActivity : ComponentActivity() {
                                     tabWebViewManager.destroyWebView(tabId)
                                     viewModel.closeTab(tabId)
                                 },
-                                onNewTab = { viewModel.openNewTab() },
                                 onDismiss = { viewModel.closeTabsDialog() }
                             )
                         }
