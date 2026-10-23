@@ -95,9 +95,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
     fun closeHistory() { _uiState.update { it.copy(isHistoryOpen = false) } }
 
-    fun onSearchInputChange(input: String) {
-        _uiState.update { it.copy(searchInput = input) }
-    }
 
     fun submitQueryOrUrl(input: String): Boolean {
         val trimmed = input.trim()
@@ -266,10 +263,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveCurrentTabState(bundle: Bundle) {
-        saveTabState(_uiState.value.currentTabId, bundle)
-    }
-
     fun onPageStarted(url: String) {
         val currentId = _uiState.value.currentTabId
         _uiState.update { state ->
@@ -340,10 +333,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(sslWarningState = SslWarningState(url, host, details)) }
     }
 
-    fun dismissSslWarning() {
-        _uiState.update { it.copy(sslWarningState = null) }
-    }
-
     fun toggleAdBlocking(enabled: Boolean) {
         repository.setAdBlockingEnabled(enabled)
         _uiState.update { it.copy(isAdBlockingEnabled = enabled) }
@@ -362,14 +351,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun toggleWindows10Touch(enabled: Boolean) {
         val target = if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
         selectDesktopArchitecture(target)
-    }
-
-    fun toggleDesktopMode(enabled: Boolean) {
-        toggleWindows10Touch(enabled)
-    }
-
-    fun toggleDesktopMode4(enabled: Boolean) {
-        toggleWindows10Touch(enabled)
     }
 
     fun setAppTheme(theme: AppTheme) {
@@ -395,10 +376,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun clearAllHistory() {
         repository.clearHistory()
         _uiState.update { it.copy(browsingHistory = emptyList()) }
-    }
-
-    fun onHistoryCleared() {
-        clearAllHistory()
     }
 
     /**
@@ -512,26 +489,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         recordDownload(updated)
     }
 
-    fun updateDownloadStatus(
-        downloadId: Long,
-        status: DownloadStatus,
-        localUri: String,
-        downloadedBytes: Long,
-        totalBytes: Long
-    ) {
-        updateDownloadProgress(downloadId, status, downloadedBytes, totalBytes, localUri)
-    }
-
     fun showToast(message: String) {
         _uiState.update { it.copy(toastMessage = message) }
-    }
-
-    fun clearToast() {
-        _uiState.update { it.copy(toastMessage = null) }
-    }
-
-    fun checkAndFilterUrl(url: String): Boolean {
-        return ProtectionEngine.isHarmfulUrl(url)
     }
 
     fun addCustomKeyword(keyword: String): Boolean {
@@ -552,12 +511,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun isProtectedKeyword(keyword: String): Boolean {
         return repository.isProtectedKeyword(keyword)
-    }
-
-    fun getNormalizedKeywords(): List<String> {
-        val defaultKeywords = SettingsRepository.ALL_PROTECTED_KEYWORDS
-        val custom = repository.getCustomKeywords()
-        return (defaultKeywords + custom).map { SettingsRepository.normalizeKeyword(it) }.distinct().sorted()
     }
 
     fun translateCurrentPage(

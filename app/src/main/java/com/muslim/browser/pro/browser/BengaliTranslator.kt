@@ -124,13 +124,9 @@ object BengaliTranslator {
         TranslationStats.reset()
     }
 
-    fun getCacheSize(): Int = lruCache.size()
-
     fun putInCache(key: String, value: String) {
         lruCache.put(key, value)
     }
-
-    fun getFromCache(key: String): String? = lruCache.get(key)
 
     fun cacheKey(
         text: String,
@@ -191,8 +187,6 @@ object BengaliTranslator {
                 trimmed.contains("'ve", ignoreCase = true) ||
                 trimmed.contains("'ll", ignoreCase = true)
     }
-
-    fun isAsciiEnglish(text: String): Boolean = isLikelyEnglish(text)
 
     private suspend fun awaitDispatchSlot() {
         dispatchMutex.withLock {

@@ -56,10 +56,11 @@ object AutofillRepository {
     fun saveProfile(context: Context, profile: AutofillProfile): Boolean {
         cachedProfile = profile
         val jsonStr = serializeProfile(profile)
-        return getPrefs(context).edit()
+        getPrefs(context).edit()
             .putString(KEY_PROFILE_JSON, jsonStr)
             .putBoolean(KEY_HAS_SAVED, true)
-            .commit()
+            .apply()
+        return true
     }
 
     /**
@@ -67,9 +68,10 @@ object AutofillRepository {
      */
     fun clearProfile(context: Context): Boolean {
         cachedProfile = null
-        return getPrefs(context).edit()
+        getPrefs(context).edit()
             .clear()
-            .commit()
+            .apply()
+        return true
     }
 
     fun serializeProfile(profile: AutofillProfile): String {

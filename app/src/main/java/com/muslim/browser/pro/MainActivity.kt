@@ -407,10 +407,6 @@ class MainActivity : ComponentActivity() {
                         )
                         return true
                     }
-                    if (viewModel.uiState.value.isAdBlockingEnabled && ProtectionEngine.isHarmfulUrl(targetUrl)) {
-                        viewModel.setBlockedUrl(targetUrl, "Blocked Content", "Safety filter blocked this URL.")
-                        return true
-                    }
                     return false
                 }
 

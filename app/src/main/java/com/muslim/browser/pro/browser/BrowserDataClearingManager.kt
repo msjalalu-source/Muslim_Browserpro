@@ -27,13 +27,6 @@ object BrowserDataClearingManager {
     private val isClearingCacheAndCookies = AtomicBoolean(false)
     private val isClearingAllData = AtomicBoolean(false)
 
-    fun isOperationInProgress(): Boolean =
-        isClearingCacheAndCookies.get() || isClearingAllData.get()
-
-    fun isCacheClearingInProgress(): Boolean = isClearingCacheAndCookies.get()
-
-    fun isAllDataClearingInProgress(): Boolean = isClearingAllData.get()
-
     /**
      * Clears only HTTP cache and cookies.
      * Guaranteed NOT to clear browsing history, bookmarks, downloads, autofill, or settings.

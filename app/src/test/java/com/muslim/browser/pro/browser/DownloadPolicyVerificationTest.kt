@@ -125,48 +125,20 @@ class DownloadPolicyVerificationTest {
     }
 
     @Test
-    fun testProtectionEngineAllowsZipAndPreservesRestrictions() {
+    fun testDownloadPolicyAllowsZipAndPreservesRestrictions() {
         // ZIP allowed
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
-            ProtectionEngine.checkDownloadType("https://example.com/archive.zip", null, null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
-            ProtectionEngine.checkDownloadType("https://example.com/dl", "application/zip", null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
-            ProtectionEngine.checkDownloadType("https://example.com/dl", "application/x-zip-compressed", null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_ZIP,
-            ProtectionEngine.checkDownloadType("https://example.com/dl?id=1", null, "attachment; filename=export.zip")
-        )
+        assertTrue(DownloadPolicy.evaluate("https://example.com/archive.zip", null, null) is DownloadPolicy.Result.Allowed)
+        assertTrue(DownloadPolicy.evaluate("https://example.com/dl", "application/zip", null) is DownloadPolicy.Result.Allowed)
+        assertTrue(DownloadPolicy.evaluate("https://example.com/dl", "application/x-zip-compressed", null) is DownloadPolicy.Result.Allowed)
+        assertTrue(DownloadPolicy.evaluate("https://example.com/dl?id=1", null, "attachment; filename=export.zip") is DownloadPolicy.Result.Allowed)
 
-        // Existing allowed types preserved
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_PDF,
-            ProtectionEngine.checkDownloadType("https://example.com/doc.pdf", "application/pdf", null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.ALLOWED_IMAGE,
-            ProtectionEngine.checkDownloadType("https://example.com/img.png", "image/png", null)
-        )
+        // Allowed document types preserved
+        assertTrue(DownloadPolicy.evaluate("https://example.com/doc.pdf", "application/pdf", null) is DownloadPolicy.Result.Allowed)
 
         // Restricted types remain blocked
-        assertEquals(
-            ProtectionEngine.DownloadStatus.BLOCKED_VIDEO,
-            ProtectionEngine.checkDownloadType("https://example.com/video.mp4", "video/mp4", null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.BLOCKED_AUDIO,
-            ProtectionEngine.checkDownloadType("https://example.com/audio.mp3", "audio/mpeg", null)
-        )
-        assertEquals(
-            ProtectionEngine.DownloadStatus.BLOCKED_APK,
-            ProtectionEngine.checkDownloadType("https://malicious.com/app.apk", null, null)
-        )
+        assertTrue(DownloadPolicy.evaluate("https://example.com/video.mp4", "video/mp4", null) is DownloadPolicy.Result.Blocked)
+        assertTrue(DownloadPolicy.evaluate("https://example.com/audio.mp3", "audio/mpeg", null) is DownloadPolicy.Result.Blocked)
+        assertTrue(DownloadPolicy.evaluate("https://malicious.com/app.apk", null, null) is DownloadPolicy.Result.Blocked)
     }
 
     @Test

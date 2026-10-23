@@ -28,9 +28,6 @@ class TabWebViewManager(
 
     fun hasLiveWebView(webView: WebView): Boolean = liveWebViews.containsValue(webView)
 
-    fun getLiveTabIds(): Set<String> = liveWebViews.keys
-
-    fun getLiveWebViewCount(): Int = liveWebViews.size
 
     fun getOrCreateWebView(
         tabId: String,
@@ -86,16 +83,6 @@ class TabWebViewManager(
         }
     }
 
-    /**
-     * Clears only HTTP cache on all live WebViews (scoped strictly for Clear Cache & Cookies).
-     */
-    fun clearCacheOnly() {
-        liveWebViews.values.forEach { webView ->
-            try {
-                webView.clearCache(true)
-            } catch (_: Exception) {}
-        }
-    }
 
     /**
      * Clears WebView data for Clear All Data.
@@ -113,10 +100,6 @@ class TabWebViewManager(
         }
     }
 
-    @Deprecated("Use BrowserDataClearingManager.clearAllBrowsingData or clearAllWebViewsData")
-    fun clearAllData() {
-        clearAllWebViewsData()
-    }
 
     fun pauseAll(exceptTabId: String? = null) {
         liveWebViews.forEach { (id, webView) ->
@@ -138,9 +121,6 @@ class TabWebViewManager(
         liveWebViews.values.forEach(action)
     }
 
-    fun syncAllLiveWebViews(isDesktop: Boolean) {
-        liveWebViews.values.forEach { onSyncDesktopMode(it, isDesktop) }
-    }
 
     fun syncAllLiveWebViewsArchitecture(arch: DesktopArchitecture) {
         liveWebViews.values.forEach { onSyncArchitecture(it, arch) }

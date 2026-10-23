@@ -9,16 +9,6 @@ import java.util.Locale
 
 object ProtectionEngine {
 
-    enum class DownloadStatus {
-        ALLOWED_IMAGE,
-        ALLOWED_PDF,
-        ALLOWED_ZIP,
-        BLOCKED_VIDEO,
-        BLOCKED_AUDIO,
-        BLOCKED_APK,
-        BLOCKED_OTHER
-    }
-
     sealed class FilterResult {
         data object Allowed : FilterResult()
         data class Blocked(val reason: String, val detail: String) : FilterResult()
@@ -55,32 +45,11 @@ object ProtectionEngine {
         "moatads.com", "adsrvr.org", "zemanta.com", "teads.tv"
     )
 
-    val BLOCKED_VIDEO_EXTS: HashSet<String> get() = DownloadPolicy.VIDEO_EXTS
-
-    val BLOCKED_AUDIO_EXTS: HashSet<String> get() = DownloadPolicy.AUDIO_EXTS
-
-    val BLOCKED_APK_EXTS: HashSet<String> get() = DownloadPolicy.APK_EXTS
-
-    val ALLOWED_IMAGE_EXTS: HashSet<String> = hashSetOf(
-        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico"
-    )
-
-    val ALLOWED_PDF_EXTS: HashSet<String> = hashSetOf(
-        "pdf"
-    )
-
-    val ALLOWED_ZIP_EXTS: HashSet<String> = hashSetOf(
-        "zip"
-    )
 
     fun buildDuckDuckGoSafeSearchUrl(query: String): String {
         val trimmed = query.trim()
         val encoded = URLEncoder.encode(trimmed, StandardCharsets.UTF_8.name())
         return "https://safe.duckduckgo.com/?q=$encoded"
-    }
-
-    fun buildSafeSearchUrl(query: String, searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO): String {
-        return buildDuckDuckGoSafeSearchUrl(query)
     }
 
     val SUPPORTED_GOOGLE_DOMAINS: Set<String> = hashSetOf(
@@ -120,10 +89,6 @@ object ProtectionEngine {
         } catch (_: Exception) {
             false
         }
-    }
-
-    fun isSafeSearchUrl(url: String): Boolean {
-        return isDuckDuckGoSafeSearchUrl(url)
     }
 
     fun isGoogleHost(host: String): Boolean {
@@ -544,7 +509,7 @@ object ProtectionEngine {
             )
         }
 
-        if (isAdBlockingEnabled && isAdRequest(trimmed)) {
+        if (isAdBlockingEnabled && isAdOrTracker(trimmed)) {
             return FilterResult.Blocked(
                 "Ad Protection",
                 "Ad network URL blocked: \"${host ?: trimmed}\""
@@ -552,24 +517,6 @@ object ProtectionEngine {
         }
 
         return FilterResult.Allowed
-    }
-
-    fun checkUrlOrQuery(
-        input: String,
-        customKeywords: Set<String>,
-        normalizedKeywords: Collection<String>? = null,
-        isAdBlockingEnabled: Boolean = true
-    ): FilterResult {
-        val trimmed = input.trim()
-        if (trimmed.isEmpty()) return FilterResult.Allowed
-        val blockedKw = isBlockedByCustomKeywords(trimmed, customKeywords, normalizedKeywords)
-        if (blockedKw != null) {
-            return FilterResult.Blocked(
-                "Custom Keyword Protection",
-                "Input blocked due to protected keyword: \"$blockedKw\""
-            )
-        }
-        return checkDirectUrl(trimmed, customKeywords, normalizedKeywords, isAdBlockingEnabled)
     }
 
     fun extractHost(url: String): String? {
@@ -627,47 +574,6 @@ object ProtectionEngine {
         } catch (_: Exception) {
             false
         }
-    }
-
-    fun isAdRequest(uri: Uri): Boolean {
-        return isAdOrTracker(uri)
-    }
-
-    fun isAdRequest(url: String): Boolean {
-        return isAdOrTracker(url)
-    }
-
-    fun checkDownloadType(url: String, mimeType: String?, contentDisposition: String?): DownloadStatus {
-        if (DownloadPolicy.isVideo(url, mimeType, contentDisposition)) {
-            return DownloadStatus.BLOCKED_VIDEO
-        }
-        if (DownloadPolicy.isAudio(url, mimeType, contentDisposition)) {
-            return DownloadStatus.BLOCKED_AUDIO
-        }
-        if (DownloadPolicy.isApk(url, mimeType, contentDisposition)) {
-            return DownloadStatus.BLOCKED_APK
-        }
-
-        val mime = mimeType?.trim()?.lowercase(Locale.ROOT) ?: ""
-        val ext = extractExtension(url, contentDisposition)
-
-        if (mime.startsWith("image/") || ALLOWED_IMAGE_EXTS.contains(ext)) {
-            return DownloadStatus.ALLOWED_IMAGE
-        }
-        if (mime == "application/pdf" || ALLOWED_PDF_EXTS.contains(ext)) {
-            return DownloadStatus.ALLOWED_PDF
-        }
-        val isZipMime = mime == "application/zip" ||
-            mime == "application/x-zip-compressed" ||
-            mime == "application/x-zip"
-        if (isZipMime || ALLOWED_ZIP_EXTS.contains(ext) || DownloadPolicy.isZip(url, mimeType, contentDisposition)) {
-            return DownloadStatus.ALLOWED_ZIP
-        }
-        return DownloadStatus.BLOCKED_OTHER
-    }
-
-    fun extractExtension(url: String, contentDisposition: String?): String {
-        return DownloadPolicy.extractExtension(url, contentDisposition)
     }
 
     fun isHarmfulUrl(url: String, customKeywords: Set<String> = emptySet()): Boolean {

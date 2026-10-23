@@ -52,12 +52,10 @@ class AdAndPopupBlockingTest {
         // Searching for ad terms on DuckDuckGo must NEVER be blocked
         val ddgSearchUri = Uri.parse("https://safe.duckduckgo.com/?q=what+is+doubleclick.net")
         assertFalse(ProtectionEngine.isAdOrTracker(ddgSearchUri))
-        assertFalse(ProtectionEngine.isAdRequest(ddgSearchUri))
 
         // Searching for ad networks on Google search must NEVER be blocked
         val googleSearchUri = Uri.parse("https://www.google.com/search?q=criteo+stock+price")
         assertFalse(ProtectionEngine.isAdOrTracker(googleSearchUri))
-        assertFalse(ProtectionEngine.isAdRequest(googleSearchUri))
 
         // Normal URLs with query parameters mentioning ad keywords
         val normalArticleUri = Uri.parse("https://en.wikipedia.org/wiki/DoubleClick")

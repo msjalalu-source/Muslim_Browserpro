@@ -314,8 +314,6 @@ object DesktopCore {
     } catch(e) {}
 })();"""
 
-    const val RESTORE_MOBILE_VIEWPORT_SCRIPT: String = CLEANUP_DESKTOP_SCRIPT
-
     fun isAuthenticationUrl(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val uri = try {

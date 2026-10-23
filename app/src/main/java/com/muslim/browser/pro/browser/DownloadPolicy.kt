@@ -300,6 +300,9 @@ object DownloadPolicy {
         if (isVideo(url, mimeType, contentDisposition)) {
             return Result.Blocked("Video downloads are blocked.")
         }
+        if (isAudio(url, mimeType, contentDisposition)) {
+            return Result.Blocked("Audio downloads are blocked.")
+        }
         return Result.Allowed
     }
 

@@ -13,18 +13,8 @@ object SslSecurityPolicy {
         data class Reject(val reason: String) : Decision()
     }
 
-    fun approveHostForSession(host: String) {
-        if (host.isNotBlank()) {
-            sessionApprovedHosts.add(host.lowercase())
-        }
-    }
-
     fun isHostApproved(host: String): Boolean {
         return sessionApprovedHosts.contains(host.lowercase())
-    }
-
-    fun clearSessionApprovals() {
-        sessionApprovedHosts.clear()
     }
 
     fun extractHostFromUrl(url: String): String {

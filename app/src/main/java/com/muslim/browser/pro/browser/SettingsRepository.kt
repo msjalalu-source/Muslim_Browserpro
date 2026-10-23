@@ -29,10 +29,8 @@ class SettingsRepository(private val context: Context) {
         const val KEY_AD_BLOCKING = "key_ad_blocking"
         const val KEY_POPUP_BLOCKING = "key_popup_blocking"
         const val KEY_DESKTOP_ARCHITECTURE = "key_desktop_architecture"
-        const val KEY_DESKTOP_MODE = "key_desktop_mode"
         const val KEY_FAVORITES = "key_favorites"
         const val KEY_HISTORY = "key_history"
-        const val KEY_SAVED_TABS = "key_saved_tabs"
         const val KEY_ACTIVE_TAB_ID = "key_active_tab_id"
         const val KEY_CUSTOM_KEYWORDS = "key_custom_keywords"
         const val KEY_DOWNLOAD_HISTORY = "key_download_history"
@@ -229,12 +227,6 @@ class SettingsRepository(private val context: Context) {
         return site
     }
 
-    fun removeFavoriteSite(id: String) {
-        val current = getFavoriteSites().filterNot { it.id == id }
-        cachedFavorites = current
-        saveFavorites(current)
-    }
-
     private fun saveFavorites(sites: List<FavoriteSite>) {
         val arr = JSONArray()
         for (s in sites) {
@@ -301,16 +293,19 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun saveHistory(history: List<HistoryEntry>) {
-        val arr = JSONArray()
-        for (h in history) {
-            val obj = JSONObject()
-            obj.put("id", h.id)
-            obj.put("title", h.title)
-            obj.put("url", h.url)
-            obj.put("timestamp", h.timestamp)
-            arr.put(obj)
+        val sb = StringBuilder(history.size * 128 + 16)
+        sb.append('[')
+        for (i in history.indices) {
+            val h = history[i]
+            if (i > 0) sb.append(',')
+            sb.append("{\"id\":").append(JSONObject.quote(h.id))
+                .append(",\"title\":").append(JSONObject.quote(h.title))
+                .append(",\"url\":").append(JSONObject.quote(h.url))
+                .append(",\"timestamp\":").append(h.timestamp)
+                .append('}')
         }
-        prefs.edit().putString(KEY_HISTORY, arr.toString()).apply()
+        sb.append(']')
+        prefs.edit().putString(KEY_HISTORY, sb.toString()).apply()
     }
 
     fun getDownloads(): List<DownloadEntry> {
@@ -374,19 +369,22 @@ class SettingsRepository(private val context: Context) {
     }
 
     private fun saveDownloads(downloads: List<DownloadEntry>) {
-        val arr = JSONArray()
-        for (d in downloads) {
-            val obj = JSONObject()
-            obj.put("downloadId", d.downloadId)
-            obj.put("fileName", d.fileName)
-            obj.put("url", d.url)
-            obj.put("filePath", d.filePath)
-            obj.put("totalBytes", d.totalBytes)
-            obj.put("downloadedBytes", d.downloadedBytes)
-            obj.put("status", d.status.name)
-            obj.put("timestamp", d.timestamp)
-            arr.put(obj)
+        val sb = StringBuilder(downloads.size * 160 + 16)
+        sb.append('[')
+        for (i in downloads.indices) {
+            val d = downloads[i]
+            if (i > 0) sb.append(',')
+            sb.append("{\"downloadId\":").append(d.downloadId)
+                .append(",\"fileName\":").append(JSONObject.quote(d.fileName))
+                .append(",\"url\":").append(JSONObject.quote(d.url))
+                .append(",\"filePath\":").append(JSONObject.quote(d.filePath))
+                .append(",\"totalBytes\":").append(d.totalBytes)
+                .append(",\"downloadedBytes\":").append(d.downloadedBytes)
+                .append(",\"status\":").append(JSONObject.quote(d.status.name))
+                .append(",\"timestamp\":").append(d.timestamp)
+                .append('}')
         }
-        prefs.edit().putString(KEY_DOWNLOAD_HISTORY, arr.toString()).apply()
+        sb.append(']')
+        prefs.edit().putString(KEY_DOWNLOAD_HISTORY, sb.toString()).apply()
     }
 }
