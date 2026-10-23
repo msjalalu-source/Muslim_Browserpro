@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -113,6 +114,25 @@ class MainActivity : ComponentActivity() {
                     url = uiState.currentUrl
                 ).first
 
+                LaunchedEffect(uiState.currentTabId) {
+                    tabWebViewManager.pauseAll(exceptTabId = uiState.currentTabId)
+                    tabWebViewManager.resumeTab(uiState.currentTabId)
+                }
+
+                LaunchedEffect(Unit) {
+                    viewModel.blockedKeywordToast.collect { kw ->
+                        val msg = "Search blocked due to protected keyword: \"$kw\""
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                LaunchedEffect(uiState.customKeywords, uiState.currentTabId) {
+                    if (uiState.customKeywords.isNotEmpty()) {
+                        val script = ProtectionEngine.buildKeywordBlockingScript(uiState.customKeywords)
+                        currentWebView.evaluateJavascript(script, null)
+                    }
+                }
+
                 BackHandler(enabled = true) {
                     when {
                         uiState.isMenuOpen -> viewModel.closeMenu()
@@ -154,12 +174,14 @@ class MainActivity : ComponentActivity() {
                                 uiState = uiState,
                                 favoriteSites = uiState.favoriteSites,
                                 onNavigate = { url ->
-                                    viewModel.submitQueryOrUrl(url)
-                                    currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                    if (viewModel.submitQueryOrUrl(url)) {
+                                        currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                    }
                                 },
                                 onSearch = { query ->
-                                    viewModel.submitQueryOrUrl(query)
-                                    currentWebView.loadUrl(viewModel.formatDirectUrl(query))
+                                    if (viewModel.submitQueryOrUrl(query)) {
+                                        currentWebView.loadUrl(viewModel.formatDirectUrl(query))
+                                    }
                                 },
                                 onAddFavorite = { name, url ->
                                     viewModel.addFavoriteSite(name, url)
@@ -173,8 +195,9 @@ class MainActivity : ComponentActivity() {
                                 uiState = uiState,
                                 webView = currentWebView,
                                 onUrlSubmit = { url ->
-                                    viewModel.submitQueryOrUrl(url)
-                                    currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                    if (viewModel.submitQueryOrUrl(url)) {
+                                        currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                    }
                                 },
                                 onReload = { currentWebView.reload() }
                             )
@@ -202,10 +225,20 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onToggleAdBlocking = { enabled -> viewModel.toggleAdBlocking(enabled) },
                                 onClearAllData = {
-                                    tabWebViewManager.clearAllData()
-                                    viewModel.clearAllHistory()
+                                    viewModel.closeMenu()
+                                    viewModel.clearAllBrowsingData(
+                                        liveWebViews = tabWebViewManager.getLiveWebViews(),
+                                        onResetWebViews = {
+                                            tabWebViewManager.destroyAll(saveState = false)
+                                        }
+                                    )
                                 },
-                                onClearCacheAndCookies = { tabWebViewManager.clearAllData() },
+                                onClearCacheAndCookies = {
+                                    viewModel.closeMenu()
+                                    viewModel.clearCacheAndCookies(
+                                        liveWebViews = tabWebViewManager.getLiveWebViews()
+                                    )
+                                },
                                 onToggleDesktopMode = { enabled ->
                                     val target = if (enabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
                                     applyDesktopArchitecture(target, currentWebView)
@@ -337,6 +370,18 @@ class MainActivity : ComponentActivity() {
                     request: WebResourceRequest?
                 ): Boolean {
                     val targetUrl = request?.url?.toString() ?: return false
+                    if (targetUrl.startsWith("mbp-blocked-search://")) {
+                        val kw = try {
+                            Uri.parse(targetUrl).getQueryParameter("kw") ?: ""
+                        } catch (_: Exception) { "" }
+                        val msg = if (kw.isNotBlank()) {
+                            "Search blocked due to protected keyword: \"$kw\""
+                        } else {
+                            "Search blocked due to protected keyword"
+                        }
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                        return true
+                    }
                     val decision = NavigationController.evaluate(
                         url = targetUrl,
                         customKeywords = viewModel.uiState.value.customKeywords,
@@ -386,6 +431,9 @@ class MainActivity : ComponentActivity() {
                     val arch = viewModel.uiState.value.desktopArchitecture
                     view?.let {
                         DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                        if (viewModel.uiState.value.customKeywords.isNotEmpty()) {
+                            it.evaluateJavascript(ProtectionEngine.buildKeywordBlockingScript(viewModel.uiState.value.customKeywords), null)
+                        }
                     }
                     viewModel.onPageCommitVisible()
                 }
@@ -395,6 +443,9 @@ class MainActivity : ComponentActivity() {
                     val arch = viewModel.uiState.value.desktopArchitecture
                     view?.let {
                         DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                        if (viewModel.uiState.value.customKeywords.isNotEmpty()) {
+                            it.evaluateJavascript(ProtectionEngine.buildKeywordBlockingScript(viewModel.uiState.value.customKeywords), null)
+                        }
                     }
                     val current = url ?: ""
                     viewModel.onPageFinished(
@@ -554,6 +605,20 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "Downloading $fileName...", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::tabWebViewManager.isInitialized) {
+            tabWebViewManager.pauseAll()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::tabWebViewManager.isInitialized) {
+            tabWebViewManager.resumeTab(viewModel.uiState.value.currentTabId)
         }
     }
 

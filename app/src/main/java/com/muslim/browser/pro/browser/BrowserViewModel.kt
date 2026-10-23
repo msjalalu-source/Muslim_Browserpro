@@ -2,14 +2,18 @@ package com.muslim.browser.pro.browser
 
 import android.app.Application
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.muslim.browser.pro.ui.theme.AppTheme
 import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.joinAll
@@ -64,6 +68,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
 
+    private val _blockedKeywordToast = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val blockedKeywordToast: SharedFlow<String> = _blockedKeywordToast.asSharedFlow()
+
     fun openMenu() { _uiState.update { it.copy(isMenuOpen = true) } }
     fun closeMenu() { _uiState.update { it.copy(isMenuOpen = false) } }
 
@@ -100,7 +107,30 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val trimmed = input.trim()
         if (trimmed.isBlank()) return false
 
+        // 1. Direct check against saved custom keywords
+        val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(trimmed, _uiState.value.customKeywords)
+        if (blockedKw != null) {
+            _blockedKeywordToast.tryEmit(blockedKw)
+            return false
+        }
+
+        // 2. Evaluate target URL against navigation policies and keyword protection
         val targetUrl = formatDirectUrl(trimmed)
+        val decision = NavigationController.evaluate(
+            url = targetUrl,
+            customKeywords = _uiState.value.customKeywords,
+            isAdBlockingEnabled = _uiState.value.isAdBlockingEnabled
+        )
+        if (decision is NavigationDecision.Blocked) {
+            if (decision.reason == "Custom Keyword Protection") {
+                val kw = ProtectionEngine.isBlockedByCustomKeywords(targetUrl, _uiState.value.customKeywords) ?: trimmed
+                _blockedKeywordToast.tryEmit(kw)
+            } else {
+                setBlockedUrl(targetUrl, decision.reason, decision.detail)
+            }
+            return false
+        }
+
         loadTargetUrl(targetUrl)
         return true
     }
@@ -375,6 +405,85 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         clearAllHistory()
     }
 
+    /**
+     * Resets open tabs and session states to a single clean Home tab,
+     * ensuring no stale navigation bundles or form snapshots remain in memory.
+     */
+    fun resetAllTabsToCleanHome() {
+        val initialTab = BrowserTab(
+            id = UUID.randomUUID().toString(),
+            url = "",
+            title = "Home",
+            canGoBack = false,
+            canGoForward = false
+        )
+        _uiState.update { state ->
+            state.copy(
+                tabs = listOf(initialTab),
+                currentTabId = initialTab.id,
+                currentUrl = "",
+                pageTitle = "Home",
+                isHomePage = true,
+                isLoading = false,
+                loadingProgress = 0,
+                canGoBack = false,
+                canGoForward = false,
+                isPageContentVisible = true,
+                blockedInfo = BlockedInfo(),
+                searchInput = "",
+                browsingHistory = emptyList(),
+                isTabsDialogOpen = false
+            )
+        }
+    }
+
+    /**
+     * Clears only HTTP cache and cookies, guarding against concurrent runs.
+     * Preserves browsing history, bookmarks, downloads, and app settings.
+     */
+    fun clearCacheAndCookies(
+        liveWebViews: Collection<WebView>,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val success = BrowserDataClearingManager.clearCacheAndCookies(
+                context = getApplication(),
+                liveWebViews = liveWebViews
+            )
+            val msg = if (success) "Cache and cookies cleared" else "Failed to clear cache and cookies"
+            showToast(msg)
+            onComplete(success, msg)
+        }
+    }
+
+    /**
+     * Clears complete browsing data: cache, cookies, DOM storage, form data, SSL preferences,
+     * navigation stacks, and browsing history.
+     * Preserves app settings, favorite bookmarks, download records, and Autofill profile.
+     */
+    fun clearAllBrowsingData(
+        liveWebViews: Collection<WebView>,
+        onResetWebViews: () -> Unit = {},
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            val success = BrowserDataClearingManager.clearAllBrowsingData(
+                context = getApplication(),
+                liveWebViews = liveWebViews,
+                onClearHistory = {
+                    repository.clearHistory()
+                },
+                onResetTabs = {
+                    onResetWebViews()
+                    resetAllTabsToCleanHome()
+                }
+            )
+            val msg = if (success) "All browsing data cleared" else "Failed to clear browsing data"
+            showToast(msg)
+            onComplete(success, msg)
+        }
+    }
+
     fun deleteDownloadEntry(idOrName: String) {
         repository.deleteDownloadEntry(idOrName)
         _uiState.update { it.copy(downloadHistory = repository.getDownloads()) }
@@ -435,6 +544,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(customKeywords = repository.getCustomKeywords()) }
         }
         return added
+    }
+
+    fun removeCustomKeyword(keyword: String): Boolean {
+        val removed = repository.removeCustomKeyword(keyword)
+        if (removed) {
+            _uiState.update { it.copy(customKeywords = repository.getCustomKeywords()) }
+        }
+        return removed
     }
 
     fun getNormalizedKeywords(): List<String> {

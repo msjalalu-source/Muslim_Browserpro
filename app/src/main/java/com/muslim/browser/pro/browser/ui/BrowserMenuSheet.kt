@@ -423,7 +423,7 @@ fun BrowserMenuSheet(
 
 
 
-                // Settings -> Theme (Theme Selection: Black & White)
+                // Settings -> Theme (Theme Selection: White, Black & White)
                 MenuRow(
                     title = "Theme",
                     icon = Icons.Default.Settings,
@@ -1257,8 +1257,8 @@ private fun ThemeSelectionDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(AppTheme.BLACK_WHITE).forEach { theme ->
-                    val isSelected = currentTheme == theme || currentTheme == AppTheme.FORCE_DARK_ON
+                listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
+                    val isSelected = currentTheme == theme
                     Surface(
                         onClick = {
                             onSelectTheme(theme)
@@ -1325,7 +1325,7 @@ private fun ClearAllDataDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Clear All Data?",
+                text = "Clear All Browsing Data?",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
                 color = colors.textPrimary
@@ -1333,7 +1333,7 @@ private fun ClearAllDataDialog(
         },
         text = {
             Text(
-                text = "Clear browsing history, cache and cookies.",
+                text = "Clear browsing history, cache, cookies, and website storage. Your saved bookmarks, downloads, and app settings will be preserved.",
                 color = colors.textSecondary,
                 fontSize = 13.sp
             )
@@ -1351,7 +1351,7 @@ private fun ClearAllDataDialog(
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.testTag("confirm_clear_all_data_button")
             ) {
-                Text("Clear", fontWeight = FontWeight.Bold)
+                Text("Clear All Data", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -1387,6 +1387,13 @@ private fun ClearCacheCookiesDialog(
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
                 color = colors.textPrimary
+            )
+        },
+        text = {
+            Text(
+                text = "Clear temporary web cache and website cookies. Browsing history, saved bookmarks, downloads, and app settings will not be affected.",
+                color = colors.textSecondary,
+                fontSize = 13.sp
             )
         },
         confirmButton = {

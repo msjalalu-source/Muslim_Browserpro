@@ -17,9 +17,9 @@ object NavigationController {
             return NavigationDecision.Allowed
         }
 
-        // Unified search engine evaluation for all supported search engines
-        // (Google, Bing, Yahoo, Yandex, Brave, Ecosia, Startpage, Qwant, Ask, Baidu, Naver, AOL, Mojeek, DuckDuckGo)
+        // Unified search engine evaluation for all supported search engines and website search URLs
         val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
+            ?: ProtectionEngine.extractGenericSearchQuery(trimmed)
         if (searchEngineQuery != null) {
             // 1. Check custom protected keywords on search query
             val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)

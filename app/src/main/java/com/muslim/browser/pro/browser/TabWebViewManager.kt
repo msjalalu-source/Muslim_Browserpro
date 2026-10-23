@@ -63,12 +63,16 @@ class TabWebViewManager(
         }
     }
 
-    fun destroyWebView(tabId: String) {
+    fun getLiveWebViews(): Collection<WebView> = liveWebViews.values
+
+    fun destroyWebView(tabId: String, saveState: Boolean = true) {
         val webView = liveWebViews.remove(tabId) ?: return
         try {
-            val bundle = Bundle()
-            webView.saveState(bundle)
-            onSaveTabBundle(tabId, bundle)
+            if (saveState) {
+                val bundle = Bundle()
+                webView.saveState(bundle)
+                onSaveTabBundle(tabId, bundle)
+            }
             webView.stopLoading()
             webView.loadUrl("about:blank")
             webView.clearHistory()
@@ -76,21 +80,42 @@ class TabWebViewManager(
         } catch (_: Exception) {}
     }
 
-    fun destroyAll() {
+    fun destroyAll(saveState: Boolean = true) {
         for (tabId in liveWebViews.keys.toList()) {
-            destroyWebView(tabId)
+            destroyWebView(tabId, saveState = saveState)
         }
     }
 
-    fun clearAllData() {
+    /**
+     * Clears only HTTP cache on all live WebViews (scoped strictly for Clear Cache & Cookies).
+     */
+    fun clearCacheOnly() {
         liveWebViews.values.forEach { webView ->
             try {
+                webView.clearCache(true)
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Clears WebView data for Clear All Data.
+     */
+    fun clearAllWebViewsData() {
+        liveWebViews.values.forEach { webView ->
+            try {
+                webView.stopLoading()
                 webView.clearCache(true)
                 webView.clearFormData()
                 webView.clearHistory()
                 webView.clearSslPreferences()
+                webView.loadUrl("about:blank")
             } catch (_: Exception) {}
         }
+    }
+
+    @Deprecated("Use BrowserDataClearingManager.clearAllBrowsingData or clearAllWebViewsData")
+    fun clearAllData() {
+        clearAllWebViewsData()
     }
 
     fun pauseAll(exceptTabId: String? = null) {

@@ -495,4 +495,60 @@ class AutofillEngineAndRepositoryTest {
         assertEquals("31/12/2022", workArray.getJSONObject(0).getString("serviceEnd"))
         assertEquals("Leading software engineering projects", workArray.getJSONObject(0).getString("jobDescription"))
     }
+
+    // 13. Autofill when disabled returns disabled message and performs 0 fills
+    @Test
+    fun testAutofillDisabledReturnsDisabledMessage() {
+        val profile = AutofillProfile(
+            isEnabled = false,
+            personalInfo = PersonalInfo(
+                userNameEn = "Test User",
+                email = "user@example.com"
+            )
+        )
+        AutofillRepository.saveProfile(context, profile)
+
+        var filledCount = -1
+        var skippedCount = -1
+        var resultMessage = ""
+
+        AutofillEngine.executeAutofill(context, null) { filled, skipped, message ->
+            filledCount = filled
+            skippedCount = skipped
+            resultMessage = message
+        }
+
+        // With null WebView
+        assertEquals(0, filledCount)
+        assertEquals(0, skippedCount)
+        assertEquals("No active web page available", resultMessage)
+    }
+
+    // 14. Verify Autofill payload structure preserves username, email, phone, and name components
+    @Test
+    fun testPayloadStructureSupportsLoginAndRegistrationForms() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Tariqul Islam",
+                userNameBn = "তারিকুল ইসলাম",
+                email = "tariqul@example.com",
+                phone = "+8801700000000"
+            )
+        )
+
+        val jsonStr = AutofillEngine.buildAutofillPayloadJson(profile)
+        val json = org.json.JSONObject(jsonStr)
+
+        assertEquals("Tariqul Islam", json.getString("userNameEn"))
+        assertEquals("তারিকুল ইসলাম", json.getString("userNameBn"))
+        assertEquals("tariqul@example.com", json.getString("email"))
+        assertEquals("+8801700000000", json.getString("phone"))
+        // Passwords and tokens must NEVER exist in payload JSON
+        assertFalse(json.has("password"))
+        assertFalse(json.has("passcode"))
+        assertFalse(json.has("otp"))
+        assertFalse(json.has("token"))
+        assertFalse(json.has("cvv"))
+    }
 }

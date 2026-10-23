@@ -67,6 +67,19 @@ object AutofillEngine {
         if (!str) return false;
         return /[\u0980-\u09FF]/.test(str);
     }
+
+    function splitName(fullName) {
+        if (!fullName) return { first: '', last: '' };
+        var trimmed = fullName.trim();
+        var spaceIdx = trimmed.indexOf(' ');
+        if (spaceIdx === -1) {
+            return { first: trimmed, last: '' };
+        }
+        return {
+            first: trimmed.substring(0, spaceIdx).trim(),
+            last: trimmed.substring(spaceIdx + 1).trim()
+        };
+    }
     
     function getAssociatedLabelText(el) {
         var labelText = '';
@@ -214,7 +227,49 @@ object AutofillEngine {
             return null;
         }
         
-        // --- 3. User's Name Matching ---
+        // --- 3. User's Name, First/Last Name, and Username Matching ---
+        // 3a. Username / User ID / Login ID (Common on login and registration forms)
+        var isUsername = ac === 'username' ||
+                         combined.indexOf('username') !== -1 || combined.indexOf('user_name') !== -1 ||
+                         combined.indexOf('userid') !== -1 || combined.indexOf('user id') !== -1 ||
+                         combined.indexOf('user_id') !== -1 || combined.indexOf('login id') !== -1 ||
+                         combined.indexOf('login_id') !== -1 || combined.indexOf('loginid') !== -1 ||
+                         combined.indexOf('ইউজারনেম') !== -1 || combined.indexOf('ব্যবহারকারীর নাম') !== -1;
+        if (isUsername) {
+            var uVal = (data.userNameEn && data.userNameEn.trim().length > 0) ? data.userNameEn.trim() : (data.email && data.email.trim().length > 0 ? data.email.trim() : null);
+            return uVal;
+        }
+
+        // 3b. First Name / Given Name (Registration forms)
+        var isFirstName = ac === 'given-name' ||
+                          combined.indexOf('first name') !== -1 || combined.indexOf('first_name') !== -1 ||
+                          combined.indexOf('firstname') !== -1 || combined.indexOf('given name') !== -1 ||
+                          combined.indexOf('given_name') !== -1 || combined.indexOf('forename') !== -1 ||
+                          combined.indexOf('fname') !== -1 || combined.indexOf('প্রথম নাম') !== -1;
+        if (isFirstName) {
+            var rawName = isBn ? (data.userNameBn || data.userNameEn) : data.userNameEn;
+            var split = splitName(rawName);
+            var fnVal = (split.first && split.first.length > 0) ? split.first : rawName;
+            if (fnVal && fnVal.trim().length > 0) return fnVal.trim();
+            return null;
+        }
+
+        // 3c. Last Name / Surname / Family Name (Registration forms)
+        var isLastName = ac === 'family-name' ||
+                         combined.indexOf('last name') !== -1 || combined.indexOf('last_name') !== -1 ||
+                         combined.indexOf('lastname') !== -1 || combined.indexOf('surname') !== -1 ||
+                         combined.indexOf('family name') !== -1 || combined.indexOf('family_name') !== -1 ||
+                         combined.indexOf('lname') !== -1 || combined.indexOf('শেষ নাম') !== -1 ||
+                         combined.indexOf('বংশনাম') !== -1;
+        if (isLastName) {
+            var rawName = isBn ? (data.userNameBn || data.userNameEn) : data.userNameEn;
+            var split = splitName(rawName);
+            var lnVal = (split.last && split.last.length > 0) ? split.last : (split.first || rawName);
+            if (lnVal && lnVal.trim().length > 0) return lnVal.trim();
+            return null;
+        }
+
+        // 3d. Full User's Name
         // Exclude when name refers to school, institution, board, organization, employer, company, district, upazila, post office, reference, nominee, spouse, guardian, care of, etc.
         var isExcludedFromName = combined.indexOf("father") !== -1 || combined.indexOf("mother") !== -1 ||
                                  combined.indexOf("পিতা") !== -1 || combined.indexOf("মাতা") !== -1 ||
@@ -369,13 +424,19 @@ object AutofillEngine {
         }
 
         // --- 8. General Non-Name Profile Fields ---
-        // Email
-        if (type === 'email' || ac === 'email' || combined.indexOf('email') !== -1 || combined.indexOf('ইমেইল') !== -1 || combined.indexOf('ই-মেইল') !== -1) {
+        // Email & Email Confirmation
+        if (type === 'email' || ac === 'email' || 
+            combined.indexOf('email') !== -1 || combined.indexOf('e-mail') !== -1 ||
+            combined.indexOf('confirm email') !== -1 || combined.indexOf('confirm_email') !== -1 ||
+            combined.indexOf('email confirmation') !== -1 || combined.indexOf('ইমেইল') !== -1 || combined.indexOf('ই-মেইল') !== -1) {
             return (data.email && data.email.trim().length > 0) ? data.email.trim() : null;
         }
         
-        // Phone / Mobile
-        if (type === 'tel' || ac === 'tel' || combined.indexOf('phone') !== -1 || combined.indexOf('mobile') !== -1 || combined.indexOf('মোবাইল') !== -1 || combined.indexOf('ফোন') !== -1 || combined.indexOf('contact no') !== -1) {
+        // Phone / Mobile & Phone Confirmation
+        if (type === 'tel' || ac === 'tel' || 
+            combined.indexOf('phone') !== -1 || combined.indexOf('mobile') !== -1 ||
+            combined.indexOf('confirm phone') !== -1 || combined.indexOf('confirm_phone') !== -1 ||
+            combined.indexOf('মোবাইল') !== -1 || combined.indexOf('ফোন') !== -1 || combined.indexOf('contact no') !== -1) {
             return (data.phone && data.phone.trim().length > 0) ? data.phone.trim() : null;
         }
         
@@ -572,10 +633,28 @@ object AutofillEngine {
         return docs;
     }
 
+    // Recursively collect inputs penetrating Shadow DOM trees
+    function collectInputs(root, list) {
+        if (!root) return;
+        try {
+            var found = root.querySelectorAll('input, textarea, select');
+            for (var k = 0; k < found.length; k++) {
+                list.push(found[k]);
+            }
+            var allElements = root.querySelectorAll('*');
+            for (var a = 0; a < allElements.length; a++) {
+                if (allElements[a].shadowRoot) {
+                    collectInputs(allElements[a].shadowRoot, list);
+                }
+            }
+        } catch(e) {}
+    }
+
     var allDocs = getDocuments();
     for (var dIdx = 0; dIdx < allDocs.length; dIdx++) {
         var targetDoc = allDocs[dIdx];
-        var inputs = targetDoc.querySelectorAll('input, textarea, select');
+        var inputs = [];
+        collectInputs(targetDoc, inputs);
         
         // Track filled radio groups to avoid double counting
         var filledRadioGroups = {};

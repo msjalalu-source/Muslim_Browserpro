@@ -104,6 +104,16 @@ class SettingsRepository(private val context: Context) {
         return true
     }
 
+    fun removeCustomKeyword(keyword: String): Boolean {
+        val current = getCustomKeywords().toMutableSet()
+        val trimmed = keyword.trim().lowercase()
+        val removed = current.remove(trimmed)
+        if (removed) {
+            prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, current).apply()
+        }
+        return removed
+    }
+
     fun getFavoriteSites(): List<FavoriteSite> {
         val json = prefs.getString(KEY_FAVORITES, null) ?: return DEFAULT_FAVORITES
         return try {

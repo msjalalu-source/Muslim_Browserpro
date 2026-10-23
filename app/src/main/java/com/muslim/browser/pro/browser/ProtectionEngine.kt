@@ -2,6 +2,7 @@ package com.muslim.browser.pro.browser
 
 import android.net.Uri
 import android.util.Log
+import org.json.JSONArray
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -266,6 +267,41 @@ object ProtectionEngine {
         }
     }
 
+    /**
+     * Extracts search query parameters from general website search URLs
+     * (e.g. https://en.wikipedia.org/w/index.php?search=..., https://github.com/search?q=...)
+     * when the domain is not one of the explicitly hardcoded global search engines.
+     */
+    fun extractGenericSearchQuery(url: String): String? {
+        if (url.isBlank()) return null
+        return try {
+            val uri = Uri.parse(url)
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return null
+            if (scheme != "http" && scheme != "https") return null
+            if (!uri.userInfo.isNullOrEmpty()) return null
+            val port = uri.port
+            if (port != -1 && port != 80 && port != 443) return null
+
+            val queryParamNames = listOf(
+                "q", "search", "query", "search_query", "k", "keyword",
+                "term", "text", "s", "wd", "p", "searchTerm", "search_term"
+            )
+            for (param in queryParamNames) {
+                val value = uri.getQueryParameter(param)
+                if (!value.isNullOrBlank()) {
+                    return value
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun normalizeKeyword(kw: String): String {
+        return kw.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+    }
+
     fun isBlockedByCustomKeywords(
         text: String,
         customKeywords: Set<String>,
@@ -278,24 +314,185 @@ object ProtectionEngine {
         } catch (_: Exception) {
             plusReplaced
         }
-        val normalized = decoded.trim().lowercase(Locale.ROOT)
+        val normalized = decoded.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        if (normalized.isEmpty()) return null
 
         if (!normalizedKeywords.isNullOrEmpty()) {
             for (kwNorm in normalizedKeywords) {
-                if (kwNorm.isNotEmpty() && normalized.contains(kwNorm)) {
-                    val original = customKeywords.firstOrNull { it.trim().equals(kwNorm, ignoreCase = true) }
+                val cleanKwNorm = normalizeKeyword(kwNorm)
+                if (cleanKwNorm.isNotEmpty() && normalized.contains(cleanKwNorm)) {
+                    val original = customKeywords.firstOrNull { normalizeKeyword(it) == cleanKwNorm }
                     return original ?: kwNorm
                 }
             }
         } else {
             for (kw in customKeywords) {
-                val kwNormalized = kw.trim().lowercase(Locale.ROOT)
+                val kwNormalized = normalizeKeyword(kw)
                 if (kwNormalized.isNotEmpty() && normalized.contains(kwNormalized)) {
                     return kw
                 }
             }
         }
         return null
+    }
+
+    /**
+     * Builds JavaScript that intercepts webpage search boxes (Enter key, search buttons, form submissions)
+     * across all websites and SPAs before navigation occurs.
+     */
+    fun buildKeywordBlockingScript(customKeywords: Set<String>): String {
+        val jsonArray = JSONArray()
+        for (kw in customKeywords) {
+            val trimmed = kw.trim()
+            if (trimmed.isNotEmpty()) {
+                jsonArray.put(trimmed)
+            }
+        }
+        val keywordsJson = jsonArray.toString()
+
+        return """
+(function() {
+    window.__mbp_keywords = $keywordsJson;
+    if (window.__mbp_kw_installed) return;
+    window.__mbp_kw_installed = true;
+
+    function checkBlocked(query) {
+        if (!query) return null;
+        var norm = query.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (!norm) return null;
+        var kws = window.__mbp_keywords || [];
+        for (var i = 0; i < kws.length; i++) {
+            var kw = (kws[i] || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (kw.length > 0 && norm.indexOf(kw) !== -1) {
+                return kws[i];
+            }
+        }
+        return null;
+    }
+
+    function isSearchInput(el) {
+        if (!el || !el.tagName) return false;
+        var tag = el.tagName.toUpperCase();
+        if (tag === 'TEXTAREA') {
+            var r = (el.getAttribute('role') || '').toLowerCase();
+            var a = (el.getAttribute('aria-label') || '').toLowerCase();
+            var n = (el.name || '').toLowerCase();
+            var id = (el.id || '').toLowerCase();
+            return r === 'searchbox' || a.indexOf('search') !== -1 || n === 'q' || n === 'search' || id.indexOf('search') !== -1;
+        }
+        if (tag !== 'INPUT') return false;
+        var type = (el.type || 'text').toLowerCase();
+        if (type === 'search') return true;
+        if (type !== 'text' && type !== '' && type !== 'url') return false;
+
+        var role = (el.getAttribute('role') || '').toLowerCase();
+        var n = (el.name || '').toLowerCase();
+        var id = (el.id || '').toLowerCase();
+        var ph = (el.placeholder || '').toLowerCase();
+        var aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        var cl = (el.className || '').toLowerCase();
+
+        if (role === 'searchbox' || role === 'combobox') {
+            if (aria.indexOf('search') !== -1 || ph.indexOf('search') !== -1 || ph.indexOf('খুঁজ') !== -1 ||
+                n.indexOf('search') !== -1 || n === 'q' || n === 'query' || n === 'k' || n === 'keyword' ||
+                id.indexOf('search') !== -1 || cl.indexOf('search') !== -1) {
+                return true;
+            }
+        }
+
+        if (n === 'q' || n === 'query' || n === 'search' || n === 'search_query' || n === 'k' || n === 'keyword' || n === 'term') return true;
+        if (n.indexOf('search') !== -1 || id.indexOf('search') !== -1 || ph.indexOf('search') !== -1 || aria.indexOf('search') !== -1 || cl.indexOf('search') !== -1) return true;
+        if (ph.indexOf('খুঁজ') !== -1 || aria.indexOf('খুঁজ') !== -1) return true;
+
+        var form = el.form || (el.closest ? el.closest('form') : null);
+        if (form) {
+            var fRole = (form.getAttribute('role') || '').toLowerCase();
+            var fAction = (form.action || '').toLowerCase();
+            var fClass = (form.className || '').toLowerCase();
+            var fId = (form.id || '').toLowerCase();
+            if (fRole === 'search' || fAction.indexOf('search') !== -1 || fClass.indexOf('search') !== -1 || fId.indexOf('search') !== -1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function blockSearch(e, matchedKw) {
+        if (e) {
+            try { e.preventDefault(); } catch(_) {}
+            try { e.stopPropagation(); } catch(_) {}
+            try { e.stopImmediatePropagation(); } catch(_) {}
+        }
+        window.location.href = 'mbp-blocked-search://block?kw=' + encodeURIComponent(matchedKw);
+    }
+
+    // 1. Enter key in search input (SPAs & regular forms)
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            var target = e.target;
+            if (isSearchInput(target)) {
+                var kw = checkBlocked(target.value);
+                if (kw) {
+                    blockSearch(e, kw);
+                }
+            }
+        }
+    }, true);
+
+    // 2. Form submit event
+    document.addEventListener('submit', function(e) {
+        var form = e.target;
+        if (form && form.querySelectorAll) {
+            var inputs = form.querySelectorAll('input, textarea');
+            for (var i = 0; i < inputs.length; i++) {
+                if (isSearchInput(inputs[i])) {
+                    var kw = checkBlocked(inputs[i].value);
+                    if (kw) {
+                        blockSearch(e, kw);
+                        return;
+                    }
+                }
+            }
+        }
+    }, true);
+
+    // 3. Search button click (for buttons or anchors triggering JS searches)
+    document.addEventListener('click', function(e) {
+        var btn = e.target && e.target.closest ? e.target.closest('button, input[type="submit"], [role="button"], a') : null;
+        if (btn) {
+            var bText = (btn.innerText || btn.textContent || btn.value || '').toLowerCase();
+            var bAria = (btn.getAttribute('aria-label') || '').toLowerCase();
+            var bClass = (btn.className || '').toLowerCase();
+            var bId = (btn.id || '').toLowerCase();
+            var isSearchBtn = bAria.indexOf('search') !== -1 || bText.indexOf('search') !== -1 || bText.indexOf('খুঁজ') !== -1 ||
+                              bClass.indexOf('search') !== -1 || bId.indexOf('search') !== -1;
+            var form = btn.form || (btn.closest ? btn.closest('form') : null);
+            if (!isSearchBtn && form) {
+                var fRole = (form.getAttribute('role') || '').toLowerCase();
+                var fAction = (form.action || '').toLowerCase();
+                if (fRole === 'search' || fAction.indexOf('search') !== -1) {
+                    isSearchBtn = true;
+                }
+            }
+            if (isSearchBtn) {
+                var scope = form || (btn.closest ? btn.closest('header, nav, [role="search"], form, div') : document);
+                if (scope && scope.querySelectorAll) {
+                    var inputs = scope.querySelectorAll('input, textarea');
+                    for (var i = 0; i < inputs.length; i++) {
+                        if (isSearchInput(inputs[i])) {
+                            var kw = checkBlocked(inputs[i].value);
+                            if (kw) {
+                                blockSearch(e, kw);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }, true);
+})();
+        """.trimIndent()
     }
 
     fun checkDirectUrl(

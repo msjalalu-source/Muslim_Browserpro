@@ -66,7 +66,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.muslim.browser.pro.MainActivity
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.DesktopCore
-import com.muslim.browser.pro.ui.theme.AppTheme
 import com.muslim.browser.pro.ui.theme.LocalAppColors
 
 @Composable
@@ -256,11 +255,6 @@ fun BrowserWebView(
                 },
                 modifier = Modifier.fillMaxSize(),
                 update = { container ->
-                    val isForceDark = uiState.appTheme == AppTheme.FORCE_DARK_ON
-                    if (MainActivity.isDarkThemeActive != isForceDark) {
-                        MainActivity.applyWebViewTheme(webView, isForceDark)
-                    }
-
                     // Prevent container from stealing focus from the child WebView
                     if (container.isFocusable || container.isFocusableInTouchMode) {
                         container.isFocusable = false

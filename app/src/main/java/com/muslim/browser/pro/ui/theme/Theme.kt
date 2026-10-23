@@ -12,8 +12,7 @@ import androidx.compose.ui.graphics.Color
 
 enum class AppTheme(val displayName: String) {
     WHITE("White"),
-    BLACK_WHITE("Black & White"),
-    FORCE_DARK_ON("Force Dark On")
+    BLACK_WHITE("Black & White")
 }
 
 data class AppColors(
@@ -71,7 +70,6 @@ fun MyApplicationTheme(
     val colors = when (appTheme) {
         AppTheme.WHITE -> WhiteColors
         AppTheme.BLACK_WHITE -> BlackWhiteColors
-        AppTheme.FORCE_DARK_ON -> BlackWhiteColors
     }
 
     val m3Scheme: ColorScheme = if (colors.isLight) {
