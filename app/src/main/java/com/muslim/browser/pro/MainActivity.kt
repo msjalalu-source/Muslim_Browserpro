@@ -11,6 +11,7 @@ import android.app.DownloadManager
 import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.SafeBrowsingResponse
 import android.webkit.URLUtil
 import android.os.Message
 import android.widget.Toast
@@ -333,6 +334,9 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun createConfiguredWebView(tabId: String): WebView {
         return WebView(this).apply {
+            CookieManager.getInstance().setAcceptCookie(true)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
@@ -343,6 +347,10 @@ class MainActivity : ComponentActivity() {
             settings.loadWithOverviewMode = true
             settings.setSupportMultipleWindows(true)
             settings.javaScriptCanOpenWindowsAutomatically = !viewModel.uiState.value.isPopupBlockingEnabled
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                settings.safeBrowsingEnabled = true
+            }
 
             addJavascriptInterface(blobDownloadBridge, "AndroidBlobBridge")
 
@@ -496,6 +504,28 @@ class MainActivity : ComponentActivity() {
                         )
                         handler?.cancel()
                     }
+                }
+
+                override fun onSafeBrowsingHit(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    threatType: Int,
+                    callback: SafeBrowsingResponse?
+                ) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        callback?.backToSafety(true)
+                    }
+                    val url = request?.url?.toString() ?: view?.url ?: ""
+                    viewModel.setBlockedUrl(
+                        targetUrl = url,
+                        reason = "Security Protection",
+                        detail = "Dangerous website blocked (phishing or malware)"
+                    )
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Dangerous website blocked (phishing or malware)",
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
 
