@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
@@ -40,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +52,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -64,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.R
 import com.muslim.browser.pro.browser.BrowserUiState
 import com.muslim.browser.pro.browser.FavoriteSite
+import com.muslim.browser.pro.browser.FaviconManager
 import com.muslim.browser.pro.browser.SearchEngine
 import com.muslim.browser.pro.ui.theme.LocalAppColors
 
@@ -96,15 +101,6 @@ fun AddFavoriteSiteTile(
                 )
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = "Add",
-            fontSize = 11.5.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color(0xFF0284C7),
-            maxLines = 1,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -115,6 +111,7 @@ fun FavoriteSiteItem(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
+    val context = LocalContext.current
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -123,160 +120,70 @@ fun FavoriteSiteItem(
             .clickable(onClick = onClick)
             .padding(4.dp)
     ) {
-        val isCustomRed = site.badgeColor == 0xFFD32F2F
-        val cardColor = if (isCustomRed) Color(0xFFD32F2F) else Color.White
-        val cardBorder = if (isCustomRed) null else BorderStroke(1.dp, Color(0xFFE2E8F0))
-
         Surface(
             modifier = Modifier.size(58.dp),
             shape = RoundedCornerShape(14.dp),
-            color = cardColor,
-            border = cardBorder,
+            color = Color.White,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
             shadowElevation = 1.dp
         ) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize().padding(4.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
             ) {
-                when (site.name) {
-                    "MoldovaLive" -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "MD",
-                                color = Color(0xFFD32F2F),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.width(1.dp))
-                            Text(
-                                text = "live",
-                                color = Color(0xFF212121),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                    "Moldova1" -> {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "M",
-                                    color = Color(0xFF1976D2),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = "1",
-                                    color = Color(0xFFD32F2F),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp
-                                )
-                            }
-                            Text(
-                                text = "MOLDOVA",
-                                fontSize = 7.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1976D2)
-                            )
-                        }
-                    }
-                    "Google AI Studio" -> {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFF1F5F9)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row {
-                                Text("A", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("I", color = Color(0xFF34A853), fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                        }
-                    }
-                    "GitHub" -> {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF24292F)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Git",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                    "Prothom Alo" -> {
-                        Text(
-                            text = "PA",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
+                val urlLower = site.url.lowercase()
+                when {
+                    urlLower.contains("google.com") || urlLower.contains("google.") -> {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_search_google),
+                            contentDescription = null,
+                            modifier = Modifier.size(30.dp)
                         )
                     }
-                    "The Daily Star" -> {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "★",
-                                color = Color(0xFF212121),
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                text = "Star",
-                                color = Color(0xFF212121),
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    "Ittefaq" -> {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .border(1.5.dp, Color(0xFF212121), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "ই",
-                                color = Color(0xFF212121),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 17.sp
-                            )
-                        }
-                    }
-                    "BangiNews" -> {
-                        Text(
-                            text = "bangi",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                    urlLower.contains("duckduckgo.com") -> {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_search_duckduckgo),
+                            contentDescription = null,
+                            modifier = Modifier.size(30.dp)
                         )
                     }
                     else -> {
-                        Text(
-                            text = site.iconLetter,
-                            color = if (isCustomRed) Color.White else colors.textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
-                        )
+                        var faviconBitmap by remember(site.url) {
+                            mutableStateOf(FaviconManager.getMemoryCached(site.url))
+                        }
+
+                        LaunchedEffect(site.url) {
+                            if (faviconBitmap == null) {
+                                val loaded = FaviconManager.loadFavicon(context, site.url)
+                                if (loaded != null) {
+                                    faviconBitmap = loaded
+                                }
+                            }
+                        }
+
+                        val bitmap = faviconBitmap
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Language,
+                                contentDescription = null,
+                                tint = colors.accent,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
                 }
             }
         }
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = site.name,
-            fontSize = 11.5.sp,
-            color = colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center
-        )
     }
 }
 

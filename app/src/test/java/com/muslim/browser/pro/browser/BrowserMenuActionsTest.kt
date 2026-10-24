@@ -1,8 +1,11 @@
 package com.muslim.browser.pro.browser
 
+import android.graphics.Bitmap
 import com.muslim.browser.pro.browser.ui.sanitizePdfJobName
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -275,6 +278,23 @@ class BrowserMenuActionsTest {
         assertTrue("Script must check visibility is not hidden", script.contains("s.visibility !== 'hidden'"))
         assertTrue("Script must check element dimensions", script.contains("offsetWidth") && script.contains("offsetHeight"))
         assertFalse("Script must not use naive null check", script.contains("querySelector('input[type=password]') !== null"))
+    }
+
+    @Test
+    fun testFaviconManagerMemoryCacheAndFallback() {
+        val testUrl = "https://example.com/page"
+        FaviconManager.clearCache()
+        assertNull(FaviconManager.getMemoryCached(testUrl))
+
+        val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        FaviconManager.putInMemory(testUrl, bitmap)
+
+        val cached = FaviconManager.getMemoryCached(testUrl)
+        assertNotNull(cached)
+        assertEquals(16, cached?.width)
+
+        FaviconManager.clearCache()
+        assertNull(FaviconManager.getMemoryCached(testUrl))
     }
 }
 

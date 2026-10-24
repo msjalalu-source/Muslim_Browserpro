@@ -157,7 +157,8 @@ fun MenuRow(
                         text = title,
                         color = if (enabled) colors.textPrimary else colors.textSecondary.copy(alpha = 0.5f),
                         fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Normal
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
                     )
                     if (subtitle != null) {
                         Text(

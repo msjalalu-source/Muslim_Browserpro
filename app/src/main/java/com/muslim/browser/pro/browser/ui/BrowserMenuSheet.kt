@@ -326,17 +326,16 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Default Browser (ডিফল্ট ব্রাউজার করুন)
+                // Default Browser
                 MenuRow(
-                    title = "ডিফল্ট ব্রাউজার করুন",
-                    subtitle = "খুলে যাওয়া স্ক্রিনে Muslim Browser বেছে নিন।",
+                    title = "Default Browser",
                     icon = Icons.Default.Language,
-                    contentDescription = "ডিফল্ট ব্রাউজার করুন",
+                    contentDescription = "Default Browser",
                     onClick = {
                         openDefaultBrowserSettings(context, defaultBrowserLauncher)
                         onDismiss()
                     },
-                    trailingContent = { MenuBadge(text = "Set") },
+                    showArrow = false,
                     modifier = Modifier.testTag("menu_item_default_browser")
                 )
 
