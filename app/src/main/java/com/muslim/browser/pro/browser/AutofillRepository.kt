@@ -52,26 +52,48 @@ object AutofillRepository {
     /**
      * Persists the profile to private local storage.
      * Synchronously commits to ensure durability across app restarts.
+     * Cache is updated only when the write succeeds; invalidated on failure.
      */
     fun saveProfile(context: Context, profile: AutofillProfile): Boolean {
-        cachedProfile = profile
-        val jsonStr = serializeProfile(profile)
-        getPrefs(context).edit()
-            .putString(KEY_PROFILE_JSON, jsonStr)
-            .putBoolean(KEY_HAS_SAVED, true)
-            .apply()
-        return true
+        return try {
+            val jsonStr = serializeProfile(profile)
+            val success = getPrefs(context).edit()
+                .putString(KEY_PROFILE_JSON, jsonStr)
+                .putBoolean(KEY_HAS_SAVED, true)
+                .commit()
+            if (success) {
+                cachedProfile = profile
+                true
+            } else {
+                cachedProfile = null
+                false
+            }
+        } catch (_: Exception) {
+            cachedProfile = null
+            false
+        }
     }
 
     /**
      * Clears all saved profile data from private local storage.
+     * Infallibly invalidates the in-memory cache to prevent stale profile data from being reused.
      */
     fun clearProfile(context: Context): Boolean {
         cachedProfile = null
-        getPrefs(context).edit()
-            .clear()
-            .apply()
-        return true
+        return try {
+            getPrefs(context).edit()
+                .clear()
+                .commit()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Explicitly invalidates the in-memory cache.
+     */
+    fun invalidateCache() {
+        cachedProfile = null
     }
 
     fun serializeProfile(profile: AutofillProfile): String {
