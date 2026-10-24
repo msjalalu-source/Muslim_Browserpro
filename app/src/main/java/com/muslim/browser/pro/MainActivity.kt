@@ -21,7 +21,17 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.util.Base64
+import com.muslim.browser.pro.browser.BlobDownloadBridge
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.net.URLDecoder
+import java.util.Locale
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -60,6 +70,7 @@ import com.muslim.browser.pro.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
 
     val viewModel: BrowserViewModel by viewModels()
+    val blobDownloadBridge = BlobDownloadBridge()
     lateinit var tabWebViewManager: TabWebViewManager
 
     private var lastPopupCreatedTimestamp: Long = 0L
@@ -333,6 +344,8 @@ class MainActivity : ComponentActivity() {
             settings.setSupportMultipleWindows(true)
             settings.javaScriptCanOpenWindowsAutomatically = !viewModel.uiState.value.isPopupBlockingEnabled
 
+            addJavascriptInterface(blobDownloadBridge, "AndroidBlobBridge")
+
             // Test to find out whether system autofill causes the window focus loss and keyboard closing
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
@@ -535,6 +548,14 @@ class MainActivity : ComponentActivity() {
             }
 
             setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+                if (url.startsWith("blob:", ignoreCase = true)) {
+                    downloadBlob(this, url, contentDisposition, mimetype)
+                    return@setDownloadListener
+                }
+                if (url.startsWith("data:", ignoreCase = true)) {
+                    handleDataDownload(url, contentDisposition, mimetype)
+                    return@setDownloadListener
+                }
                 val decision = DownloadPolicy.evaluate(url, mimetype, contentDisposition)
                 if (decision is DownloadPolicy.Result.Blocked) {
                     viewModel.setBlockedUrl(url, "Download Blocked", decision.reason)
@@ -549,6 +570,285 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun resolveDownloadFileName(url: String, contentDisposition: String?, mimetype: String?): String {
+        var fileName = DownloadPolicy.extractFileName(url, contentDisposition).ifBlank {
+            URLUtil.guessFileName(url, contentDisposition, mimetype)
+        }
+        if (fileName.isBlank() || fileName.equals("download", ignoreCase = true) || !fileName.contains('.')) {
+            val guessed = URLUtil.guessFileName(url, contentDisposition, mimetype)
+            if (guessed.isNotBlank()) {
+                if (fileName.isBlank() || fileName.equals("download", ignoreCase = true)) {
+                    fileName = guessed
+                } else if (!fileName.contains('.') && guessed.contains('.')) {
+                    fileName = "$fileName.${guessed.substringAfterLast('.')}"
+                }
+            }
+        }
+        val lowerMime = mimetype?.trim()?.lowercase(Locale.ROOT) ?: ""
+        val isZipMime = lowerMime == "application/zip" ||
+            lowerMime == "application/x-zip-compressed" ||
+            lowerMime == "application/x-zip"
+        if (isZipMime && !fileName.endsWith(".zip", ignoreCase = true)) {
+            fileName = "$fileName.zip"
+        }
+        return fileName
+    }
+
+    fun resolveMimeType(fileName: String, mimetype: String?): String {
+        return mimetype?.takeIf { it.isNotBlank() }
+            ?: if (fileName.endsWith(".zip", ignoreCase = true)) "application/zip"
+            else if (fileName.endsWith(".pdf", ignoreCase = true)) "application/pdf"
+            else "application/octet-stream"
+    }
+
+    fun getUniqueFileName(baseName: String, checkExists: (String) -> Boolean): String {
+        if (!checkExists(baseName)) return baseName
+        val dotIndex = baseName.lastIndexOf('.')
+        val nameWithoutExt = if (dotIndex > 0) baseName.substring(0, dotIndex) else baseName
+        val ext = if (dotIndex > 0) baseName.substring(dotIndex) else ""
+        var counter = 1
+        while (true) {
+            val candidate = "$nameWithoutExt($counter)$ext"
+            if (!checkExists(candidate)) return candidate
+            counter++
+        }
+    }
+
+    fun saveDownloadedBytes(
+        rawBytes: ByteArray,
+        initialFileName: String,
+        mimeType: String,
+        sourceUrl: String
+    ) {
+        try {
+            var finalFileName = initialFileName
+            var savedPath = ""
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                finalFileName = getUniqueFileName(initialFileName) { candidate ->
+                    try {
+                        val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+                        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                        val selectionArgs = arrayOf(candidate)
+                        contentResolver.query(
+                            MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                            projection,
+                            selection,
+                            selectionArgs,
+                            null
+                        )?.use { it.count > 0 } ?: false
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, finalFileName)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: throw IOException("MediaStore এ ফাইল তৈরি করা যায়নি")
+
+                contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(rawBytes)
+                    outputStream.flush()
+                } ?: throw IOException("ফাইলে লিখতে ব্যর্থ হয়েছে")
+
+                contentValues.clear()
+                contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                contentResolver.update(uri, contentValues, null, null)
+
+                savedPath = uri.toString()
+            } else {
+                val targetDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
+                if (!targetDir.exists()) targetDir.mkdirs()
+
+                finalFileName = getUniqueFileName(initialFileName) { candidate ->
+                    File(targetDir, candidate).exists()
+                }
+
+                val targetFile = File(targetDir, finalFileName)
+                FileOutputStream(targetFile).use { fos ->
+                    fos.write(rawBytes)
+                    fos.flush()
+                }
+                savedPath = targetFile.absolutePath
+            }
+
+            val uniqueDownloadId = -System.currentTimeMillis()
+            viewModel.recordDownload(
+                DownloadEntry(
+                    downloadId = uniqueDownloadId,
+                    fileName = finalFileName,
+                    url = sourceUrl,
+                    filePath = savedPath,
+                    totalBytes = rawBytes.size.toLong(),
+                    downloadedBytes = rawBytes.size.toLong(),
+                    status = DownloadStatus.COMPLETED
+                )
+            )
+
+            runOnUiThread {
+                Toast.makeText(this, "ডাউনলোড সম্পন্ন: $finalFileName", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: Exception) {
+            val reason = e.message ?: "অজানা ত্রুটি"
+            runOnUiThread {
+                Toast.makeText(this, "ডাউনলোড ব্যর্থ: $reason", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun downloadBlob(
+        webView: WebView,
+        url: String,
+        contentDisposition: String?,
+        mimetype: String?
+    ) {
+        val fileName = resolveDownloadFileName(url, contentDisposition, mimetype)
+        val resolvedMime = resolveMimeType(fileName, mimetype)
+
+        // Security: Video is blocked everywhere
+        if (DownloadPolicy.isVideo(fileName, resolvedMime, contentDisposition) ||
+            resolvedMime.startsWith("video/", ignoreCase = true)
+        ) {
+            Toast.makeText(this, "ভিডিও ডাউনলোড বন্ধ", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Security: APK is allowed only if origin is GitHub
+        if (DownloadPolicy.isApk(fileName, resolvedMime, contentDisposition) ||
+            resolvedMime == "application/vnd.android.package-archive"
+        ) {
+            val origin = url.removePrefix("blob:").removePrefix("BLOB:")
+            if (!DownloadPolicy.isAllowedGitHubApkUrl(origin)) {
+                Toast.makeText(this, "APK ডাউনলোড শুধু GitHub থেকে অনুমোদিত", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
+        blobDownloadBridge.onReadyCallback = { base64Data, detectedMime ->
+            try {
+                val cleanBase64 = if (base64Data.contains(",")) {
+                    base64Data.substringAfter(",")
+                } else {
+                    base64Data
+                }
+                val rawBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+                val finalMime = detectedMime.ifBlank { resolvedMime }
+                saveDownloadedBytes(rawBytes, fileName, finalMime, url)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    Toast.makeText(this, "ডাউনলোড ব্যর্থ: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        blobDownloadBridge.onErrorCallback = { errorMsg ->
+            runOnUiThread {
+                if (errorMsg == "TOO_LARGE") {
+                    Toast.makeText(this, "ফাইল অনেক বড়, এই পদ্ধতিতে নামানো যাচ্ছে না", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "ডাউনলোড ব্যর্থ: $errorMsg", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        val escapedUrl = JSONObject.quote(url)
+        val script = """
+            (function() {
+                try {
+                    var blobUrl = $escapedUrl;
+                    fetch(blobUrl)
+                        .then(function(res) {
+                            if (!res.ok) throw new Error('HTTP ' + res.status);
+                            return res.blob();
+                        })
+                        .then(function(blob) {
+                            var MAX_SIZE = 30 * 1024 * 1024;
+                            if (blob.size > MAX_SIZE) {
+                                if (window.AndroidBlobBridge && window.AndroidBlobBridge.onBlobError) {
+                                    window.AndroidBlobBridge.onBlobError('TOO_LARGE');
+                                }
+                                return;
+                            }
+                            var reader = new FileReader();
+                            reader.onloadend = function() {
+                                var base64 = reader.result;
+                                if (window.AndroidBlobBridge && window.AndroidBlobBridge.onBlobReady) {
+                                    window.AndroidBlobBridge.onBlobReady(base64, blob.type || '');
+                                }
+                            };
+                            reader.onerror = function(err) {
+                                if (window.AndroidBlobBridge && window.AndroidBlobBridge.onBlobError) {
+                                    window.AndroidBlobBridge.onBlobError('FileReader error');
+                                }
+                            };
+                            reader.readAsDataURL(blob);
+                        })
+                        .catch(function(err) {
+                            if (window.AndroidBlobBridge && window.AndroidBlobBridge.onBlobError) {
+                                window.AndroidBlobBridge.onBlobError(err && err.message ? err.message : 'Fetch failed');
+                            }
+                        });
+                } catch(e) {
+                    if (window.AndroidBlobBridge && window.AndroidBlobBridge.onBlobError) {
+                        window.AndroidBlobBridge.onBlobError(e && e.message ? e.message : 'Unknown error');
+                    }
+                }
+            })();
+        """.trimIndent()
+
+        runOnUiThread {
+            webView.evaluateJavascript(script, null)
+        }
+    }
+
+    fun handleDataDownload(url: String, contentDisposition: String?, mimetype: String?) {
+        try {
+            val commaIndex = url.indexOf(',')
+            if (commaIndex == -1) {
+                Toast.makeText(this, "ডাউনলোড ব্যর্থ: অবৈধ data URI", Toast.LENGTH_SHORT).show()
+                return
+            }
+            val meta = url.substring(5, commaIndex)
+            val dataPart = url.substring(commaIndex + 1)
+            val isBase64 = meta.contains(";base64", ignoreCase = true)
+            val extractedMime = if (meta.contains(';')) {
+                meta.substringBefore(';')
+            } else {
+                meta.ifBlank { mimetype ?: "application/octet-stream" }
+            }
+
+            val fileName = resolveDownloadFileName(url, contentDisposition, extractedMime)
+            val resolvedMime = resolveMimeType(fileName, extractedMime)
+
+            if (DownloadPolicy.isVideo(fileName, resolvedMime, contentDisposition) ||
+                resolvedMime.startsWith("video/", ignoreCase = true)
+            ) {
+                Toast.makeText(this, "ভিডিও ডাউনলোড বন্ধ", Toast.LENGTH_SHORT).show()
+                return
+            }
+            if (DownloadPolicy.isApk(fileName, resolvedMime, contentDisposition) ||
+                resolvedMime == "application/vnd.android.package-archive"
+            ) {
+                Toast.makeText(this, "APK ডাউনলোড শুধু GitHub থেকে অনুমোদিত", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            val rawBytes = if (isBase64) {
+                Base64.decode(dataPart, Base64.DEFAULT)
+            } else {
+                URLDecoder.decode(dataPart, "UTF-8").toByteArray(Charsets.UTF_8)
+            }
+
+            saveDownloadedBytes(rawBytes, fileName, resolvedMime, url)
+        } catch (e: Exception) {
+            Toast.makeText(this, "ডাউনলোড ব্যর্থ: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun startDownload(
         url: String,
         userAgent: String?,
@@ -557,13 +857,8 @@ class MainActivity : ComponentActivity() {
         contentLength: Long
     ) {
         try {
-            val fileName = DownloadPolicy.extractFileName(url, contentDisposition).ifBlank {
-                URLUtil.guessFileName(url, contentDisposition, mimetype)
-            }
-            val resolvedMime = mimetype?.takeIf { it.isNotBlank() }
-                ?: if (fileName.endsWith(".zip", ignoreCase = true)) "application/zip"
-                else if (fileName.endsWith(".pdf", ignoreCase = true)) "application/pdf"
-                else "application/octet-stream"
+            val fileName = resolveDownloadFileName(url, contentDisposition, mimetype)
+            val resolvedMime = resolveMimeType(fileName, mimetype)
 
             val downloadManager = getSystemService(DOWNLOAD_SERVICE) as? DownloadManager
             if (downloadManager == null) {

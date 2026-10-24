@@ -4,6 +4,7 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+-keep class com.muslim.browser.pro.browser.BlobDownloadBridge { *; }
 
 # Preserve JSON parsing classes and models
 -keep class org.json.** { *; }

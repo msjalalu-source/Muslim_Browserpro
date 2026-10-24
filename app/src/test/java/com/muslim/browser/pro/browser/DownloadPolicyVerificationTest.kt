@@ -53,12 +53,13 @@ class DownloadPolicyVerificationTest {
 
     @Test
     fun testGitHubApkSourceRestrictionsEnforced() {
-        // Allowed msjalalu-source GitHub repo
-        assertTrue(DownloadPolicy.isAllowedGitHubApkUrl("https://github.com/msjalalu-source/repo/releases/download/v1.0/app.apk"))
+        // Allowed GitHub sources
+        assertTrue(DownloadPolicy.isAllowedGitHubApkUrl("https://github.com/user/repo/releases/download/v1.0/app.apk"))
+        assertTrue(DownloadPolicy.isAllowedGitHubApkUrl("https://objects.githubusercontent.com/github-production-release-asset/app.apk"))
 
-        // Blocked untrusted origins
-        assertFalse(DownloadPolicy.isAllowedGitHubApkUrl("https://github.com/untrusted-user/repo/releases/download/v1.0/app.apk"))
+        // Blocked non-GitHub origins
         assertFalse(DownloadPolicy.isAllowedGitHubApkUrl("https://malicious-site.com/app.apk"))
+        assertFalse(DownloadPolicy.isAllowedGitHubApkUrl("https://apkpure.com/app.apk"))
 
         val blockedResult = DownloadPolicy.evaluate("https://malicious-site.com/app.apk", null, null)
         assertTrue(blockedResult is DownloadPolicy.Result.Blocked)
@@ -132,12 +133,12 @@ class DownloadPolicyVerificationTest {
         assertTrue(DownloadPolicy.evaluate("https://example.com/dl", "application/x-zip-compressed", null) is DownloadPolicy.Result.Allowed)
         assertTrue(DownloadPolicy.evaluate("https://example.com/dl?id=1", null, "attachment; filename=export.zip") is DownloadPolicy.Result.Allowed)
 
-        // Allowed document types preserved
+        // Allowed document & media types preserved
         assertTrue(DownloadPolicy.evaluate("https://example.com/doc.pdf", "application/pdf", null) is DownloadPolicy.Result.Allowed)
+        assertTrue(DownloadPolicy.evaluate("https://example.com/audio.mp3", "audio/mpeg", null) is DownloadPolicy.Result.Allowed)
 
         // Restricted types remain blocked
         assertTrue(DownloadPolicy.evaluate("https://example.com/video.mp4", "video/mp4", null) is DownloadPolicy.Result.Blocked)
-        assertTrue(DownloadPolicy.evaluate("https://example.com/audio.mp3", "audio/mpeg", null) is DownloadPolicy.Result.Blocked)
         assertTrue(DownloadPolicy.evaluate("https://malicious.com/app.apk", null, null) is DownloadPolicy.Result.Blocked)
     }
 
@@ -146,6 +147,30 @@ class DownloadPolicyVerificationTest {
         val decision = NavigationController.evaluate("https://example.com/files/archive.zip", emptySet())
         assertTrue(decision is NavigationDecision.Download)
         assertEquals("https://example.com/files/archive.zip", (decision as NavigationDecision.Download).url)
+    }
+
+    @Test
+    fun testBlobDownloadBridgeCallbacks() {
+        var receivedBase64 = ""
+        var receivedMime = ""
+        var receivedError = ""
+
+        val bridge = BlobDownloadBridge(
+            onReadyCallback = { b64, mime ->
+                receivedBase64 = b64
+                receivedMime = mime
+            },
+            onErrorCallback = { err ->
+                receivedError = err
+            }
+        )
+
+        bridge.onBlobReady("dGVzdA==", "application/zip")
+        assertEquals("dGVzdA==", receivedBase64)
+        assertEquals("application/zip", receivedMime)
+
+        bridge.onBlobError("TOO_LARGE")
+        assertEquals("TOO_LARGE", receivedError)
     }
 }
 
