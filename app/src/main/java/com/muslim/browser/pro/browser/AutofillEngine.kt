@@ -189,30 +189,49 @@ object AutofillEngine {
     }
 
     function getNearbyHeadingText(el) {
+        if (el._cachedHeading !== undefined) return el._cachedHeading;
+        var result = '';
         try {
-            var curr = el.parentElement;
-            var depth = 0;
-            while (curr && depth < 4) {
-                if (curr._cachedHeading !== undefined) {
-                    return curr._cachedHeading;
+            // 1. Closest fieldset legend
+            var fs = el.closest ? el.closest('fieldset') : null;
+            if (fs) {
+                var leg = fs.querySelector('legend');
+                if (leg) {
+                    var lText = (leg.innerText || leg.textContent || '').trim();
+                    if (lText.length > 0) {
+                        el._cachedHeading = lText;
+                        return lText;
+                    }
                 }
-                var headings = curr.querySelectorAll('legend, h1, h2, h3, h4, h5, h6, th, [class*="header"], [class*="title"], caption');
-                if (headings.length > 0) {
-                    var text = '';
-                    for (var h = 0; h < headings.length; h++) {
-                        if (!headings[h].contains(el)) {
-                            text += ' ' + (headings[h].innerText || headings[h].textContent || '');
+            }
+
+            // 2. Nearest preceding sibling or ancestor's preceding heading
+            var curr = el;
+            while (curr && curr !== document.body && curr !== document.documentElement) {
+                var prev = curr.previousElementSibling;
+                while (prev) {
+                    if (/^(H[1-6]|LEGEND|TH)$/i.test(prev.tagName) || (prev.className && /header|title/i.test(prev.className))) {
+                        var hText = (prev.innerText || prev.textContent || '').trim();
+                        if (hText.length > 0) {
+                            el._cachedHeading = hText;
+                            return hText;
                         }
                     }
-                    var res = text.trim();
-                    curr._cachedHeading = res;
-                    return res;
+                    var subH = prev.querySelector ? prev.querySelector('h1, h2, h3, h4, h5, h6, legend, th, [class*="header"], [class*="title"]') : null;
+                    if (subH) {
+                        var subText = (subH.innerText || subH.textContent || '').trim();
+                        if (subText.length > 0) {
+                            el._cachedHeading = subText;
+                            return subText;
+                        }
+                    }
+                    prev = prev.previousElementSibling;
                 }
                 curr = curr.parentElement;
-                depth++;
             }
         } catch(e) {}
-        return '';
+        el._cachedHeading = result;
+        return result;
     }
 
     // Helper: Map education records
@@ -306,12 +325,22 @@ object AutofillEngine {
                                hasBnKeyword(combined, 'অন্যান্য') || hasBnKeyword(combined, 'অন্য কোনো');
             if (isOtherField) return null;
 
-            if (hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') || hasToken(allTokens, 'board')) {
-                var container = el.form || (el.closest ? el.closest('fieldset, form, div') : null) || el.parentElement;
-                if (container && container.querySelector) {
-                    var compSelect = container.querySelector('select[name*="group"], select[id*="group"], select[name*="board"], select[id*="board"], select[name*="subject"], select[id*="subject"]');
-                    if (compSelect) {
-                        return null; // Companion dropdown exists; dropdown is primary. Do not fill text input
+            if (hasToken(allTokens, 'group') || hasBnKeyword(combined, 'গ্রুপ')) {
+                var groupScope = (el.closest ? el.closest('fieldset, tr, .row, [class*="section"]') : null) || el.form;
+                if (groupScope && groupScope.querySelector) {
+                    var compGroupSelect = groupScope.querySelector('select[name*="group"], select[id*="group"], select[name*="branch"], select[id*="branch"]');
+                    if (compGroupSelect) {
+                        return null; // Companion group select exists; dropdown is primary. Do not fill text input
+                    }
+                }
+            }
+
+            if (hasToken(allTokens, 'board') || hasBnKeyword(combined, 'বোর্ড')) {
+                var boardScope = (el.closest ? el.closest('fieldset, tr, .row, [class*="section"]') : null) || el.form;
+                if (boardScope && boardScope.querySelector) {
+                    var compBoardSelect = boardScope.querySelector('select[name*="board"], select[id*="board"]');
+                    if (compBoardSelect) {
+                        return null; // Companion board select exists; dropdown is primary. Do not fill text input
                     }
                 }
             }
@@ -337,15 +366,33 @@ object AutofillEngine {
         if (isFather && isMother) return null;
 
         if (isFather) {
-            var fVal = isBn ? (data.fatherNameBn || data.fatherNameEn) : data.fatherNameEn;
-            if (fVal && fVal.trim().length > 0) return fVal.trim();
-            return null; // NEVER fall back to userName
+            var fRaw = isBn ? (data.fatherNameBn || data.fatherNameEn) : data.fatherNameEn;
+            if (!fRaw || fRaw.trim().length === 0) return null;
+            fRaw = fRaw.trim();
+            if (ac === 'given-name' || hasToken(allTokens, 'firstname') || hasToken(allTokens, 'fname') || combined.indexOf('first name') !== -1 || combined.indexOf('first_name') !== -1) {
+                var fSplit = splitName(fRaw);
+                return (fSplit.first && fSplit.first.length > 0) ? fSplit.first : fRaw;
+            }
+            if (ac === 'family-name' || hasToken(allTokens, 'lastname') || hasToken(allTokens, 'lname') || hasToken(allTokens, 'surname') || combined.indexOf('last name') !== -1 || combined.indexOf('last_name') !== -1) {
+                var fSplit = splitName(fRaw);
+                return (fSplit.last && fSplit.last.length > 0) ? fSplit.last : fRaw;
+            }
+            return fRaw;
         }
         
         if (isMother) {
-            var mVal = isBn ? (data.motherNameBn || data.motherNameEn) : data.motherNameEn;
-            if (mVal && mVal.trim().length > 0) return mVal.trim();
-            return null; // NEVER fall back to userName
+            var mRaw = isBn ? (data.motherNameBn || data.motherNameEn) : data.motherNameEn;
+            if (!mRaw || mRaw.trim().length === 0) return null;
+            mRaw = mRaw.trim();
+            if (ac === 'given-name' || hasToken(allTokens, 'firstname') || hasToken(allTokens, 'fname') || combined.indexOf('first name') !== -1 || combined.indexOf('first_name') !== -1) {
+                var mSplit = splitName(mRaw);
+                return (mSplit.first && mSplit.first.length > 0) ? mSplit.first : mRaw;
+            }
+            if (ac === 'family-name' || hasToken(allTokens, 'lastname') || hasToken(allTokens, 'lname') || hasToken(allTokens, 'surname') || combined.indexOf('last name') !== -1 || combined.indexOf('last_name') !== -1) {
+                var mSplit = splitName(mRaw);
+                return (mSplit.last && mSplit.last.length > 0) ? mSplit.last : mRaw;
+            }
+            return mRaw;
         }
         
         // --- 3. User's Name, First/Last Name, and Username Matching ---
@@ -389,7 +436,7 @@ object AutofillEngine {
         }
 
         // 3d. Full User's Name
-        // Strict exclusions to prevent matching institutional, relative, or entity names
+        // Strict exclusions to prevent matching institutional, relative, job, or education names
         var isExcludedFromName = isFather || isMother ||
                                  hasToken(allTokens, 'guardian') || hasToken(allTokens, 'spouse') ||
                                  hasToken(allTokens, 'nominee') || hasToken(allTokens, 'reference') ||
@@ -401,20 +448,39 @@ object AutofillEngine {
                                  hasToken(allTokens, 'district') || hasToken(allTokens, 'upazila') ||
                                  hasToken(allTokens, 'thana') || hasToken(allTokens, 'postoffice') ||
                                  hasToken(allTokens, 'file') || hasToken(allTokens, 'filename') ||
+                                 hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') ||
+                                 hasToken(allTokens, 'major') || hasToken(allTokens, 'exam') ||
+                                 hasToken(allTokens, 'examination') || hasToken(allTokens, 'degree') ||
+                                 hasToken(allTokens, 'qualification') || hasToken(allTokens, 'course') ||
+                                 hasToken(allTokens, 'department') || hasToken(allTokens, 'post') ||
+                                 hasToken(allTokens, 'designation') || hasToken(allTokens, 'center') ||
+                                 hasToken(allTokens, 'branch') || hasToken(allTokens, 'office') ||
+                                 hasToken(allTokens, 'village') || hasToken(allTokens, 'country') ||
                                  combined.indexOf('care of') !== -1 || combined.indexOf('care_of') !== -1 || combined.indexOf('c/o') !== -1 ||
                                  hasBnKeyword(combined, 'অভিভাবক') || hasBnKeyword(combined, 'স্বামী') || hasBnKeyword(combined, 'স্ত্রী') ||
                                  hasBnKeyword(combined, 'নমিনি') || hasBnKeyword(combined, 'রেফারেন্স') || hasBnKeyword(combined, 'প্রযত্নে') ||
                                  hasBnKeyword(combined, 'বিদ্যালয়') || hasBnKeyword(combined, 'প্রতিষ্ঠান') || hasBnKeyword(combined, 'বোর্ড') ||
                                  hasBnKeyword(combined, 'কোম্পানি') || hasBnKeyword(combined, 'সংস্থা') || hasBnKeyword(combined, 'জেলা') ||
-                                 hasBnKeyword(combined, 'উপজেলা') || hasBnKeyword(combined, 'থানা') || hasBnKeyword(combined, 'ডাকঘর');
+                                 hasBnKeyword(combined, 'উপজেলা') || hasBnKeyword(combined, 'থানা') || hasBnKeyword(combined, 'ডাকঘর') ||
+                                 hasBnKeyword(combined, 'গ্রুপ') || hasBnKeyword(combined, 'বিষয়') || hasBnKeyword(combined, 'বিভাগ') ||
+                                 hasBnKeyword(combined, 'পরীক্ষা') || hasBnKeyword(combined, 'ডিগ্রি') || hasBnKeyword(combined, 'পদবি') ||
+                                 hasBnKeyword(combined, 'পদবী') || hasBnKeyword(combined, 'গ্রাম');
 
         if (!isExcludedFromName) {
-            if (ac === 'name' || 
+            var isExplicitCandidate = ac === 'name' || 
                 combined.indexOf('full name') !== -1 || combined.indexOf('fullname') !== -1 || 
                 combined.indexOf('applicant name') !== -1 || combined.indexOf('candidate name') !== -1 ||
+                combined.indexOf('user name') !== -1 || combined.indexOf('your name') !== -1 ||
+                combined.indexOf('student name') !== -1 || combined.indexOf('name of applicant') !== -1 ||
+                combined.indexOf('name of candidate') !== -1 ||
                 hasBnKeyword(combined, 'পূর্ণ নাম') || hasBnKeyword(combined, 'আপনার নাম') || hasBnKeyword(combined, 'প্রার্থীর নাম') ||
-                hasBnKeyword(combined, 'আবেদনকারীর নাম') ||
-                ((hasToken(allTokens, 'name') || hasBnKeyword(combined, 'নাম')) && combined.indexOf('file') === -1)) {
+                hasBnKeyword(combined, 'আবেদনকারীর নাম') || hasBnKeyword(combined, 'শিক্ষার্থীর নাম');
+
+            var isGenericName = (hasToken(allTokens, 'name') || hasBnKeyword(combined, 'নাম')) &&
+                                combined.indexOf('file') === -1 &&
+                                allTokens.length <= 2;
+
+            if (isExplicitCandidate || isGenericName) {
                 var uVal = isBn ? (data.userNameBn || data.userNameEn) : data.userNameEn;
                 if (uVal && uVal.trim().length > 0) return uVal.trim();
                 return null;
@@ -444,44 +510,57 @@ object AutofillEngine {
             eduObj = hsc || ssc || grad || (data.education && data.education[0] ? data.education[0] : null);
         }
         if (eduObj) {
-                // Examination / Degree
+            // 1. Roll No
+            if (hasToken(allTokens, 'roll') || hasToken(allTokens, 'rollno') || hasBnKeyword(combined, 'রোল')) {
+                if (eduObj.rollNo && eduObj.rollNo.trim().length > 0) return eduObj.rollNo.trim();
+            }
+
+            // 2. Passing Year (guarded against birth date)
+            if (!hasToken(allTokens, 'birth') && !hasToken(allTokens, 'dob') && !hasBnKeyword(combined, 'জন্ম') &&
+                (combined.indexOf('passing') !== -1 || combined.indexOf('pass year') !== -1 || combined.indexOf('pass_year') !== -1 ||
+                 hasToken(allTokens, 'year') || hasBnKeyword(combined, 'বছর') || hasBnKeyword(combined, 'সন') || hasBnKeyword(combined, 'শিক্ষাবর্ষ'))) {
+                if (eduObj.year && eduObj.year.trim().length > 0) return eduObj.year.trim();
+            }
+
+            // 3. Result / Division / GPA
+            if (hasToken(allTokens, 'result') || hasToken(allTokens, 'gpa') || hasToken(allTokens, 'cgpa') ||
+                hasToken(allTokens, 'division') || hasToken(allTokens, 'grade') ||
+                hasBnKeyword(combined, 'ফলাফল') || hasBnKeyword(combined, 'জিপিএ')) {
+                if (eduObj.result && eduObj.result.trim().length > 0) return eduObj.result.trim();
+            }
+
+            // 4. Group / Subject / Major
+            if (hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') || hasToken(allTokens, 'major') || hasToken(allTokens, 'department') ||
+                hasBnKeyword(combined, 'গ্রুপ') || hasBnKeyword(combined, 'বিষয়') || hasBnKeyword(combined, 'বিভাগ')) {
+                if (eduObj.groupSubject && eduObj.groupSubject.trim().length > 0) return eduObj.groupSubject.trim();
+            }
+
+            // 5. Board
+            if (hasToken(allTokens, 'board') || hasBnKeyword(combined, 'বোর্ড')) {
+                if (eduObj.board && eduObj.board.trim().length > 0) return eduObj.board.trim();
+            }
+
+            // 6. Institution / University / School / College
+            if (hasToken(allTokens, 'inst') || hasToken(allTokens, 'institution') || hasToken(allTokens, 'university') || hasToken(allTokens, 'varsity') ||
+                hasToken(allTokens, 'college') || hasToken(allTokens, 'school') ||
+                hasBnKeyword(combined, 'প্রতিষ্ঠান') || hasBnKeyword(combined, 'বিশ্ববিদ্যালয়') || hasBnKeyword(combined, 'স্কুল') || hasBnKeyword(combined, 'কলেজ') || hasBnKeyword(combined, 'মাদ্রাসা')) {
+                if (eduObj.institution && eduObj.institution.trim().length > 0) return eduObj.institution.trim();
+            }
+
+            // 7. Course Duration
+            if (combined.indexOf('course duration') !== -1 || combined.indexOf('course_duration') !== -1 || hasToken(allTokens, 'duration') ||
+                hasBnKeyword(combined, 'সময়কাল') || hasBnKeyword(combined, 'মেয়াদ') || hasBnKeyword(combined, 'মেয়াদ')) {
+                if (eduObj.courseDuration && eduObj.courseDuration.trim().length > 0) return eduObj.courseDuration.trim();
+            }
+
+            // 8. Examination / Degree (only if none of the specific subfields above match)
+            if (!hasToken(allTokens, 'roll') && !hasToken(allTokens, 'year') && !hasToken(allTokens, 'result') &&
+                !hasToken(allTokens, 'gpa') && !hasToken(allTokens, 'group') && !hasToken(allTokens, 'subject') &&
+                !hasToken(allTokens, 'board') && !hasToken(allTokens, 'inst') && !hasToken(allTokens, 'institution') &&
+                !hasToken(allTokens, 'duration')) {
                 if (hasToken(allTokens, 'exam') || hasToken(allTokens, 'examination') || hasToken(allTokens, 'degree') || hasToken(allTokens, 'qualification') ||
                     hasBnKeyword(combined, 'পরীক্ষা') || hasBnKeyword(combined, 'ডিগ্রি')) {
                     if (eduObj.qualification && eduObj.qualification.trim().length > 0) return eduObj.qualification.trim();
-                }
-                // Board
-                if (hasToken(allTokens, 'board') || hasBnKeyword(combined, 'বোর্ড')) {
-                    if (eduObj.board && eduObj.board.trim().length > 0) return eduObj.board.trim();
-                }
-                // Roll No
-                if (hasToken(allTokens, 'roll') || hasToken(allTokens, 'rollno') || hasBnKeyword(combined, 'রোল')) {
-                    if (eduObj.rollNo && eduObj.rollNo.trim().length > 0) return eduObj.rollNo.trim();
-                }
-                // Group / Subject / Major
-                if (hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') || hasToken(allTokens, 'major') || hasToken(allTokens, 'department') ||
-                    hasBnKeyword(combined, 'গ্রুপ') || hasBnKeyword(combined, 'বিষয়') || hasBnKeyword(combined, 'বিভাগ')) {
-                    if (eduObj.groupSubject && eduObj.groupSubject.trim().length > 0) return eduObj.groupSubject.trim();
-                }
-                // Institution / University / School / College
-                if (hasToken(allTokens, 'inst') || hasToken(allTokens, 'institution') || hasToken(allTokens, 'university') || hasToken(allTokens, 'varsity') ||
-                    hasToken(allTokens, 'college') || hasToken(allTokens, 'school') ||
-                    hasBnKeyword(combined, 'প্রতিষ্ঠান') || hasBnKeyword(combined, 'বিশ্ববিদ্যালয়') || hasBnKeyword(combined, 'স্কুল') || hasBnKeyword(combined, 'কলেজ') || hasBnKeyword(combined, 'মাদ্রাসা')) {
-                    if (eduObj.institution && eduObj.institution.trim().length > 0) return eduObj.institution.trim();
-                }
-                // Passing Year
-                if (combined.indexOf('passing') !== -1 || combined.indexOf('pass year') !== -1 || combined.indexOf('pass_year') !== -1 ||
-                    hasToken(allTokens, 'year') || hasBnKeyword(combined, 'বছর') || hasBnKeyword(combined, 'সন') || hasBnKeyword(combined, 'শিক্ষাবর্ষ')) {
-                    if (eduObj.year && eduObj.year.trim().length > 0) return eduObj.year.trim();
-                }
-                // Result / Division / GPA
-                if (hasToken(allTokens, 'result') || hasToken(allTokens, 'gpa') || hasToken(allTokens, 'cgpa') || hasToken(allTokens, 'division') || hasToken(allTokens, 'grade') ||
-                    hasBnKeyword(combined, 'ফলাফল') || hasBnKeyword(combined, 'জিপিএ')) {
-                    if (eduObj.result && eduObj.result.trim().length > 0) return eduObj.result.trim();
-                }
-                // Course Duration
-                if (combined.indexOf('course duration') !== -1 || combined.indexOf('course_duration') !== -1 || hasToken(allTokens, 'duration') ||
-                    hasBnKeyword(combined, 'সময়কাল') || hasBnKeyword(combined, 'মেয়াদ') || hasBnKeyword(combined, 'মেয়াদ')) {
-                    if (eduObj.courseDuration && eduObj.courseDuration.trim().length > 0) return eduObj.courseDuration.trim();
                 }
             }
         }
@@ -573,10 +652,17 @@ object AutofillEngine {
             }
 
             // Designation / Post
-            if (hasToken(allTokens, 'designation') || combined.indexOf('job title') !== -1 || combined.indexOf('job_title') !== -1 ||
-                hasBnKeyword(combined, 'পদবি') || hasBnKeyword(combined, 'পদবী') ||
-                (hasToken(allTokens, 'post') && !isDistSignal && !isUpzSignal && combined.indexOf('post office') === -1 && combined.indexOf('postcode') === -1 && combined.indexOf('postal') === -1 && combined.indexOf('ডাকঘর') === -1)) {
-                if (primaryWork.designation && primaryWork.designation.trim().length > 0) return primaryWork.designation.trim();
+            var isPostalSignal = hasToken(allTokens, 'postal') || hasToken(allTokens, 'zip') || hasToken(allTokens, 'code') ||
+                                 combined.indexOf('post office') !== -1 || combined.indexOf('post_office') !== -1 ||
+                                 combined.indexOf('post code') !== -1 || combined.indexOf('post_code') !== -1 ||
+                                 combined.indexOf('postcode') !== -1 || hasBnKeyword(combined, 'ডাকঘর');
+
+            if (!isPostalSignal && !isDistSignal && !isUpzSignal) {
+                if (hasToken(allTokens, 'designation') || combined.indexOf('job title') !== -1 || combined.indexOf('job_title') !== -1 ||
+                    hasBnKeyword(combined, 'পদবি') || hasBnKeyword(combined, 'পদবী') ||
+                    (hasToken(allTokens, 'post') && combined.indexOf('applied') === -1 && combined.indexOf('apply') === -1)) {
+                    if (primaryWork.designation && primaryWork.designation.trim().length > 0) return primaryWork.designation.trim();
+                }
             }
 
             // Service Start / Joining Date
@@ -810,9 +896,6 @@ object AutofillEngine {
             setNativeValue(el, targetOptionValue);
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
-            if (typeof el.onchange === 'function') {
-                try { el.onchange(); } catch(e) {}
-            }
             el.blur();
 
             // Verify selection after filling
@@ -958,9 +1041,6 @@ object AutofillEngine {
                     setNativeValue(el, val);
                     el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
-                    if (typeof el.onchange === 'function') {
-                        try { el.onchange(); } catch(e) {}
-                    }
                     el.blur();
                     filledCount++;
                 }

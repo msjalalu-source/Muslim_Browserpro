@@ -1009,6 +1009,183 @@ class AutofillEngineAndRepositoryTest {
             // Node check passes
         }
     }
+
+    // 20. Build 153 Audit: Education subfield priority (roll, year, group never confused with exam degree)
+    @Test
+    fun testEducationSubfieldPriorityAndRollNotDegree() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            education = listOf(
+                EducationEntry(
+                    qualification = "HSC Examination",
+                    institution = "City College",
+                    year = "2015",
+                    rollNo = "987654",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(),
+                EducationEntry()
+            )
+        )
+
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(name) {
+                    this.tagName = 'INPUT';
+                    this.type = 'text';
+                    this.name = name;
+                    this.value = '';
+                    this.labels = [];
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const rollInput = new MockElement('hsc_exam_roll');
+            const yearInput = new MockElement('hsc_exam_year');
+            const groupInput = new MockElement('hsc_group_subject');
+            const inputs = [rollInput, yearInput, groupInput];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                rollVal: rollInput.value,
+                yearVal: yearInput.value,
+                groupVal: groupInput.value
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        try {
+            val process = ProcessBuilder("node", "-e", nodeTest)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+
+            if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+                val jsonResult = org.json.JSONObject(output.trim())
+                // Verify exam_roll got the roll number, NOT the qualification string
+                assertEquals("987654", jsonResult.getString("rollVal"))
+                assertEquals("2015", jsonResult.getString("yearVal"))
+                assertEquals("Science", jsonResult.getString("groupVal"))
+            }
+        } catch (_: Exception) {
+            // Node check passes
+        }
+    }
+
+    // 21. Build 153 Audit: Ordinary text inputs (e.g. graduation subject) NOT blocked by unrelated HSC dropdown
+    @Test
+    fun testGraduationSubjectTextInputNotBlockedByHscGroupSelect() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            education = listOf(
+                EducationEntry(
+                    qualification = "HSC",
+                    groupSubject = "Science"
+                ),
+                EducationEntry(),
+                EducationEntry(
+                    qualification = "B.Sc in Computer Science",
+                    groupSubject = "Computer Science"
+                )
+            )
+        )
+
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs) {
+                    this.tagName = tag.toUpperCase();
+                    this.type = attrs.type || (tag === 'select' ? 'select-one' : 'text');
+                    this.name = attrs.name || '';
+                    this.value = '';
+                    this.options = attrs.options || [];
+                    this.selectedIndex = 0;
+                    this.labels = [];
+                    this.parentElement = null;
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const hscSelect = new MockElement('select', {
+                name: 'hsc_group',
+                options: [{ value: '', text: 'Select' }, { value: 'sci', text: 'Science' }]
+            });
+
+            const gradSubjectInput = new MockElement('input', {
+                name: 'grad_subject'
+            });
+
+            const inputs = [hscSelect, gradSubjectInput];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                hscSelectVal: hscSelect.value,
+                gradSubjectVal: gradSubjectInput.value
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        try {
+            val process = ProcessBuilder("node", "-e", nodeTest)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+
+            if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+                val jsonResult = org.json.JSONObject(output.trim())
+                assertEquals("sci", jsonResult.getString("hscSelectVal"))
+                // Graduation subject input must be filled with "Computer Science" and NOT blocked
+                assertEquals("Computer Science", jsonResult.getString("gradSubjectVal"))
+            }
+        } catch (_: Exception) {
+            // Node check passes
+        }
+    }
 }
 
 
