@@ -380,6 +380,9 @@ private fun PersonalInfoTab(
             CanonicalInputRow("Nationality", info.nationality, { updateInfo { copy(nationality = it) } }, "Bangladeshi")
         }
         item {
+            CanonicalInputRow("Religion", info.religion, { updateInfo { copy(religion = it) } }, "e.g. Islam")
+        }
+        item {
             CanonicalInputRow("Gender", info.gender, { updateInfo { copy(gender = it) } }, "Male / Female")
         }
         item {
@@ -394,6 +397,18 @@ private fun PersonalInfoTab(
                     CanonicalInputRow("Height", info.height, { updateInfo { copy(height = it) } }, "e.g. 5'7\"")
                 }
             }
+        }
+        item {
+            CanonicalInputRow("Birth Registration", info.birthRegistration, { updateInfo { copy(birthRegistration = it) } }, "Birth Registration No.", KeyboardType.Text)
+        }
+        item {
+            CanonicalInputRow("Passport ID", info.passportId, { updateInfo { copy(passportId = it) } }, "e.g. A01234567", KeyboardType.Text)
+        }
+        item {
+            CanonicalInputRow("Quota", info.quota, { updateInfo { copy(quota = it) } }, "e.g. Freedom Fighter, None")
+        }
+        item {
+            CanonicalInputRow("Departmental Status", info.departmentalStatus, { updateInfo { copy(departmentalStatus = it) } }, "e.g. Government Employee, None")
         }
 
         // Section: Present Address

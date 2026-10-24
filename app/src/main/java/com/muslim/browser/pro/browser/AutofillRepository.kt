@@ -120,6 +120,11 @@ object AutofillRepository {
         pJson.put("bloodGroup", p.bloodGroup)
         pJson.put("height", p.height)
         pJson.put("nationalId", p.nationalId)
+        pJson.put("religion", p.religion)
+        pJson.put("birthRegistration", p.birthRegistration)
+        pJson.put("passportId", p.passportId)
+        pJson.put("quota", p.quota)
+        pJson.put("departmentalStatus", p.departmentalStatus)
         pJson.put("presentCareOf", p.presentCareOf)
         pJson.put("presentVillageRoad", p.presentVillageRoad)
         pJson.put("presentDistrict", p.presentDistrict)
@@ -242,6 +247,11 @@ object AutofillRepository {
             bloodGroup = pJson.optString("bloodGroup", ""),
             height = pJson.optString("height", ""),
             nationalId = pJson.optString("nationalId", ""),
+            religion = pJson.optString("religion", ""),
+            birthRegistration = pJson.optString("birthRegistration", ""),
+            passportId = pJson.optString("passportId", ""),
+            quota = pJson.optString("quota", ""),
+            departmentalStatus = pJson.optString("departmentalStatus", ""),
             presentCareOf = pJson.optString("presentCareOf", ""),
             presentVillageRoad = pJson.optString("presentVillageRoad", ""),
             presentDistrict = pJson.optString("presentDistrict", ""),

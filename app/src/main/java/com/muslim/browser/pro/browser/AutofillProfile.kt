@@ -56,6 +56,11 @@ data class PersonalInfo(
     val height: String = "",
 
     val nationalId: String = "",
+    val religion: String = "",
+    val birthRegistration: String = "",
+    val passportId: String = "",
+    val quota: String = "",
+    val departmentalStatus: String = "",
 
     // Present Address
     val presentCareOf: String = "",

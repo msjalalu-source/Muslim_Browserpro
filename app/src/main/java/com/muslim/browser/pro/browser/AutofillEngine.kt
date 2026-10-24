@@ -182,6 +182,17 @@ object AutofillEngine {
             if (el.type === 'radio' && p) {
                 labelText += ' ' + (p.innerText || p.textContent || '');
             }
+            if (labelText.trim().length === 0) {
+                var prev = el.previousElementSibling;
+                if (prev && /^(LABEL|SPAN|DIV|P|TD|TH)$/i.test(prev.tagName)) {
+                    labelText += ' ' + (prev.innerText || prev.textContent || '');
+                } else if (p && /^(TD|DIV|P|LI)$/i.test(p.tagName)) {
+                    var pPrev = p.previousElementSibling;
+                    if (pPrev && /^(TD|TH|LABEL|SPAN|DIV)$/i.test(pPrev.tagName)) {
+                        labelText += ' ' + (pPrev.innerText || pPrev.textContent || '');
+                    }
+                }
+            }
         } catch(e) {}
         var res = labelText.trim();
         el._cachedLabel = res;
@@ -396,15 +407,29 @@ object AutofillEngine {
         }
         
         // --- 3. User's Name, First/Last Name, and Username Matching ---
-        // 3a. Username / User ID / Login ID
-        var isUsername = ac === 'username' ||
-                         hasToken(allTokens, 'username') || hasToken(allTokens, 'userid') ||
-                         combined.indexOf('user_name') !== -1 || combined.indexOf('user_id') !== -1 ||
-                         combined.indexOf('login id') !== -1 || combined.indexOf('login_id') !== -1 || combined.indexOf('loginid') !== -1 ||
-                         hasBnKeyword(combined, 'ইউজারনেম') || hasBnKeyword(combined, 'ব্যবহারকারীর নাম');
-        if (isUsername) {
-            var uVal = (data.userNameEn && data.userNameEn.trim().length > 0) ? data.userNameEn.trim() : (data.email && data.email.trim().length > 0 ? data.email.trim() : null);
-            return uVal;
+        var hasApplicantEvidence = 
+            combined.indexOf('applicant name') !== -1 || combined.indexOf('applicants name') !== -1 ||
+            combined.indexOf("applicant's name") !== -1 || combined.indexOf("applicant\u2019s name") !== -1 ||
+            combined.indexOf("applicants' name") !== -1 || combined.indexOf('applicant full name') !== -1 ||
+            combined.indexOf("applicant's full name") !== -1 ||
+            combined.indexOf('name of applicant') !== -1 || combined.indexOf('name of the applicant') !== -1 ||
+            combined.indexOf('candidate name') !== -1 || combined.indexOf('candidates name') !== -1 ||
+            combined.indexOf("candidate's name") !== -1 || combined.indexOf("candidate\u2019s name") !== -1 ||
+            combined.indexOf("candidates' name") !== -1 || combined.indexOf('candidate full name') !== -1 ||
+            combined.indexOf("candidate's full name") !== -1 ||
+            combined.indexOf('name of candidate') !== -1 || combined.indexOf('name of the candidate') !== -1 ||
+            ((hasToken(allTokens, 'applicant') || hasToken(allTokens, 'applicants') || hasToken(allTokens, 'candidate') || hasToken(allTokens, 'candidates')) &&
+             (hasToken(allTokens, 'name') || hasToken(allTokens, 'fullname'))) ||
+            hasBnKeyword(combined, 'আবেদনকারীর নাম') || hasBnKeyword(combined, 'প্রার্থীর নাম');
+
+        // 3a. Login Username / User ID / Login ID exclusion
+        var isLoginUsername = (ac === 'username' ||
+                              hasToken(allTokens, 'username') || hasToken(allTokens, 'userid') ||
+                              combined.indexOf('user_id') !== -1 ||
+                              combined.indexOf('login id') !== -1 || combined.indexOf('login_id') !== -1 || combined.indexOf('loginid') !== -1 ||
+                              hasBnKeyword(combined, 'ইউজারনেম')) && !hasApplicantEvidence;
+        if (isLoginUsername) {
+            return null; // Login username fields must not be filled with the user's personal name
         }
 
         // 3b. First Name / Given Name
@@ -468,16 +493,16 @@ object AutofillEngine {
 
         if (!isExcludedFromName) {
             var isExplicitCandidate = ac === 'name' || 
+                hasApplicantEvidence ||
                 combined.indexOf('full name') !== -1 || combined.indexOf('fullname') !== -1 || 
-                combined.indexOf('applicant name') !== -1 || combined.indexOf('candidate name') !== -1 ||
-                combined.indexOf('user name') !== -1 || combined.indexOf('your name') !== -1 ||
-                combined.indexOf('student name') !== -1 || combined.indexOf('name of applicant') !== -1 ||
-                combined.indexOf('name of candidate') !== -1 ||
-                hasBnKeyword(combined, 'পূর্ণ নাম') || hasBnKeyword(combined, 'আপনার নাম') || hasBnKeyword(combined, 'প্রার্থীর নাম') ||
-                hasBnKeyword(combined, 'আবেদনকারীর নাম') || hasBnKeyword(combined, 'শিক্ষার্থীর নাম');
+                combined.indexOf('your name') !== -1 ||
+                combined.indexOf('student name') !== -1 ||
+                hasBnKeyword(combined, 'পূর্ণ নাম') || hasBnKeyword(combined, 'আপনার নাম') ||
+                hasBnKeyword(combined, 'শিক্ষার্থীর নাম');
 
             var isGenericName = (hasToken(allTokens, 'name') || hasBnKeyword(combined, 'নাম')) &&
                                 combined.indexOf('file') === -1 &&
+                                !hasToken(allTokens, 'user') && !hasToken(allTokens, 'username') &&
                                 allTokens.length <= 2;
 
             if (isExplicitCandidate || isGenericName) {

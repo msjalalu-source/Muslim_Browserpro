@@ -1186,6 +1186,321 @@ class AutofillEngineAndRepositoryTest {
             // Node check passes
         }
     }
+
+    // 22. Five new profile fields save and restore with full fidelity, preserving leading zeros & letters
+    @Test
+    fun testFiveNewProfileFieldsSaveAndRestoreWithLeadingZeros() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Abdullah Al Mamun",
+                religion = "Islam",
+                birthRegistration = "01994123456789012",
+                passportId = "A01234567",
+                quota = "Freedom Fighter",
+                departmentalStatus = "Government Employee"
+            )
+        )
+
+        assertTrue(AutofillRepository.saveProfile(context, profile))
+        AutofillRepository.invalidateCache()
+        val loaded = AutofillRepository.loadProfile(context)
+
+        assertEquals("Islam", loaded.personalInfo.religion)
+        // Verify leading zero is strictly preserved and not numeric-coerced
+        assertEquals("01994123456789012", loaded.personalInfo.birthRegistration)
+        assertEquals("A01234567", loaded.personalInfo.passportId)
+        assertEquals("Freedom Fighter", loaded.personalInfo.quota)
+        assertEquals("Government Employee", loaded.personalInfo.departmentalStatus)
+    }
+
+    // 23. Legacy saved profile missing the five new fields defaults safely to empty strings
+    @Test
+    fun testLegacyProfileWithoutFiveNewFieldsDefaultsToEmptyStrings() {
+        // Construct legacy JSON without religion, birthRegistration, passportId, quota, departmentalStatus
+        val legacyJson = """
+            {
+                "isEnabled": true,
+                "overwriteExistingFields": false,
+                "personalInfo": {
+                    "userNameEn": "Legacy User",
+                    "nationalId": "1990123456"
+                }
+            }
+        """.trimIndent()
+
+        val loaded = AutofillRepository.deserializeProfile(legacyJson)
+
+        assertEquals("Legacy User", loaded.personalInfo.userNameEn)
+        assertEquals("1990123456", loaded.personalInfo.nationalId)
+        assertEquals("", loaded.personalInfo.religion)
+        assertEquals("", loaded.personalInfo.birthRegistration)
+        assertEquals("", loaded.personalInfo.passportId)
+        assertEquals("", loaded.personalInfo.quota)
+        assertEquals("", loaded.personalInfo.departmentalStatus)
+    }
+
+    // 24. Clear profile resets the five new fields to safe defaults
+    @Test
+    fun testClearProfileResetsFiveNewFields() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                religion = "Islam",
+                birthRegistration = "000123456",
+                passportId = "B99887766",
+                quota = "None",
+                departmentalStatus = "None"
+            )
+        )
+        AutofillRepository.saveProfile(context, profile)
+        AutofillRepository.clearProfile(context)
+
+        val loaded = AutofillRepository.loadProfile(context)
+        assertEquals("", loaded.personalInfo.religion)
+        assertEquals("", loaded.personalInfo.birthRegistration)
+        assertEquals("", loaded.personalInfo.passportId)
+        assertEquals("", loaded.personalInfo.quota)
+        assertEquals("", loaded.personalInfo.departmentalStatus)
+    }
+
+    // 25. Build 153: "Applicants Name" visible label matches personal name even with machine name "User Name"
+    @Test
+    fun testApplicantsNameWithMachineReadableUserNameMatchesPersonalName() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Tariqul Islam",
+                userNameBn = "তারিকুল ইসলাম"
+            )
+        )
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs = {}, labelText = '') {
+                    this.tagName = tag.toUpperCase();
+                    this.type = 'text';
+                    this.name = attrs.name || '';
+                    this.value = '';
+                    this.labels = labelText ? [{ innerText: labelText, textContent: labelText }] : [];
+                    this.parentElement = { tagName: 'DIV', querySelector: () => null };
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            // Case A: Visible label "Applicants Name", machine name "User Name"
+            const inputA = new MockElement('input', { name: 'User Name' }, 'Applicants Name');
+            // Case B: Visible label "Applicant's Name", machine name "User Name"
+            const inputB = new MockElement('input', { name: 'User Name' }, "Applicant's Name");
+            // Case C: Table layout: <td>Applicants Name</td><td><input name="User Name"></td>
+            const tdLabel = { tagName: 'TD', innerText: 'Applicants Name', textContent: 'Applicants Name' };
+            const inputC = new MockElement('input', { name: 'User Name' });
+            inputC.parentElement = { tagName: 'TD', previousElementSibling: tdLabel, querySelector: () => null };
+
+            const inputs = [inputA, inputB, inputC];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                valA: inputA.value,
+                valB: inputB.value,
+                valC: inputC.value,
+                filled: res.filled
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        val process = ProcessBuilder("node", "-e", nodeTest)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        process.waitFor()
+
+        if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+            val jsonResult = org.json.JSONObject(output.trim())
+            assertEquals("Tariqul Islam", jsonResult.getString("valA"))
+            assertEquals("Tariqul Islam", jsonResult.getString("valB"))
+            assertEquals("Tariqul Islam", jsonResult.getString("valC"))
+            assertEquals(3, jsonResult.getInt("filled"))
+        }
+    }
+
+    // 26. Build 153: Login username / login ID fields are NEVER filled with user's personal name
+    @Test
+    fun testLoginUsernameFieldsNeverFilledWithPersonalName() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Tariqul Islam",
+                email = "tariqul@example.com"
+            )
+        )
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs = {}, labelText = '') {
+                    this.tagName = tag.toUpperCase();
+                    this.type = 'text';
+                    this.name = attrs.name || '';
+                    this.autocomplete = attrs.autocomplete || '';
+                    this.value = '';
+                    this.labels = labelText ? [{ innerText: labelText, textContent: labelText }] : [];
+                    this.parentElement = { tagName: 'DIV', querySelector: () => null };
+                }
+                getAttribute(attr) { return this[attr] || null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const loginUser = new MockElement('input', { name: 'username' });
+            const loginId = new MockElement('input', { name: 'login_id' });
+            const acUser = new MockElement('input', { name: 'loginField', autocomplete: 'username' });
+            const bareUserName = new MockElement('input', { name: 'User Name' }); // without applicant context
+
+            const inputs = [loginUser, loginId, acUser, bareUserName];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                valLoginUser: loginUser.value,
+                valLoginId: loginId.value,
+                valAcUser: acUser.value,
+                valBareUserName: bareUserName.value,
+                filled: res.filled
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        val process = ProcessBuilder("node", "-e", nodeTest)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        process.waitFor()
+
+        if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+            val jsonResult = org.json.JSONObject(output.trim())
+            assertEquals("", jsonResult.getString("valLoginUser"))
+            assertEquals("", jsonResult.getString("valLoginId"))
+            assertEquals("", jsonResult.getString("valAcUser"))
+            assertEquals("", jsonResult.getString("valBareUserName"))
+            assertEquals(0, jsonResult.getInt("filled"))
+        }
+    }
+
+    // 27. Build 153: Father, Mother, and Applicant name fields remain strictly separated
+    @Test
+    fun testFatherMotherAndCandidateNameSeparation() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            personalInfo = PersonalInfo(
+                userNameEn = "Tariqul Islam",
+                fatherNameEn = "Rafiqul Islam",
+                motherNameEn = "Salma Begum"
+            )
+        )
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs = {}, labelText = '') {
+                    this.tagName = tag.toUpperCase();
+                    this.type = 'text';
+                    this.name = attrs.name || '';
+                    this.value = '';
+                    this.labels = labelText ? [{ innerText: labelText, textContent: labelText }] : [];
+                    this.parentElement = { tagName: 'DIV', querySelector: () => null };
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const candidateInput = new MockElement('input', { name: 'User Name' }, 'Applicants Name');
+            const fatherInput = new MockElement('input', { name: 'father_name' }, "Father's Name");
+            const motherInput = new MockElement('input', { name: 'mother_name' }, "Mother's Name");
+
+            const inputs = [candidateInput, fatherInput, motherInput];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                candidateVal: candidateInput.value,
+                fatherVal: fatherInput.value,
+                motherVal: motherInput.value,
+                filled: res.filled
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        val process = ProcessBuilder("node", "-e", nodeTest)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText() }
+        process.waitFor()
+
+        if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+            val jsonResult = org.json.JSONObject(output.trim())
+            assertEquals("Tariqul Islam", jsonResult.getString("candidateVal"))
+            assertEquals("Rafiqul Islam", jsonResult.getString("fatherVal"))
+            assertEquals("Salma Begum", jsonResult.getString("motherVal"))
+            assertEquals(3, jsonResult.getInt("filled"))
+        }
+    }
 }
 
 
