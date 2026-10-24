@@ -221,19 +221,20 @@ object AutofillEngine {
         for (var eIdx = 0; eIdx < data.education.length; eIdx++) {
             var entry = data.education[eIdx];
             var q = (entry.qualification || '').toLowerCase();
-            if (!ssc && (q.indexOf('ssc') !== -1 || q.indexOf('secondary') !== -1 || q.indexOf('dakhil') !== -1 || q.indexOf('দাখিল') !== -1 || q.indexOf('মাধ্যমিক') !== -1)) {
-                ssc = entry;
-            } else if (!hsc && (q.indexOf('hsc') !== -1 || q.indexOf('higher secondary') !== -1 || q.indexOf('alim') !== -1 || q.indexOf('আলিম') !== -1 || q.indexOf('উচ্চ মাধ্যমিক') !== -1)) {
+            // Check HSC / Higher Secondary / Alim first so "secondary" or "মাধ্যমিক" don't falsely match SSC
+            if (!hsc && (q.indexOf('hsc') !== -1 || q.indexOf('h.s.c') !== -1 || q.indexOf('higher secondary') !== -1 || q.indexOf('alim') !== -1 || q.indexOf('আলিম') !== -1 || q.indexOf('উচ্চ মাধ্যমিক') !== -1 || q.indexOf('উচ্চ-মাধ্যমিক') !== -1 || q.indexOf('উচ্চমাধ্যমিক') !== -1)) {
                 hsc = entry;
-            } else if (!masters && (q.indexOf('master') !== -1 || q.indexOf('m.sc') !== -1 || q.indexOf('msc') !== -1 || q.indexOf('m.a') !== -1 || q.indexOf('post graduate') !== -1 || q.indexOf('মাস্টার্স') !== -1 || q.indexOf('স্নাতকোত্তর') !== -1)) {
+            } else if (!ssc && (q.indexOf('ssc') !== -1 || q.indexOf('s.s.c') !== -1 || q.indexOf('secondary') !== -1 || q.indexOf('dakhil') !== -1 || q.indexOf('দাখিল') !== -1 || q.indexOf('মাধ্যমিক') !== -1)) {
+                ssc = entry;
+            } else if (!masters && (q.indexOf('master') !== -1 || q.indexOf('m.sc') !== -1 || q.indexOf('msc') !== -1 || q.indexOf('m.a') !== -1 || q.indexOf('post graduate') !== -1 || q.indexOf('post-graduate') !== -1 || q.indexOf('মাস্টার্স') !== -1 || q.indexOf('স্নাতকোত্তর') !== -1)) {
                 masters = entry;
             } else if (!grad && (q.indexOf('grad') !== -1 || q.indexOf('bachelor') !== -1 || q.indexOf('b.sc') !== -1 || q.indexOf('bsc') !== -1 || q.indexOf('b.a') !== -1 || q.indexOf('hons') !== -1 || q.indexOf('degree') !== -1 || q.indexOf('স্নাতক') !== -1)) {
                 grad = entry;
             }
         }
-        if (!grad && data.education[0]) grad = data.education[0];
+        if (!ssc && data.education[0]) ssc = data.education[0];
         if (!hsc && data.education[1]) hsc = data.education[1];
-        if (!ssc && data.education[2]) ssc = data.education[2];
+        if (!grad && data.education[2]) grad = data.education[2];
     }
 
     var primaryWork = (data.workExperience && data.workExperience.length > 0) ? data.workExperience[0] : null;
@@ -241,16 +242,26 @@ object AutofillEngine {
     function detectEducationLevel(str) {
         if (!str) return null;
         var s = str.toLowerCase();
-        if (s.indexOf('ssc') !== -1 || s.indexOf('s.s.c') !== -1 || s.indexOf('secondary') !== -1 || s.indexOf('dakhil') !== -1 || s.indexOf('দাখিল') !== -1 || s.indexOf('মাধ্যমিক') !== -1) {
-            return 'ssc';
-        }
-        if (s.indexOf('hsc') !== -1 || s.indexOf('h.s.c') !== -1 || s.indexOf('higher secondary') !== -1 || s.indexOf('alim') !== -1 || s.indexOf('আলিম') !== -1 || s.indexOf('উচ্চ মাধ্যমিক') !== -1) {
+        // Disambiguate Higher Secondary (HSC) before Secondary (SSC)
+        if (s.indexOf('hsc') !== -1 || s.indexOf('h.s.c') !== -1 ||
+            s.indexOf('higher secondary') !== -1 || s.indexOf('higher-secondary') !== -1 || s.indexOf('higher_secondary') !== -1 ||
+            s.indexOf('alim') !== -1 || s.indexOf('আলিম') !== -1 ||
+            s.indexOf('উচ্চ মাধ্যমিক') !== -1 || s.indexOf('উচ্চ-মাধ্যমিক') !== -1 || s.indexOf('উচ্চমাধ্যমিক') !== -1) {
             return 'hsc';
         }
-        if (s.indexOf('master') !== -1 || s.indexOf('m.sc') !== -1 || s.indexOf('msc') !== -1 || s.indexOf('m.a') !== -1 || s.indexOf('post graduate') !== -1 || s.indexOf('post-graduate') !== -1 || s.indexOf('মাস্টার্স') !== -1 || s.indexOf('স্নাতকোত্তর') !== -1) {
+        if (s.indexOf('ssc') !== -1 || s.indexOf('s.s.c') !== -1 ||
+            s.indexOf('secondary') !== -1 || s.indexOf('dakhil') !== -1 ||
+            s.indexOf('দাখিল') !== -1 || s.indexOf('মাধ্যমিক') !== -1) {
+            return 'ssc';
+        }
+        if (s.indexOf('master') !== -1 || s.indexOf('m.sc') !== -1 || s.indexOf('msc') !== -1 || s.indexOf('m.a') !== -1 ||
+            s.indexOf('post graduate') !== -1 || s.indexOf('post-graduate') !== -1 ||
+            s.indexOf('মাস্টার্স') !== -1 || s.indexOf('স্নাতকোত্তর') !== -1) {
             return 'masters';
         }
-        if (s.indexOf('graduat') !== -1 || s.indexOf('bachelor') !== -1 || s.indexOf('b.sc') !== -1 || s.indexOf('bsc') !== -1 || s.indexOf('b.a') !== -1 || s.indexOf('hons') !== -1 || s.indexOf('honours') !== -1 || s.indexOf('degree') !== -1 || s.indexOf('স্নাতক') !== -1) {
+        if (s.indexOf('graduat') !== -1 || s.indexOf('bachelor') !== -1 || s.indexOf('b.sc') !== -1 || s.indexOf('bsc') !== -1 ||
+            s.indexOf('b.a') !== -1 || s.indexOf('hons') !== -1 || s.indexOf('honours') !== -1 || s.indexOf('degree') !== -1 ||
+            s.indexOf('স্নাতক') !== -1) {
             return 'grad';
         }
         return null;
@@ -284,6 +295,27 @@ object AutofillEngine {
         var tokens = tokenize(name + ' ' + id + ' ' + ph + ' ' + aria);
         var labelTokens = tokenize(label);
         var allTokens = tokens.concat(labelTokens);
+
+        // Skip auxiliary "other" / "specify" conditional text inputs and text inputs with companion dropdowns
+        if (el.tagName !== 'SELECT') {
+            var isOtherField = hasToken(allTokens, 'other') || hasToken(allTokens, 'specify') ||
+                               combined.indexOf('if other') !== -1 || combined.indexOf('if_other') !== -1 ||
+                               combined.indexOf('please specify') !== -1 || combined.indexOf('other group') !== -1 ||
+                               combined.indexOf('other_group') !== -1 || combined.indexOf('other board') !== -1 ||
+                               combined.indexOf('other_board') !== -1 ||
+                               hasBnKeyword(combined, 'অন্যান্য') || hasBnKeyword(combined, 'অন্য কোনো');
+            if (isOtherField) return null;
+
+            if (hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') || hasToken(allTokens, 'board')) {
+                var container = el.form || (el.closest ? el.closest('fieldset, form, div') : null) || el.parentElement;
+                if (container && container.querySelector) {
+                    var compSelect = container.querySelector('select[name*="group"], select[id*="group"], select[name*="board"], select[id*="board"], select[name*="subject"], select[id*="subject"]');
+                    if (compSelect) {
+                        return null; // Companion dropdown exists; dropdown is primary. Do not fill text input
+                    }
+                }
+            }
+        }
 
         // --- 1. Father's Name Matching ---
         var isFather = hasToken(allTokens, 'father') || hasToken(allTokens, 'fathers') ||
@@ -406,8 +438,10 @@ object AutofillEngine {
                    hasToken(allTokens, 'board') || hasToken(allTokens, 'roll') || hasToken(allTokens, 'rollno') ||
                    hasToken(allTokens, 'gpa') || hasToken(allTokens, 'cgpa') || hasToken(allTokens, 'exam') ||
                    hasToken(allTokens, 'examination') || hasToken(allTokens, 'degree') || hasToken(allTokens, 'qualification') ||
-                   hasBnKeyword(combined, 'পরীক্ষা') || hasBnKeyword(combined, 'ডিগ্রি') || hasBnKeyword(combined, 'বোর্ড') || hasBnKeyword(combined, 'রোল')) {
-            eduObj = ssc || grad || (data.education && data.education[0] ? data.education[0] : null);
+                   hasToken(allTokens, 'group') || hasToken(allTokens, 'subject') || hasToken(allTokens, 'major') ||
+                   hasBnKeyword(combined, 'পরীক্ষা') || hasBnKeyword(combined, 'ডিগ্রি') || hasBnKeyword(combined, 'বোর্ড') ||
+                   hasBnKeyword(combined, 'রোল') || hasBnKeyword(combined, 'গ্রুপ') || hasBnKeyword(combined, 'বিষয়')) {
+            eduObj = hsc || ssc || grad || (data.education && data.education[0] ? data.education[0] : null);
         }
         if (eduObj) {
                 // Examination / Degree
@@ -770,13 +804,19 @@ object AutofillEngine {
             var targetOptionValue = selectedOpt.value;
             el.focus();
             el.selectedIndex = bestIndex;
+            for (var k = 0; k < el.options.length; k++) {
+                el.options[k].selected = (k === bestIndex);
+            }
             setNativeValue(el, targetOptionValue);
             el.dispatchEvent(new Event('input', { bubbles: true }));
             el.dispatchEvent(new Event('change', { bubbles: true }));
+            if (typeof el.onchange === 'function') {
+                try { el.onchange(); } catch(e) {}
+            }
             el.blur();
 
             // Verify selection after filling
-            if (el.selectedIndex === bestIndex || el.value === targetOptionValue) {
+            if (el.selectedIndex === bestIndex || el.value === targetOptionValue || selectedOpt.selected) {
                 return true;
             }
         }
@@ -918,6 +958,9 @@ object AutofillEngine {
                     setNativeValue(el, val);
                     el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (typeof el.onchange === 'function') {
+                        try { el.onchange(); } catch(e) {}
+                    }
                     el.blur();
                     filledCount++;
                 }

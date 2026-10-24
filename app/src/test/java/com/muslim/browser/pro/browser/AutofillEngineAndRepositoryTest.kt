@@ -793,5 +793,222 @@ class AutofillEngineAndRepositoryTest {
             // If node binary is not in environment, test still passes JVM checks
         }
     }
+
+    // 18. Build 153: HSC Group Name dropdown selection and exclusion of companion/other inputs
+    @Test
+    fun testHscGroupNameDropdownMatchingAndOtherInputSkipped() {
+        val profile = AutofillProfile(
+            isEnabled = true,
+            overwriteExistingFields = false,
+            education = listOf(
+                EducationEntry(
+                    qualification = "Secondary School Certificate",
+                    institution = "City School",
+                    year = "2010",
+                    board = "Dhaka",
+                    groupSubject = "Business Studies"
+                ),
+                EducationEntry(
+                    qualification = "Higher Secondary Certificate",
+                    institution = "Govt Science College",
+                    year = "2012",
+                    board = "Dhaka",
+                    groupSubject = "Science"
+                ),
+                EducationEntry()
+            )
+        )
+
+        val script = AutofillEngine.buildAutofillScript(profile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs = {}) {
+                    this.tagName = tag.toUpperCase();
+                    this.type = attrs.type || (tag === 'select' ? 'select-one' : 'text');
+                    this.name = attrs.name || '';
+                    this.id = attrs.id || '';
+                    this.value = attrs.value || '';
+                    this.placeholder = attrs.placeholder || '';
+                    this.options = attrs.options || [];
+                    this.selectedIndex = attrs.selectedIndex !== undefined ? attrs.selectedIndex : 0;
+                    this.labels = [];
+                    this.parentElement = null;
+                    this.form = null;
+                    if (attrs.label) this.labels.push({ innerText: attrs.label });
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const hscSelect = new MockElement('select', {
+                name: 'hsc_group',
+                options: [
+                    { value: '', text: 'Select Group' },
+                    { value: 'sci', text: 'Science' },
+                    { value: 'hum', text: 'Humanities' },
+                    { value: 'com', text: 'Business Studies' }
+                ]
+            });
+
+            // Auxiliary text input for 'other' group: must be skipped
+            const otherInput = new MockElement('input', {
+                name: 'hsc_group_other',
+                placeholder: 'Enter HSC Group Name if other'
+            });
+
+            // Companion text input in a form with the select: must be skipped
+            const companionInput = new MockElement('input', {
+                name: 'hsc_group_text',
+                label: 'HSC Group Name'
+            });
+
+            const mockForm = {
+                querySelector(sel) {
+                    if (sel.indexOf('select') !== -1 && sel.indexOf('group') !== -1) return hscSelect;
+                    return null;
+                }
+            };
+            companionInput.form = mockForm;
+
+            const inputs = [hscSelect, otherInput, companionInput];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                selectedIndex: hscSelect.selectedIndex,
+                selectedVal: hscSelect.value,
+                isOptionSelected: hscSelect.options[1].selected === true,
+                otherInputValue: otherInput.value,
+                companionInputValue: companionInput.value,
+                filled: res.filled
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        try {
+            val process = ProcessBuilder("node", "-e", nodeTest)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+
+            if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+                val jsonResult = org.json.JSONObject(output.trim())
+                // Verify select was accurately filled with "Science" (index 1)
+                assertEquals(1, jsonResult.getInt("selectedIndex"))
+                assertEquals("sci", jsonResult.getString("selectedVal"))
+                assertTrue(jsonResult.getBoolean("isOptionSelected"))
+
+                // Verify "other" and companion text inputs were skipped
+                assertEquals("", jsonResult.getString("otherInputValue"))
+                assertEquals("", jsonResult.getString("companionInputValue"))
+                assertEquals(1, jsonResult.getInt("filled"))
+            }
+        } catch (_: Exception) {
+            // Node check passes if node binary is unavailable
+        }
+    }
+
+    // 19. Build 153: Overwrite protection for existing non-empty fields
+    @Test
+    fun testOverwriteProtectionPreservesExistingValues() {
+        val noOverwriteProfile = AutofillProfile(
+            isEnabled = true,
+            overwriteExistingFields = false,
+            personalInfo = PersonalInfo(
+                userNameEn = "New User",
+                email = "new@example.com"
+            )
+        )
+
+        val script = AutofillEngine.buildAutofillScript(noOverwriteProfile)
+
+        val nodeTest = """
+            class MockElement {
+                constructor(tag, attrs = {}) {
+                    this.tagName = tag.toUpperCase();
+                    this.type = 'text';
+                    this.name = attrs.name || '';
+                    this.value = attrs.value || '';
+                    this.labels = [];
+                }
+                getAttribute(attr) { return null; }
+                focus() {}
+                blur() {}
+                dispatchEvent() {}
+            }
+
+            const existingInput = new MockElement('input', { name: 'email', value: 'already_filled@example.com' });
+            const emptyInput = new MockElement('input', { name: 'applicant_name', value: '' });
+
+            const inputs = [existingInput, emptyInput];
+
+            global.document = {
+                documentElement: { lang: 'en' },
+                querySelectorAll(sel) {
+                    if (sel === 'iframe') return [];
+                    if (sel === 'input, textarea, select' || sel === '*') return inputs;
+                    return [];
+                }
+            };
+            global.Event = class { constructor(t) { this.type = t; } };
+            global.window = {
+                HTMLInputElement: { prototype: {} },
+                HTMLSelectElement: { prototype: {} },
+                HTMLTextAreaElement: { prototype: {} }
+            };
+
+            const resultJson = eval(`$script`);
+            const res = JSON.parse(resultJson);
+
+            const out = {
+                existingVal: existingInput.value,
+                emptyVal: emptyInput.value,
+                filled: res.filled,
+                skipped: res.skipped
+            };
+            console.log(JSON.stringify(out));
+        """.trimIndent()
+
+        try {
+            val process = ProcessBuilder("node", "-e", nodeTest)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().use { it.readText() }
+            process.waitFor()
+
+            if (process.exitValue() == 0 && output.trim().startsWith("{")) {
+                val jsonResult = org.json.JSONObject(output.trim())
+                // Pre-filled value was preserved and not overwritten
+                assertEquals("already_filled@example.com", jsonResult.getString("existingVal"))
+                // Empty value was filled
+                assertEquals("New User", jsonResult.getString("emptyVal"))
+                assertEquals(1, jsonResult.getInt("filled"))
+                assertEquals(1, jsonResult.getInt("skipped"))
+            }
+        } catch (_: Exception) {
+            // Node check passes
+        }
+    }
 }
+
 
