@@ -17,11 +17,10 @@ object NavigationController {
             return NavigationDecision.Allowed
         }
 
-        // Unified search engine evaluation for all supported search engines and website search URLs
+        // 1. Search engine evaluation for supported search engines
         val searchEngineQuery = ProtectionEngine.extractSearchEngineQuery(trimmed)
-            ?: ProtectionEngine.extractGenericSearchQuery(trimmed)
         if (searchEngineQuery != null) {
-            // 1. Check custom protected keywords on search query
+            // First: keyword check on search query
             val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(searchEngineQuery, customKeywords, normalizedKeywords)
             if (blockedKw != null) {
                 return NavigationDecision.Blocked(
@@ -30,20 +29,61 @@ object NavigationController {
                 )
             }
 
-            // 2. If already on safe.duckduckgo.com, do NOT redirect (prevent loop)
-            if (ProtectionEngine.isDuckDuckGoSafeSearchUrl(trimmed)) {
-                return NavigationDecision.Allowed
+            val parsedUri = try { Uri.parse(trimmed) } catch (_: Exception) { null }
+            val host = parsedUri?.host?.lowercase(Locale.ROOT) ?: ""
+
+            val isSelectedEngine = when (searchEngine) {
+                SearchEngine.DUCKDUCKGO -> host.contains("duckduckgo.com")
+                SearchEngine.GOOGLE -> ProtectionEngine.isGoogleHost(host)
             }
 
-            // 3. Enforce Strict Safe Search on DuckDuckGo searches without hijacking other search engines
-            val isDdg = try {
-                val host = Uri.parse(trimmed).host?.lowercase(Locale.ROOT) ?: ""
-                host.contains("duckduckgo.com")
-            } catch (_: Exception) { false }
+            if (!isSelectedEngine) {
+                // a) URL belongs to a DIFFERENT engine than the selected searchEngine:
+                return NavigationDecision.Redirect(searchEngine.buildSearchUrl(searchEngineQuery))
+            } else {
+                // b) URL belongs to the selected engine:
+                when (searchEngine) {
+                    SearchEngine.DUCKDUCKGO -> {
+                        if (ProtectionEngine.isDuckDuckGoSafeSearchUrl(trimmed)) {
+                            return NavigationDecision.Allowed
+                        }
+                        val safeUrl = SearchEngine.DUCKDUCKGO.buildSearchUrl(searchEngineQuery)
+                        return NavigationDecision.Redirect(safeUrl)
+                    }
+                    SearchEngine.GOOGLE -> {
+                        val safeParam = parsedUri?.getQueryParameter("safe")
+                        if (safeParam.equals("active", ignoreCase = true)) {
+                            return NavigationDecision.Allowed
+                        }
+                        val path = parsedUri?.path?.lowercase(Locale.ROOT) ?: ""
+                        if (path.contains("/search") && parsedUri != null) {
+                            val builder = parsedUri.buildUpon().clearQuery()
+                            for (paramName in parsedUri.queryParameterNames) {
+                                if (!paramName.equals("safe", ignoreCase = true)) {
+                                    for (paramValue in parsedUri.getQueryParameters(paramName)) {
+                                        builder.appendQueryParameter(paramName, paramValue)
+                                    }
+                                }
+                            }
+                            builder.appendQueryParameter("safe", "active")
+                            return NavigationDecision.Redirect(builder.build().toString())
+                        } else {
+                            return NavigationDecision.Redirect(searchEngine.buildSearchUrl(searchEngineQuery))
+                        }
+                    }
+                }
+            }
+        }
 
-            if (isDdg) {
-                val safeUrl = ProtectionEngine.buildDuckDuckGoSafeSearchUrl(searchEngineQuery)
-                return NavigationDecision.Redirect(safeUrl)
+        // 2. Generic website search URLs (e.g. Wikipedia/GitHub search) - keep only keyword check
+        val genericQuery = ProtectionEngine.extractGenericSearchQuery(trimmed)
+        if (genericQuery != null) {
+            val blockedKw = ProtectionEngine.isBlockedByCustomKeywords(genericQuery, customKeywords, normalizedKeywords)
+            if (blockedKw != null) {
+                return NavigationDecision.Blocked(
+                    "Custom Keyword Protection",
+                    "Search query blocked due to protected keyword: \"$blockedKw\""
+                )
             }
         }
 

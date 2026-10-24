@@ -1,6 +1,7 @@
 package com.muslim.browser.pro.browser
 
 import android.app.Application
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -129,16 +130,28 @@ class RestorationVerificationTest {
 
     @Test
     fun testNavigationControllerEvaluatesRecognizedEnginesWithoutIndiscriminateRedirect() {
-        val safeGoogleUrl = "https://www.google.com/search?q=weather+today"
+        val googleSearchWithoutSafe = "https://www.google.com/search?q=weather+today"
         val decision = NavigationController.evaluate(
-            url = safeGoogleUrl,
+            url = googleSearchWithoutSafe,
             customKeywords = emptySet(),
             searchEngine = SearchEngine.GOOGLE
         )
-        // Should not indiscriminately redirect Google search to DuckDuckGo
+        // Google search without safe=active must redirect to same search with safe=active
+        assertTrue("Google search without safe=active must redirect", decision is NavigationDecision.Redirect)
+        val parsedDecisionUri = Uri.parse((decision as NavigationDecision.Redirect).url)
+        assertEquals("active", parsedDecisionUri.getQueryParameter("safe"))
+        assertEquals("weather+today", parsedDecisionUri.getQueryParameter("q"))
+
+        // Google search with safe=active must be allowed without redirect loops
+        val alreadySafeGoogleUrl = "https://www.google.com/search?q=weather+today&safe=active"
+        val alreadySafeDecision = NavigationController.evaluate(
+            url = alreadySafeGoogleUrl,
+            customKeywords = emptySet(),
+            searchEngine = SearchEngine.GOOGLE
+        )
         assertTrue(
-            "Allowed direct search navigation for Google",
-            decision is NavigationDecision.Allowed
+            "Allowed direct search navigation for Google with safe=active",
+            alreadySafeDecision is NavigationDecision.Allowed
         )
 
         // Standard DuckDuckGo search should upgrade to safe.duckduckgo.com
@@ -154,6 +167,18 @@ class RestorationVerificationTest {
                     ddgDecision.url.startsWith("https://safe.duckduckgo.com/?q=")
         )
 
+        // DuckDuckGo safe search already on safe.duckduckgo.com must be allowed
+        val safeDdgUrl = "https://safe.duckduckgo.com/?q=android+compose&kp=1"
+        val safeDdgDecision = NavigationController.evaluate(
+            url = safeDdgUrl,
+            customKeywords = emptySet(),
+            searchEngine = SearchEngine.DUCKDUCKGO
+        )
+        assertTrue(
+            "Already safe DuckDuckGo must be allowed",
+            safeDdgDecision is NavigationDecision.Allowed
+        )
+
         // Custom keyword blocking still applies
         val blockedQueryUrl = "https://www.google.com/search?q=download+vpn+client"
         val blockedDecision = NavigationController.evaluate(
@@ -164,6 +189,127 @@ class RestorationVerificationTest {
         assertTrue(
             "Protected keywords must be blocked across search engines",
             blockedDecision is NavigationDecision.Blocked
+        )
+    }
+
+    @Test
+    fun testSearchEngineLockAcrossEngines() {
+        val bingSearch = "https://www.bing.com/search?q=kotlin+programming"
+        val yahooSearch = "https://search.yahoo.com/search?p=kotlin+programming"
+        val ddgSearch = "https://duckduckgo.com/?q=kotlin+programming"
+        val googleSearch = "https://www.google.com/search?q=kotlin+programming"
+
+        // 1. When GOOGLE is the selected engine:
+        // Bing -> redirects to Google safe search
+        val toGoogleFromBing = NavigationController.evaluate(bingSearch, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(toGoogleFromBing is NavigationDecision.Redirect)
+        assertEquals("https://www.google.com/search?q=kotlin+programming&safe=active", (toGoogleFromBing as NavigationDecision.Redirect).url)
+
+        // Yahoo -> redirects to Google safe search
+        val toGoogleFromYahoo = NavigationController.evaluate(yahooSearch, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(toGoogleFromYahoo is NavigationDecision.Redirect)
+        assertEquals("https://www.google.com/search?q=kotlin+programming&safe=active", (toGoogleFromYahoo as NavigationDecision.Redirect).url)
+
+        // DuckDuckGo -> redirects to Google safe search
+        val toGoogleFromDdg = NavigationController.evaluate(ddgSearch, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(toGoogleFromDdg is NavigationDecision.Redirect)
+        assertEquals("https://www.google.com/search?q=kotlin+programming&safe=active", (toGoogleFromDdg as NavigationDecision.Redirect).url)
+
+        // 2. When DUCKDUCKGO is the selected engine:
+        // Bing -> redirects to DuckDuckGo safe search
+        val toDdgFromBing = NavigationController.evaluate(bingSearch, emptySet(), searchEngine = SearchEngine.DUCKDUCKGO)
+        assertTrue(toDdgFromBing is NavigationDecision.Redirect)
+        assertEquals("https://safe.duckduckgo.com/?q=kotlin+programming&kp=1", (toDdgFromBing as NavigationDecision.Redirect).url)
+
+        // Google -> redirects to DuckDuckGo safe search
+        val toDdgFromGoogle = NavigationController.evaluate(googleSearch, emptySet(), searchEngine = SearchEngine.DUCKDUCKGO)
+        assertTrue(toDdgFromGoogle is NavigationDecision.Redirect)
+        assertEquals("https://safe.duckduckgo.com/?q=kotlin+programming&kp=1", (toDdgFromGoogle as NavigationDecision.Redirect).url)
+    }
+
+    @Test
+    fun testGoogleSafeSearchParameterPreservation() {
+        // Multi-parameter Google search preserves query and other parameters while ensuring safe=active
+        val multiParamUrl = "https://www.google.com/search?client=android&q=compose+tutorial&hl=en"
+        val decision = NavigationController.evaluate(multiParamUrl, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(decision is NavigationDecision.Redirect)
+        val redirectUrl = (decision as NavigationDecision.Redirect).url
+        assertTrue(redirectUrl.startsWith("https://www.google.com/search?"))
+        val parsedRedirect = Uri.parse(redirectUrl)
+        assertEquals("compose+tutorial", parsedRedirect.getQueryParameter("q"))
+        assertEquals("en", parsedRedirect.getQueryParameter("hl"))
+        assertEquals("android", parsedRedirect.getQueryParameter("client"))
+        assertEquals("active", parsedRedirect.getQueryParameter("safe"))
+
+        // Overrides safe=images or safe=off
+        val unsafeParamUrl = "https://www.google.com/search?q=nature&safe=off"
+        val safeDecision = NavigationController.evaluate(unsafeParamUrl, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(safeDecision is NavigationDecision.Redirect)
+        val safeRedirectUrl = (safeDecision as NavigationDecision.Redirect).url
+        assertTrue(safeRedirectUrl.contains("safe=active"))
+        assertFalse(safeRedirectUrl.contains("safe=off"))
+    }
+
+    @Test
+    fun testNonSearchGooglePagesAndGenericSearchNotRedirected() {
+        // Generic search (e.g. Wikipedia, GitHub) must NOT be redirected to selected search engine
+        val wikiSearch = "https://en.wikipedia.org/w/index.php?search=Albert+Einstein"
+        val wikiDecision = NavigationController.evaluate(wikiSearch, emptySet(), searchEngine = SearchEngine.GOOGLE)
+        assertTrue(wikiDecision is NavigationDecision.Allowed)
+
+        val githubSearch = "https://github.com/search?q=jetpack+compose"
+        val githubDecision = NavigationController.evaluate(githubSearch, emptySet(), searchEngine = SearchEngine.DUCKDUCKGO)
+        assertTrue(githubDecision is NavigationDecision.Allowed)
+
+        // Non-search Google pages must NOT be redirected or treated as search
+        val mapsUrl = "https://maps.google.com"
+        val mapsDecision = NavigationController.evaluate(mapsUrl, emptySet(), searchEngine = SearchEngine.DUCKDUCKGO)
+        assertTrue(mapsDecision is NavigationDecision.Allowed)
+
+        val accountsUrl = "https://accounts.google.com/signin"
+        val accountsDecision = NavigationController.evaluate(accountsUrl, emptySet(), searchEngine = SearchEngine.DUCKDUCKGO)
+        assertTrue(accountsDecision is NavigationDecision.Allowed)
+    }
+
+    @Test
+    fun testIsGoogleHostValidation() {
+        // Standard Google hosts
+        assertTrue(ProtectionEngine.isGoogleHost("google.com"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.co.uk"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.co.uk"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com.bd"))
+        assertTrue(ProtectionEngine.isGoogleHost("www.google.com.bd"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.de"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.fr"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.ca"))
+        assertTrue(ProtectionEngine.isGoogleHost("google.com."))
+
+        // Subdomains of Google must NOT count as Google search
+        assertFalse(ProtectionEngine.isGoogleHost("drive.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("docs.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("mail.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("photos.google.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("play.google.com"))
+
+        // Malicious or unrelated domains
+        assertFalse(ProtectionEngine.isGoogleHost("fakegoogle.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com.attacker.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("notgoogle.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com@evil.com"))
+        assertFalse(ProtectionEngine.isGoogleHost("google.com:8080"))
+        assertFalse(ProtectionEngine.isGoogleHost(""))
+    }
+
+    @Test
+    fun testSearchEngineBuildSearchUrl() {
+        assertEquals(
+            "https://www.google.com/search?q=kotlin&safe=active",
+            SearchEngine.GOOGLE.buildSearchUrl("kotlin")
+        )
+        assertEquals(
+            "https://safe.duckduckgo.com/?q=kotlin&kp=1",
+            SearchEngine.DUCKDUCKGO.buildSearchUrl("kotlin")
         )
     }
 }

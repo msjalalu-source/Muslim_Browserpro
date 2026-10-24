@@ -313,9 +313,13 @@ class CustomKeywordBlockingTest {
         assertTrue(decision6 is NavigationDecision.Blocked)
 
         // 7. Allowed searches without protected keywords
-        val safeSearchUrl = "https://www.google.com/search?q=islamic+history+and+architecture"
-        val safeDecision = NavigationController.evaluate(safeSearchUrl, keywords)
+        val safeDdgUrl = "https://safe.duckduckgo.com/?q=islamic+history+and+architecture&kp=1"
+        val safeDecision = NavigationController.evaluate(safeDdgUrl, keywords, searchEngine = SearchEngine.DUCKDUCKGO)
         assertTrue(safeDecision is NavigationDecision.Allowed)
+
+        val safeGoogleUrl = "https://www.google.com/search?q=islamic+history+and+architecture&safe=active"
+        val safeGoogleDecision = NavigationController.evaluate(safeGoogleUrl, keywords, searchEngine = SearchEngine.GOOGLE)
+        assertTrue(safeGoogleDecision is NavigationDecision.Allowed)
     }
 
     @Test

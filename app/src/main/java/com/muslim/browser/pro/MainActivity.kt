@@ -186,12 +186,12 @@ class MainActivity : ComponentActivity() {
                                 favoriteSites = uiState.favoriteSites,
                                 onNavigate = { url ->
                                     if (viewModel.submitQueryOrUrl(url)) {
-                                        currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                        currentWebView.loadUrl(viewModel.uiState.value.currentUrl)
                                     }
                                 },
                                 onSearch = { query ->
                                     if (viewModel.submitQueryOrUrl(query)) {
-                                        currentWebView.loadUrl(viewModel.formatDirectUrl(query))
+                                        currentWebView.loadUrl(viewModel.uiState.value.currentUrl)
                                     }
                                 },
                                 onAddFavorite = { name, url ->
@@ -207,7 +207,7 @@ class MainActivity : ComponentActivity() {
                                 webView = currentWebView,
                                 onUrlSubmit = { url ->
                                     if (viewModel.submitQueryOrUrl(url)) {
-                                        currentWebView.loadUrl(viewModel.formatDirectUrl(url))
+                                        currentWebView.loadUrl(viewModel.uiState.value.currentUrl)
                                     }
                                 },
                                 onReload = { currentWebView.reload() }
@@ -463,6 +463,20 @@ class MainActivity : ComponentActivity() {
                         canGoBack = view?.canGoBack() ?: false,
                         canGoForward = view?.canGoForward() ?: false
                     )
+                }
+
+                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                    super.doUpdateVisitedHistory(view, url, isReload)
+                    val newUrl = url ?: return
+                    val decision = NavigationController.evaluate(
+                        url = newUrl,
+                        customKeywords = viewModel.uiState.value.customKeywords,
+                        searchEngine = viewModel.uiState.value.selectedSearchEngine,
+                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled
+                    )
+                    if (decision is com.muslim.browser.pro.browser.NavigationDecision.Redirect && decision.url != newUrl) {
+                        view?.loadUrl(decision.url)
+                    }
                 }
 
                 override fun onReceivedSslError(

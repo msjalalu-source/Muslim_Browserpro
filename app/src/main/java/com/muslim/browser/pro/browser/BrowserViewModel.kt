@@ -112,6 +112,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         val decision = NavigationController.evaluate(
             url = targetUrl,
             customKeywords = _uiState.value.customKeywords,
+            searchEngine = _uiState.value.selectedSearchEngine,
             isAdBlockingEnabled = _uiState.value.isAdBlockingEnabled
         )
         if (decision is NavigationDecision.Blocked) {
@@ -122,6 +123,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 setBlockedUrl(targetUrl, decision.reason, decision.detail)
             }
             return false
+        }
+        if (decision is NavigationDecision.Redirect) {
+            loadTargetUrl(decision.url)
+            return true
         }
 
         loadTargetUrl(targetUrl)

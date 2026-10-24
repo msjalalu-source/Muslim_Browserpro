@@ -10,7 +10,7 @@ enum class SearchEngine(val engineName: String, val iconRes: Int) {
     fun buildSearchUrl(query: String): String {
         val encoded = URLEncoder.encode(query.trim(), "UTF-8")
         return when (this) {
-            GOOGLE -> "https://www.google.com/search?q=$encoded"
+            GOOGLE -> "https://www.google.com/search?q=$encoded&safe=active"
             DUCKDUCKGO -> "https://safe.duckduckgo.com/?q=$encoded&kp=1"
         }
     }
