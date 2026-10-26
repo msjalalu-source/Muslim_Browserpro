@@ -35,6 +35,9 @@ class SettingsRepository(private val context: Context) {
         const val KEY_CUSTOM_KEYWORDS = "key_custom_keywords"
         const val KEY_DOWNLOAD_HISTORY = "key_download_history"
         const val KEY_SEARCH_ENGINE = "key_search_engine"
+        const val KEY_TIME_LIMIT_DOMAINS = "key_time_limit_domains"
+        const val KEY_TIME_LIMIT_DATE = "key_time_limit_date"
+        const val KEY_TIME_LIMIT_USAGE = "key_time_limit_usage"
 
         val DEFAULT_PROTECTED_KEYWORDS = listOf(
             "Aashiq Banaya",
@@ -386,5 +389,59 @@ class SettingsRepository(private val context: Context) {
         }
         sb.append(']')
         prefs.edit().putString(KEY_DOWNLOAD_HISTORY, sb.toString()).apply()
+    }
+
+    fun getTimeLimitedDomains(): Set<String> {
+        return prefs.getStringSet(KEY_TIME_LIMIT_DOMAINS, null)?.toSet() ?: emptySet()
+    }
+
+    /**
+     * Permanent add-only domain registration.
+     * Validates input, normalizes, rejects duplicates and invalid domains.
+     * Cannot be removed or edited through UI or application logic.
+     */
+    fun addTimeLimitedDomain(rawInput: String): Boolean {
+        val normalized = WebsiteTimeLimitPolicy.normalizeDomain(rawInput) ?: return false
+        val current = getTimeLimitedDomains().toMutableSet()
+        if (current.contains(normalized)) {
+            return false // Reject duplicate entry
+        }
+        current.add(normalized)
+        prefs.edit().putStringSet(KEY_TIME_LIMIT_DOMAINS, current).commit()
+        return true
+    }
+
+    fun getDomainUsageSeconds(): Map<String, Long> {
+        val today = WebsiteTimeLimitPolicy.getTodayDateString()
+        val savedDate = prefs.getString(KEY_TIME_LIMIT_DATE, null)
+        if (savedDate != today) {
+            // Next local calendar day: reset daily usage
+            return emptyMap()
+        }
+        val rawJson = prefs.getString(KEY_TIME_LIMIT_USAGE, null) ?: return emptyMap()
+        return try {
+            val jsonObj = JSONObject(rawJson)
+            val map = mutableMapOf<String, Long>()
+            val keys = jsonObj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                map[k] = jsonObj.optLong(k, 0L)
+            }
+            map
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun saveDomainUsage(usageMap: Map<String, Long>) {
+        val today = WebsiteTimeLimitPolicy.getTodayDateString()
+        val jsonObj = JSONObject()
+        for ((domain, sec) in usageMap) {
+            jsonObj.put(domain, sec)
+        }
+        prefs.edit()
+            .putString(KEY_TIME_LIMIT_DATE, today)
+            .putString(KEY_TIME_LIMIT_USAGE, jsonObj.toString())
+            .apply()
     }
 }

@@ -31,7 +31,9 @@ data class BrowserUiState(
     val appTheme: AppTheme = AppTheme.BLACK_WHITE,
     val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
-    val isPageContentVisible: Boolean = true
+    val isPageContentVisible: Boolean = true,
+    val timeLimitedDomains: Set<String> = emptySet(),
+    val timeLimitUsageSeconds: Map<String, Long> = emptyMap()
 ) {
     val isWindows10TouchEnabled: Boolean
         get() = desktopArchitecture.isWindows10Touch()

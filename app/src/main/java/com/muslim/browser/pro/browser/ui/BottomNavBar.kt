@@ -3,6 +3,7 @@ package com.muslim.browser.pro.browser.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,18 +125,32 @@ fun BottomNavBar(
                 }
             }
 
-            IconButton(
-                onClick = onOpenMenu,
+            Box(
                 modifier = Modifier
                     .size(36.dp)
-                    .testTag("nav_menu_button")
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(
+                        onClickLabel = "Menu and Settings",
+                        onClick = onOpenMenu
+                    )
+                    .testTag("nav_menu_button"),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Menu,
-                    contentDescription = "Menu and Settings",
-                    modifier = Modifier.size(23.dp),
-                    tint = colors.iconTint
-                )
+                Surface(
+                    modifier = Modifier.size(28.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    color = colors.surfaceVariant,
+                    border = BorderStroke(1.2.dp, colors.border)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = "Menu and Settings",
+                            modifier = Modifier.size(20.dp),
+                            tint = colors.iconTint
+                        )
+                    }
+                }
             }
         }
     }

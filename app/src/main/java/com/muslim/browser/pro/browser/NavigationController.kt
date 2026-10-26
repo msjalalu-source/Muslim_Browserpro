@@ -10,11 +10,27 @@ object NavigationController {
         customKeywords: Set<String>,
         normalizedKeywords: Collection<String>? = null,
         searchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
-        isAdBlockingEnabled: Boolean = true
+        isAdBlockingEnabled: Boolean = true,
+        timeLimitedDomains: Set<String> = emptySet(),
+        domainUsageSeconds: Map<String, Long> = emptyMap()
     ): NavigationDecision {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) {
             return NavigationDecision.Allowed
+        }
+
+        // 0. Website Time Limit enforcement for registered domains
+        if (timeLimitedDomains.isNotEmpty()) {
+            val matchedDomain = WebsiteTimeLimitPolicy.findMatchingDomain(trimmed, timeLimitedDomains)
+            if (matchedDomain != null) {
+                val used = domainUsageSeconds[matchedDomain] ?: 0L
+                if (used >= WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS) {
+                    return NavigationDecision.Blocked(
+                        "Website Time Limit",
+                        "The daily 20-minute limit for \"$matchedDomain\" has been reached."
+                    )
+                }
+            }
         }
 
         // 1. Search engine evaluation for supported search engines

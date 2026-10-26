@@ -2,12 +2,15 @@ package com.muslim.browser.pro.browser
 
 import android.app.Application
 import android.os.Bundle
+import android.os.SystemClock
 import android.webkit.WebView
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.muslim.browser.pro.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -23,6 +26,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository = SettingsRepository(application)
     private var activeTranslationJob: Job? = null
+    private var activeDomain: String? = null
+    private var activeStartTimeRealtime: Long = 0L
+    private var trackingJob: Job? = null
+    private var isAppInForeground: Boolean = true
+    private var lastPersistedDate: String = WebsiteTimeLimitPolicy.getTodayDateString()
+
+    val activeTrackedDomain: String?
+        get() = activeDomain
 
     private val initialTab = BrowserTab(
         id = UUID.randomUUID().toString(),
@@ -59,7 +70,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             desktopArchitecture = repository.getDesktopArchitecture(),
             appTheme = repository.getAppTheme(),
             selectedSearchEngine = repository.getSearchEngine(),
-            isPageContentVisible = true
+            isPageContentVisible = true,
+            timeLimitedDomains = repository.getTimeLimitedDomains(),
+            timeLimitUsageSeconds = repository.getDomainUsageSeconds()
         )
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
@@ -113,7 +126,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             url = targetUrl,
             customKeywords = _uiState.value.customKeywords,
             searchEngine = _uiState.value.selectedSearchEngine,
-            isAdBlockingEnabled = _uiState.value.isAdBlockingEnabled
+            isAdBlockingEnabled = _uiState.value.isAdBlockingEnabled,
+            timeLimitedDomains = _uiState.value.timeLimitedDomains,
+            domainUsageSeconds = _uiState.value.timeLimitUsageSeconds
         )
         if (decision is NavigationDecision.Blocked) {
             if (decision.reason == "Custom Keyword Protection") {
@@ -172,6 +187,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 searchInput = url
             )
         }
+        updateActiveTimeTrackingForUrl(url)
     }
 
     fun goHome() {
@@ -194,6 +210,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 searchInput = ""
             )
         }
+        updateActiveTimeTrackingForUrl("")
     }
 
     fun openNewTab(url: String = ""): BrowserTab {
@@ -217,6 +234,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        updateActiveTimeTrackingForUrl(url)
         return newTab
     }
 
@@ -244,6 +262,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 searchInput = nextTab.url
             )
         }
+        updateActiveTimeTrackingForUrl(nextTab.url)
     }
 
     fun selectTab(tabId: String) {
@@ -260,6 +279,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isTabsDialogOpen = false
             )
         }
+        updateActiveTimeTrackingForUrl(target.url)
     }
 
     fun saveTabState(tabId: String, bundle: Bundle) {
@@ -283,6 +303,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 searchInput = url
             )
         }
+        updateActiveTimeTrackingForUrl(url)
     }
 
     fun onPageFinished(url: String, title: String, canGoBack: Boolean, canGoForward: Boolean) {
@@ -312,6 +333,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isPageContentVisible = true
             )
         }
+        updateActiveTimeTrackingForUrl(url)
     }
 
     fun onProgressChanged(progress: Int) {
@@ -496,6 +518,157 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun showToast(message: String) {
         _uiState.update { it.copy(toastMessage = message) }
+    }
+
+    fun addTimeLimitedDomain(rawInput: String): Boolean {
+        val success = repository.addTimeLimitedDomain(rawInput)
+        if (success) {
+            _uiState.update { state ->
+                state.copy(
+                    timeLimitedDomains = repository.getTimeLimitedDomains(),
+                    timeLimitUsageSeconds = repository.getDomainUsageSeconds()
+                )
+            }
+            updateActiveTimeTrackingForUrl(_uiState.value.currentUrl)
+        }
+        return success
+    }
+
+    fun onAppForegroundStateChanged(isForeground: Boolean) {
+        isAppInForeground = isForeground
+        if (!isForeground) {
+            pauseActiveTimeTracking()
+        } else {
+            updateActiveTimeTrackingForUrl(_uiState.value.currentUrl)
+        }
+    }
+
+    fun updateActiveTimeTrackingForUrl(url: String) {
+        if (!isAppInForeground) {
+            pauseActiveTimeTracking()
+            return
+        }
+
+        val registered = _uiState.value.timeLimitedDomains
+        if (registered.isEmpty() || url.isBlank() || _uiState.value.isHomePage) {
+            pauseActiveTimeTracking()
+            return
+        }
+
+        val matchingDomain = WebsiteTimeLimitPolicy.findMatchingDomain(url, registered)
+        if (matchingDomain == null) {
+            pauseActiveTimeTracking()
+            return
+        }
+
+        // Check if daily limit already reached
+        val currentUsage = _uiState.value.timeLimitUsageSeconds
+        val used = currentUsage[matchingDomain] ?: 0L
+        if (used >= WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS) {
+            pauseActiveTimeTracking()
+            setBlockedUrl(
+                url,
+                "Website Time Limit",
+                "The daily 20-minute limit for \"$matchingDomain\" has been reached."
+            )
+            return
+        }
+
+        // If already tracking this exact domain and ticker is active, continue
+        if (activeDomain == matchingDomain && trackingJob?.isActive == true) {
+            return
+        }
+
+        // Domain switched: commit previous domain if any
+        if (activeDomain != null && activeDomain != matchingDomain) {
+            pauseActiveTimeTracking()
+        }
+
+        // Start tracking matchingDomain
+        activeDomain = matchingDomain
+        activeStartTimeRealtime = SystemClock.elapsedRealtime()
+        startTrackingTicker(matchingDomain)
+    }
+
+    fun pauseActiveTimeTracking() {
+        trackingJob?.cancel()
+        trackingJob = null
+        val domain = activeDomain
+        val start = activeStartTimeRealtime
+        if (domain != null && start > 0L) {
+            val now = SystemClock.elapsedRealtime()
+            val elapsedSec = ((now - start) / 1000L).coerceAtLeast(0L)
+            if (elapsedSec > 0) {
+                commitElapsedSeconds(domain, elapsedSec)
+            }
+        }
+        activeDomain = null
+        activeStartTimeRealtime = 0L
+    }
+
+    private fun commitElapsedSeconds(domain: String, elapsedSec: Long) {
+        val currentUsage = repository.getDomainUsageSeconds().toMutableMap()
+        val prev = currentUsage[domain] ?: 0L
+        val updated = (prev + elapsedSec).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
+        currentUsage[domain] = updated
+        repository.saveDomainUsage(currentUsage)
+        _uiState.update { it.copy(timeLimitUsageSeconds = currentUsage) }
+    }
+
+    private fun startTrackingTicker(domain: String) {
+        trackingJob?.cancel()
+        trackingJob = viewModelScope.launch(Dispatchers.Main) {
+            var tickCount = 0
+            while (isActive) {
+                delay(1000L)
+                tickCount++
+
+                // Handle date change while browser remains open
+                val today = WebsiteTimeLimitPolicy.getTodayDateString()
+                if (lastPersistedDate.isNotBlank() && lastPersistedDate != today) {
+                    lastPersistedDate = today
+                    repository.saveDomainUsage(emptyMap())
+                    _uiState.update { it.copy(timeLimitUsageSeconds = emptyMap()) }
+                    activeStartTimeRealtime = SystemClock.elapsedRealtime()
+                } else if (lastPersistedDate.isBlank()) {
+                    lastPersistedDate = today
+                }
+
+                val now = SystemClock.elapsedRealtime()
+                val sessionElapsed = ((now - activeStartTimeRealtime) / 1000L).coerceAtLeast(0L)
+                val base = repository.getDomainUsageSeconds()[domain] ?: 0L
+                val totalUsed = (base + sessionElapsed).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
+
+                // Update UI state live
+                val liveMap = _uiState.value.timeLimitUsageSeconds.toMutableMap()
+                liveMap[domain] = totalUsed
+                _uiState.update { it.copy(timeLimitUsageSeconds = liveMap) }
+
+                // Check if 20-minute limit reached
+                if (totalUsed >= WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS) {
+                    commitElapsedSeconds(domain, sessionElapsed)
+                    activeDomain = null
+                    activeStartTimeRealtime = 0L
+                    setBlockedUrl(
+                        _uiState.value.currentUrl,
+                        "Website Time Limit",
+                        "The daily 20-minute limit for \"$domain\" has been reached."
+                    )
+                    break
+                }
+
+                // Periodically persist (every 15s) to avoid per-second disk writes
+                if (tickCount % 15 == 0) {
+                    commitElapsedSeconds(domain, sessionElapsed)
+                    activeStartTimeRealtime = SystemClock.elapsedRealtime()
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        pauseActiveTimeTracking()
+        super.onCleared()
     }
 
     fun addCustomKeyword(keyword: String): Boolean {

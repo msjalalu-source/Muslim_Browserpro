@@ -217,7 +217,7 @@ object ProtectionEngine {
 
             val queryParamNames = listOf(
                 "q", "search", "query", "search_query", "k", "keyword",
-                "term", "text", "s", "wd", "p", "searchTerm", "search_term"
+                "term", "text", "s", "wd", "searchTerm", "search_term"
             )
             for (param in queryParamNames) {
                 val value = uri.getQueryParameter(param)
@@ -331,7 +331,9 @@ object ProtectionEngine {
             var a = (el.getAttribute('aria-label') || '').toLowerCase();
             var n = (el.name || '').toLowerCase();
             var id = (el.id || '').toLowerCase();
-            return r === 'searchbox' || a.indexOf('search') !== -1 || n === 'q' || n === 'search' || id.indexOf('search') !== -1;
+            var ph = (el.placeholder || '').toLowerCase();
+            return r === 'searchbox' || a.indexOf('search') !== -1 || ph.indexOf('search') !== -1 ||
+                   n === 'q' || n === 'search' || n === 'search_query' || id.indexOf('search') !== -1;
         }
         if (tag !== 'INPUT') return false;
         var type = (el.type || 'text').toLowerCase();
@@ -339,21 +341,24 @@ object ProtectionEngine {
         if (type !== 'text' && type !== '' && type !== 'url') return false;
 
         var role = (el.getAttribute('role') || '').toLowerCase();
+        if (role === 'searchbox') return true;
+
         var n = (el.name || '').toLowerCase();
         var id = (el.id || '').toLowerCase();
         var ph = (el.placeholder || '').toLowerCase();
         var aria = (el.getAttribute('aria-label') || '').toLowerCase();
         var cl = (el.className || '').toLowerCase();
 
-        if (role === 'searchbox' || role === 'combobox') {
+        if (role === 'combobox') {
             if (aria.indexOf('search') !== -1 || ph.indexOf('search') !== -1 || ph.indexOf('খুঁজ') !== -1 ||
                 n.indexOf('search') !== -1 || n === 'q' || n === 'query' || n === 'k' || n === 'keyword' ||
-                id.indexOf('search') !== -1 || cl.indexOf('search') !== -1) {
+                n === 's' || id.indexOf('search') !== -1 || cl.indexOf('search') !== -1) {
                 return true;
             }
         }
 
-        if (n === 'q' || n === 'query' || n === 'search' || n === 'search_query' || n === 'k' || n === 'keyword' || n === 'term') return true;
+        if (n === 'q' || n === 'query' || n === 'search' || n === 'search_query' || n === 'k' || n === 'keyword' ||
+            n === 'term' || n === 'text' || n === 's' || n === 'searchterm' || n === 'search_term' || n === 'wd') return true;
         if (n.indexOf('search') !== -1 || id.indexOf('search') !== -1 || ph.indexOf('search') !== -1 || aria.indexOf('search') !== -1 || cl.indexOf('search') !== -1) return true;
         if (ph.indexOf('খুঁজ') !== -1 || aria.indexOf('খুঁজ') !== -1) return true;
 
@@ -428,22 +433,44 @@ object ProtectionEngine {
                 }
             }
             if (isSearchBtn) {
-                var scope = form || (btn.closest ? btn.closest('header, nav, [role="search"], form, div') : document);
-                if (scope && scope.querySelectorAll) {
-                    var inputs = scope.querySelectorAll('input, textarea');
-                    for (var i = 0; i < inputs.length; i++) {
-                        if (isSearchInput(inputs[i])) {
-                            var kw = checkBlocked(inputs[i].value);
-                            if (kw) {
-                                blockSearch(e, kw);
-                                return;
-                            }
+                var scope = form || (btn.closest ? btn.closest('header, nav, [role="search"], form') : null);
+                var inputs = scope && scope.querySelectorAll ? Array.prototype.slice.call(scope.querySelectorAll('input, textarea')) : [];
+                if (inputs.length === 0 && btn.parentElement) {
+                    inputs = Array.prototype.slice.call(btn.parentElement.querySelectorAll('input, textarea'));
+                    if (inputs.length === 0 && btn.parentElement.parentElement) {
+                        inputs = Array.prototype.slice.call(btn.parentElement.parentElement.querySelectorAll('input, textarea'));
+                    }
+                }
+                for (var i = 0; i < inputs.length; i++) {
+                    if (isSearchInput(inputs[i])) {
+                        var kw = checkBlocked(inputs[i].value);
+                        if (kw) {
+                            blockSearch(e, kw);
+                            return;
                         }
                     }
                 }
             }
         }
     }, true);
+
+    // 4. Programmatic form.submit() call by site JavaScript
+    try {
+        var origSubmit = HTMLFormElement.prototype.submit;
+        HTMLFormElement.prototype.submit = function() {
+            var inputs = this.querySelectorAll ? this.querySelectorAll('input, textarea') : [];
+            for (var i = 0; i < inputs.length; i++) {
+                if (isSearchInput(inputs[i])) {
+                    var kw = checkBlocked(inputs[i].value);
+                    if (kw) {
+                        blockSearch(null, kw);
+                        return;
+                    }
+                }
+            }
+            return origSubmit.apply(this, arguments);
+        };
+    } catch(_) {}
 })();
         """.trimIndent()
     }

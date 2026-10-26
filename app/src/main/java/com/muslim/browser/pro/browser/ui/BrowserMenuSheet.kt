@@ -69,6 +69,7 @@ fun BrowserMenuSheet(
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
     onSelectTheme: (AppTheme) -> Unit,
+    onAddTimeLimitedDomain: (String) -> Boolean = { false },
     currentWebView: android.webkit.WebView? = null,
     modifier: Modifier = Modifier
 ) {
@@ -391,6 +392,15 @@ fun BrowserMenuSheet(
                     customKeywords = uiState.customKeywords,
                     onAddKeyword = onAddKeyword,
                     onRemoveKeyword = onRemoveKeyword
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Website Time Limit (20-minute daily allowance, permanent domains)
+                WebsiteTimeLimitSection(
+                    timeLimitedDomains = uiState.timeLimitedDomains,
+                    domainUsageSeconds = uiState.timeLimitUsageSeconds,
+                    onAddDomain = onAddTimeLimitedDomain
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

@@ -274,7 +274,8 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 },
-                                onSelectTheme = { theme -> viewModel.setAppTheme(theme) }
+                                onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
+                                onAddTimeLimitedDomain = { domain -> viewModel.addTimeLimitedDomain(domain) }
                             )
                         }
 
@@ -407,7 +408,9 @@ class MainActivity : ComponentActivity() {
                         url = targetUrl,
                         customKeywords = viewModel.uiState.value.customKeywords,
                         searchEngine = viewModel.uiState.value.selectedSearchEngine,
-                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled
+                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled,
+                        timeLimitedDomains = viewModel.uiState.value.timeLimitedDomains,
+                        domainUsageSeconds = viewModel.uiState.value.timeLimitUsageSeconds
                     )
                     if (decision is com.muslim.browser.pro.browser.NavigationDecision.Blocked) {
                         viewModel.setBlockedUrl(targetUrl, decision.reason, decision.detail)
@@ -480,8 +483,15 @@ class MainActivity : ComponentActivity() {
                         url = newUrl,
                         customKeywords = viewModel.uiState.value.customKeywords,
                         searchEngine = viewModel.uiState.value.selectedSearchEngine,
-                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled
+                        isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled,
+                        timeLimitedDomains = viewModel.uiState.value.timeLimitedDomains,
+                        domainUsageSeconds = viewModel.uiState.value.timeLimitUsageSeconds
                     )
+                    if (decision is com.muslim.browser.pro.browser.NavigationDecision.Blocked) {
+                        view?.stopLoading()
+                        viewModel.setBlockedUrl(newUrl, decision.reason, decision.detail)
+                        return
+                    }
                     if (decision is com.muslim.browser.pro.browser.NavigationDecision.Redirect && decision.url != newUrl) {
                         view?.loadUrl(decision.url)
                     }
@@ -945,6 +955,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        viewModel.onAppForegroundStateChanged(isForeground = false)
         if (::tabWebViewManager.isInitialized) {
             tabWebViewManager.pauseAll()
         }
@@ -952,6 +963,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        viewModel.onAppForegroundStateChanged(isForeground = true)
         if (::tabWebViewManager.isInitialized) {
             tabWebViewManager.resumeTab(viewModel.uiState.value.currentTabId)
         }

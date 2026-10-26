@@ -58,7 +58,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -296,6 +298,45 @@ fun BrowserWebView(
                             modifier = Modifier.size(32.dp),
                             color = appColors.accent,
                             strokeWidth = 2.5.dp
+                        )
+                    }
+                }
+            }
+
+            if (uiState.blockedInfo.targetUrl.isNotBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("blocked_screen_overlay"),
+                    color = appColors.background
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Access Blocked",
+                            modifier = Modifier.size(56.dp),
+                            tint = if (appColors.isMonochrome) appColors.textPrimary else Color(0xFFEF5350)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = uiState.blockedInfo.reason.ifBlank { "Website Access Restricted" },
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = appColors.textPrimary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.blockedInfo.detail.ifBlank { "Access to this website is restricted." },
+                            fontSize = 13.5.sp,
+                            color = appColors.textSecondary,
+                            textAlign = TextAlign.Center
                         )
                     }
                 }

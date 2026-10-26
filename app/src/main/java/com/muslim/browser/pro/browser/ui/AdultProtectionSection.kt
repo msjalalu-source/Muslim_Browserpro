@@ -296,98 +296,25 @@ fun DownloadProtectionSection() {
         color = colors.surfaceVariant,
         border = BorderStroke(1.dp, colors.border)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Download,
-                    contentDescription = null,
-                    tint = colors.iconTint,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Download Protection",
-                    color = colors.textPrimary,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            DownloadItemCompact(label = "Video (.mp4, .mkv)", isBlocked = true)
-            DownloadItemCompact(label = "Audio (.mp3, .wav)", isBlocked = false)
-            DownloadItemCompact(label = "Apps (.apk)", isBlocked = true)
-            DownloadItemCompact(label = "Images (.jpg, .png)", isBlocked = false)
-            DownloadItemCompact(label = "PDF Documents (.pdf)", isBlocked = false)
-        }
-    }
-}
-
-@Composable
-fun DownloadItemCompact(label: String, isBlocked: Boolean) {
-    val colors = LocalAppColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(
-            text = label,
-            color = if (isBlocked) colors.textSecondary else colors.textPrimary,
-            fontSize = 11.sp
-        )
-        if (isBlocked) {
-            Surface(
-                shape = RoundedCornerShape(3.dp),
-                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x33EF5350)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Blocked",
-                        tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
-                        modifier = Modifier.size(9.dp)
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = "Blocked",
-                        color = if (colors.isMonochrome) colors.textPrimary else Color(0xFFEF5350),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        } else {
-            Surface(
-                shape = RoundedCornerShape(3.dp),
-                color = if (colors.isMonochrome) colors.border.copy(alpha = 0.3f) else Color(0x3366BB6A)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = "Allowed",
-                        tint = if (colors.isMonochrome) colors.textPrimary else Color(0xFF66BB6A),
-                        modifier = Modifier.size(9.dp)
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = "Allowed",
-                        color = if (colors.isMonochrome) colors.textPrimary else Color(0xFF66BB6A),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = colors.iconTint,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Download Protection",
+                color = colors.textPrimary,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

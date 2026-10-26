@@ -343,4 +343,54 @@ class CustomKeywordBlockingTest {
         assertFalse(SettingsRepository.isProtected("my_temporary_block"))
         assertFalse(SettingsRepository.isProtected("user_tag"))
     }
+
+    @Test
+    fun testThirdPartyWebsiteWordPressAndCustomSearchQueryExtraction() {
+        val keywords = setOf("casino", "18+")
+
+        // WordPress search: ?s=casino
+        val wpUrl = "https://myblog.example.com/?s=casino"
+        val wpDecision = NavigationController.evaluate(wpUrl, keywords)
+        assertTrue(wpDecision is NavigationDecision.Blocked)
+
+        // General search parameters: searchTerm, search_term, text
+        val paramUrl1 = "https://shop.example.com/items?searchTerm=casino+chips"
+        assertTrue(NavigationController.evaluate(paramUrl1, keywords) is NavigationDecision.Blocked)
+
+        val paramUrl2 = "https://portal.example.com/browse?text=casino"
+        assertTrue(NavigationController.evaluate(paramUrl2, keywords) is NavigationDecision.Blocked)
+
+        // WordPress post link with ?p=... MUST NOT be treated as search query (prevent false positive)
+        val wpPostUrl = "https://myblog.example.com/?p=18"
+        val wpPostDecision = NavigationController.evaluate(wpPostUrl, keywords)
+        assertTrue("WordPress post link ?p=18 must not trigger false positive for keyword '18+'", wpPostDecision is NavigationDecision.Allowed)
+
+        // Verify generic search query extraction handles search parameters and ignores unrelated parameters
+        assertEquals("casino", ProtectionEngine.extractGenericSearchQuery(wpUrl))
+        assertEquals("casino chips", ProtectionEngine.extractGenericSearchQuery(paramUrl1))
+        assertEquals("casino", ProtectionEngine.extractGenericSearchQuery(paramUrl2))
+        assertNull("p parameter must not be extracted as generic search query", ProtectionEngine.extractGenericSearchQuery(wpPostUrl))
+        assertNull("user parameter must not be extracted as generic search query", ProtectionEngine.extractGenericSearchQuery("https://forum.example.com/profile?user=casino_fan"))
+
+        // Unrelated page without keywords must be allowed
+        val userProfileUrl = "https://forum.example.com/profile?user=regular_member"
+        assertTrue(NavigationController.evaluate(userProfileUrl, keywords) is NavigationDecision.Allowed)
+    }
+
+    @Test
+    fun testKeywordBlockingScriptProgrammaticSubmitAndAriaSearchboxCoverage() {
+        val keywords = setOf("forbidden_content")
+        val script = ProtectionEngine.buildKeywordBlockingScript(keywords)
+
+        // Verify HTMLFormElement.prototype.submit hooking for programmatic search triggers
+        assertTrue("Script must hook HTMLFormElement.prototype.submit", script.contains("HTMLFormElement.prototype.submit"))
+
+        // Verify searchbox and combobox ARIA roles
+        assertTrue("Script must check role === 'searchbox'", script.contains("role === 'searchbox'"))
+        assertTrue("Script must handle WordPress 's' parameter", script.contains("n === 's'"))
+        assertTrue("Script must check searchTerm parameter", script.contains("n === 'searchterm'"))
+
+        // Verify proximity resolution for buttons outside form
+        assertTrue("Script must resolve button proximity for inputs", script.contains("btn.parentElement"))
+    }
 }
