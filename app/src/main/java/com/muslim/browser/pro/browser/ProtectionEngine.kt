@@ -46,15 +46,90 @@ object ProtectionEngine {
     )
 
 
+    fun isDuckDuckGoHost(host: String): Boolean {
+        if (host.isBlank()) return false
+        var clean = host.trim().lowercase(Locale.ROOT)
+        if (clean.endsWith(".")) {
+            clean = clean.dropLast(1)
+        }
+        if (clean.isEmpty()) return false
+        for (ch in clean) {
+            if (!(ch in 'a'..'z' || ch in '0'..'9' || ch == '.' || ch == '-')) {
+                return false
+            }
+        }
+        if (clean.startsWith(".") || clean.endsWith(".") || clean.contains("..")) return false
+        val labels = clean.split('.')
+        for (label in labels) {
+            if (label.isEmpty() || label.startsWith("-") || label.endsWith("-")) {
+                return false
+            }
+        }
+        return clean == "duckduckgo.com" || clean.endsWith(".duckduckgo.com")
+    }
+
+    fun isDuckDuckGoSearchPath(path: String?): Boolean {
+        if (path == null) return true
+        val cleanPath = path.lowercase(Locale.ROOT).trimEnd('/')
+        return cleanPath.isEmpty() ||
+                cleanPath == "/html" ||
+                cleanPath == "/lite" ||
+                cleanPath == "/search"
+    }
+
     fun isDuckDuckGoSafeSearchUrl(url: String): Boolean {
         if (url.isBlank()) return false
         return try {
             val uri = Uri.parse(url)
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+            if (scheme != "https") return false
             val host = uri.host?.lowercase(Locale.ROOT) ?: return false
-            host == "safe.duckduckgo.com"
+            if (host != "safe.duckduckgo.com") return false
+            if (!isDuckDuckGoSearchPath(uri.path)) return false
+            val q = uri.getQueryParameter("q")
+            if (q.isNullOrBlank()) return false
+            val kpNames = uri.queryParameterNames.filter { it.equals("kp", ignoreCase = true) }
+            if (kpNames.isEmpty()) return false
+            val allKpValues = kpNames.flatMap { uri.getQueryParameters(it) }
+            allKpValues.size == 1 && allKpValues[0] == "1"
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun buildDuckDuckGoStrictSearchUrl(url: String): String {
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+        if (uri == null) {
+            val q = extractSearchEngineQuery(url) ?: ""
+            return SearchEngine.DUCKDUCKGO.buildSearchUrl(q)
+        }
+
+        val builder = uri.buildUpon()
+            .scheme("https")
+            .authority("safe.duckduckgo.com")
+
+        val path = uri.path
+        if (path.isNullOrEmpty()) {
+            builder.path("/")
+        }
+
+        val rawQuery = uri.encodedQuery
+        val keptPairs = mutableListOf<String>()
+        if (!rawQuery.isNullOrBlank()) {
+            val pairs = rawQuery.split('&')
+            for (pair in pairs) {
+                if (pair.isBlank()) continue
+                val key = pair.substringBefore('=')
+                val decodedKey = try { Uri.decode(key) } catch (_: Exception) { key }
+                if (!decodedKey.equals("kp", ignoreCase = true)) {
+                    keptPairs.add(pair)
+                }
+            }
+        }
+        keptPairs.add("kp=1")
+        builder.encodedQuery(keptPairs.joinToString("&"))
+
+        return builder.build().toString()
     }
 
     private val GOOGLE_HOST_REGEX = Regex("^google\\.(com|co\\.[a-z]{2,3}|com\\.[a-z]{2,3}|[a-z]{2,3})$")
@@ -117,7 +192,7 @@ object ProtectionEngine {
             }
 
             // 2. DuckDuckGo
-            if (host.contains("duckduckgo.com")) {
+            if (isDuckDuckGoHost(host) && isDuckDuckGoSearchPath(path)) {
                 val q = uri.getQueryParameter("q")
                 if (!q.isNullOrBlank()) return q
             }

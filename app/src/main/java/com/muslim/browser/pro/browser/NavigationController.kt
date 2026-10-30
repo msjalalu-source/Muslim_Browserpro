@@ -49,7 +49,7 @@ object NavigationController {
             val host = parsedUri?.host?.lowercase(Locale.ROOT) ?: ""
 
             val isSelectedEngine = when (searchEngine) {
-                SearchEngine.DUCKDUCKGO -> host.contains("duckduckgo.com")
+                SearchEngine.DUCKDUCKGO -> ProtectionEngine.isDuckDuckGoHost(host)
                 SearchEngine.GOOGLE -> ProtectionEngine.isGoogleHost(host)
             }
 
@@ -63,7 +63,10 @@ object NavigationController {
                         if (ProtectionEngine.isDuckDuckGoSafeSearchUrl(trimmed)) {
                             return NavigationDecision.Allowed
                         }
-                        val safeUrl = SearchEngine.DUCKDUCKGO.buildSearchUrl(searchEngineQuery)
+                        val safeUrl = ProtectionEngine.buildDuckDuckGoStrictSearchUrl(trimmed)
+                        if (safeUrl == trimmed) {
+                            return NavigationDecision.Allowed
+                        }
                         return NavigationDecision.Redirect(safeUrl)
                     }
                     SearchEngine.GOOGLE -> {
