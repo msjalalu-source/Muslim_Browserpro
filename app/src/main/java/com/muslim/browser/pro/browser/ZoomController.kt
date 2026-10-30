@@ -246,10 +246,38 @@ object ZoomController {
 
     /**
      * Resets the zoom of the given WebView back to 100%.
+     * Purges any pending slider dragging updates and ensures the 100% reset is applied directly.
      */
     fun resetZoom(webView: WebView) {
         pendingTargetZoom.remove(webView)
-        applyZoom(webView, DEFAULT_ZOOM)
+        focalMap.remove(webView)
+        lastDispatchedZoom[webView] = DEFAULT_ZOOM
+        val script = buildZoomScript(DEFAULT_ZOOM, null, null)
+        inFlightZoom[webView] = true
+        var completed = false
+        val watchdog = Runnable {
+            if (!completed) {
+                completed = true
+                inFlightZoom[webView] = false
+            }
+        }
+        mainHandler.postDelayed(watchdog, 150)
+        try {
+            webView.evaluateJavascript(script) {
+                mainHandler.removeCallbacks(watchdog)
+                if (!completed) {
+                    completed = true
+                    inFlightZoom[webView] = false
+                    val pending = pendingTargetZoom.remove(webView)
+                    if (pending != null && pending != DEFAULT_ZOOM) {
+                        applyZoom(webView, pending)
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+            mainHandler.removeCallbacks(watchdog)
+            inFlightZoom[webView] = false
+        }
     }
 
     fun getLastFocalPoint(webView: WebView): FocalPoint? = focalMap[webView]

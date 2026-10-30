@@ -398,7 +398,8 @@ class SettingsRepository(private val context: Context) {
     }
 
     fun getTimeLimitedDomains(): Set<String> {
-        return prefs.getStringSet(KEY_TIME_LIMIT_DOMAINS, null)?.toSet() ?: emptySet()
+        val userSaved = prefs.getStringSet(KEY_TIME_LIMIT_DOMAINS, null)?.toSet() ?: emptySet()
+        return WebsiteTimeLimitPolicy.DEFAULT_DOMAINS + userSaved
     }
 
     /**
@@ -408,12 +409,13 @@ class SettingsRepository(private val context: Context) {
      */
     fun addTimeLimitedDomain(rawInput: String): Boolean {
         val normalized = WebsiteTimeLimitPolicy.normalizeDomain(rawInput) ?: return false
-        val current = getTimeLimitedDomains().toMutableSet()
+        val current = getTimeLimitedDomains()
         if (current.contains(normalized)) {
-            return false // Reject duplicate entry
+            return false // Reject duplicate entry (including default domains)
         }
-        current.add(normalized)
-        prefs.edit().putStringSet(KEY_TIME_LIMIT_DOMAINS, current).commit()
+        val userSaved = (prefs.getStringSet(KEY_TIME_LIMIT_DOMAINS, null) ?: emptySet()).toMutableSet()
+        userSaved.add(normalized)
+        prefs.edit().putStringSet(KEY_TIME_LIMIT_DOMAINS, userSaved).commit()
         return true
     }
 

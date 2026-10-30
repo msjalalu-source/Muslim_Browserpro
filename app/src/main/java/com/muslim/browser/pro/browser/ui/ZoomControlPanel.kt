@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,16 +31,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.ZoomController
 import kotlin.math.roundToInt
 
 /**
- * ZoomControlPanel completely replacing the old zoom interface to match the reference screenshot:
+ * ZoomControlPanel matching the reference screenshot design:
  * - Floating pure black container with smooth rounded corners
  * - Header with bold white "Page Zoom" title on the left
- * - Header with muted "Reset" button and light-blue percentage badge on the right
+ * - Header with permanently visible and stable "Reset" button and light-blue percentage badge on the right
  * - Smooth horizontal slider with light-blue thumb and active track, dark inactive track
  * - Real-time continuous zoom response without lag or stutter
  */
@@ -90,7 +92,7 @@ fun ZoomControlPanel(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Reset Action Text Button
+                // Reset Action Text Button - permanently available, stable layout & position
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -101,7 +103,7 @@ fun ZoomControlPanel(
                             sliderZoom = ZoomController.DEFAULT_ZOOM.toFloat()
                             onReset()
                         }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
                         .testTag("zoom_reset_button"),
                     contentAlignment = Alignment.Center
                 ) {
@@ -115,9 +117,10 @@ fun ZoomControlPanel(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                // Percentage Badge Container Pill
+                // Percentage Badge Container Pill with stable min-width so Reset button never shifts horizontally
                 Box(
                     modifier = Modifier
+                        .defaultMinSize(minWidth = 54.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0xFF1B2232))
                         .padding(horizontal = 10.dp, vertical = 5.dp)
@@ -128,7 +131,8 @@ fun ZoomControlPanel(
                         text = "$displayZoom%",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF8AB4F8)
+                        color = Color(0xFF8AB4F8),
+                        textAlign = TextAlign.Center
                     )
                 }
             }

@@ -219,7 +219,12 @@ fun HomePage(
             .background(colors.background)
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Top)))
     ) {
-        val topOffset = maxHeight * 0.20f
+        // Compute balanced vertical position for the header in the space above the address bar
+        val totalSpaceAboveBar = maxHeight * 0.20f + 32.dp
+        val headerGroupHeight = 60.dp
+        val remainingSpace = (totalSpaceAboveBar - headerGroupHeight).coerceAtLeast(48.dp)
+        val spaceAboveHeader = (remainingSpace * 0.50f).coerceAtLeast(20.dp)
+        val spaceBelowHeader = (remainingSpace * 0.50f).coerceAtLeast(28.dp)
 
         Column(
             modifier = Modifier
@@ -228,7 +233,7 @@ fun HomePage(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(topOffset))
+            Spacer(modifier = Modifier.height(spaceAboveHeader))
 
             // 1. Header: Centered App Title & Subtitle
             Column(
@@ -238,13 +243,13 @@ fun HomePage(
                 Text(
                     text = "Muslim Browser",
                     fontFamily = GoogleSansFlexFontFamily,
-                    fontSize = 22.sp,
+                    fontSize = 24.2.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary,
                     letterSpacing = 0.sp,
                     textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Ultra-Lightweight • Protected Browser",
                     fontFamily = GoogleSansFlexFontFamily,
@@ -255,7 +260,7 @@ fun HomePage(
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(spaceBelowHeader))
 
         // 2. Pill-shaped Search Bar (Matching Screenshot)
         Surface(

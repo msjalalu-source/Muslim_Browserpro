@@ -138,6 +138,33 @@ class WebsiteTimeLimitTest {
     }
 
     @Test
+    fun testDefaultPermanentFacebookEntries() {
+        // Both facebook.com and m.facebook.com must be present by default without any user addition
+        val defaults = repository.getTimeLimitedDomains()
+        assertTrue("facebook.com must be present by default", defaults.contains("facebook.com"))
+        assertTrue("m.facebook.com must be present by default", defaults.contains("m.facebook.com"))
+        assertTrue("Default domains must contain at least the 2 default entries", defaults.size >= 2)
+
+        // Duplicate attempts to add default domains must fail
+        assertFalse("Re-adding facebook.com should fail as duplicate", repository.addTimeLimitedDomain("facebook.com"))
+        assertFalse("Re-adding m.facebook.com should fail as duplicate", repository.addTimeLimitedDomain("m.facebook.com"))
+
+        // Both websites must be separate entries
+        val fbMatched = WebsiteTimeLimitPolicy.findMatchingDomain("https://facebook.com/feed", defaults)
+        val mFbMatched = WebsiteTimeLimitPolicy.findMatchingDomain("https://m.facebook.com/home", defaults)
+        assertEquals("facebook.com", fbMatched)
+        assertEquals("m.facebook.com", mFbMatched)
+
+        // Each website has the 20-minute daily time limit (1200 seconds)
+        assertEquals(1200L, WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
+
+        // Neither can be deleted (no delete methods exist)
+        val methods = SettingsRepository::class.java.declaredMethods.map { it.name }
+        assertFalse("No remove method should exist for time limited domains", methods.contains("removeTimeLimitedDomain"))
+        assertFalse("No delete method should exist for time limited domains", methods.contains("deleteTimeLimitedDomain"))
+    }
+
+    @Test
     fun testRejectionOfInvalidAndDuplicateDomains() {
         // Invalid domains
         assertFalse(repository.addTimeLimitedDomain(""))
@@ -147,18 +174,18 @@ class WebsiteTimeLimitTest {
         assertFalse(repository.addTimeLimitedDomain("http://"))
 
         // Valid domain addition
-        assertTrue(repository.addTimeLimitedDomain("facebook.com"))
-        assertTrue(repository.getTimeLimitedDomains().contains("facebook.com"))
+        assertTrue(repository.addTimeLimitedDomain("customsite.com"))
+        assertTrue(repository.getTimeLimitedDomains().contains("customsite.com"))
 
         // Duplicate attempts in different formats
-        assertFalse("Duplicate raw domain should fail", repository.addTimeLimitedDomain("facebook.com"))
-        assertFalse("Duplicate with www should fail", repository.addTimeLimitedDomain("www.facebook.com"))
-        assertFalse("Duplicate with https:// and trailing slash should fail", repository.addTimeLimitedDomain("https://facebook.com/"))
-        assertFalse("Duplicate with uppercase should fail", repository.addTimeLimitedDomain("FACEBOOK.COM"))
-        assertFalse("Duplicate with leading/trailing spaces should fail", repository.addTimeLimitedDomain("  facebook.com  "))
+        assertFalse("Duplicate raw domain should fail", repository.addTimeLimitedDomain("customsite.com"))
+        assertFalse("Duplicate with www should fail", repository.addTimeLimitedDomain("www.customsite.com"))
+        assertFalse("Duplicate with https:// and trailing slash should fail", repository.addTimeLimitedDomain("https://customsite.com/"))
+        assertFalse("Duplicate with uppercase should fail", repository.addTimeLimitedDomain("CUSTOMSITE.COM"))
+        assertFalse("Duplicate with leading/trailing spaces should fail", repository.addTimeLimitedDomain("  customsite.com  "))
 
-        // Registered set size remains 1
-        assertEquals(1, repository.getTimeLimitedDomains().size)
+        // Registered set contains the 2 defaults + 1 custom site
+        assertEquals(3, repository.getTimeLimitedDomains().size)
     }
 
     @Test
@@ -167,9 +194,11 @@ class WebsiteTimeLimitTest {
         repository.addTimeLimitedDomain("tiktok.com")
 
         val registered = repository.getTimeLimitedDomains()
-        assertEquals(2, registered.size)
+        assertTrue(registered.contains("facebook.com"))
+        assertTrue(registered.contains("m.facebook.com"))
         assertTrue(registered.contains("youtube.com"))
         assertTrue(registered.contains("tiktok.com"))
+        assertEquals(4, registered.size)
 
         // Verify that SettingsRepository has no removeTimeLimitedDomain method
         // and that standard clearing does not delete permanent time limited domains
@@ -180,16 +209,17 @@ class WebsiteTimeLimitTest {
 
     @Test
     fun testAbilityToAddDomainsSequentiallyAtAnyTime() {
-        assertTrue(repository.getTimeLimitedDomains().isEmpty())
+        val initial = repository.getTimeLimitedDomains()
+        assertEquals(setOf("facebook.com", "m.facebook.com"), initial)
 
         assertTrue(repository.addTimeLimitedDomain("site1.com"))
-        assertEquals(setOf("site1.com"), repository.getTimeLimitedDomains())
+        assertEquals(setOf("facebook.com", "m.facebook.com", "site1.com"), repository.getTimeLimitedDomains())
 
         assertTrue(repository.addTimeLimitedDomain("site2.org"))
-        assertEquals(setOf("site1.com", "site2.org"), repository.getTimeLimitedDomains())
+        assertEquals(setOf("facebook.com", "m.facebook.com", "site1.com", "site2.org"), repository.getTimeLimitedDomains())
 
         assertTrue(repository.addTimeLimitedDomain("site3.net"))
-        assertEquals(setOf("site1.com", "site2.org", "site3.net"), repository.getTimeLimitedDomains())
+        assertEquals(setOf("facebook.com", "m.facebook.com", "site1.com", "site2.org", "site3.net"), repository.getTimeLimitedDomains())
     }
 
     @Test

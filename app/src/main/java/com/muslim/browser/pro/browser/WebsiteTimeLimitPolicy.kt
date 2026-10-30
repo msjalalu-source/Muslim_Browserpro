@@ -13,6 +13,11 @@ object WebsiteTimeLimitPolicy {
     const val DAILY_LIMIT_SECONDS: Long = 20 * 60L // 1200 seconds
 
     /**
+     * Default permanent time-limited domains registered out of the box.
+     */
+    val DEFAULT_DOMAINS: Set<String> = setOf("facebook.com", "m.facebook.com")
+
+    /**
      * Normalizes a domain string before saving and validates domain structure:
      * - Trims whitespace
      * - Lowercases
@@ -82,9 +87,21 @@ object WebsiteTimeLimitPolicy {
      */
     fun findMatchingDomain(url: String, registeredDomains: Collection<String>): String? {
         val host = extractHost(url) ?: return null
+        val cleanHost = host.removePrefix("www.")
+
+        // 1. Exact host match (matches "m.facebook.com" directly before checking parent "facebook.com")
         for (domain in registeredDomains) {
             val d = domain.lowercase(Locale.ROOT).removePrefix("www.")
-            if (d.isNotEmpty() && (host == d || host.endsWith(".$d"))) {
+            if (d.isNotEmpty() && (cleanHost == d || host == d)) {
+                return domain
+            }
+        }
+
+        // 2. Subdomain match: sort descending by length so longer, more specific subdomains match first
+        val sorted = registeredDomains.sortedByDescending { it.length }
+        for (domain in sorted) {
+            val d = domain.lowercase(Locale.ROOT).removePrefix("www.")
+            if (d.isNotEmpty() && host.endsWith(".$d")) {
                 return domain
             }
         }

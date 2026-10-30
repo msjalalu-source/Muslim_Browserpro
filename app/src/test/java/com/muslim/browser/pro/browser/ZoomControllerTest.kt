@@ -213,4 +213,28 @@ class ZoomControllerTest {
         assertFalse(zoomScript.contains("meta[name=\"viewport\"]"))
         assertFalse(zoomScript.contains("width=1280"))
     }
+
+    @Test
+    fun test13_zoomResetPersistence() {
+        val vm = BrowserViewModel(app)
+        // Simulate changing zoom and saving custom default
+        vm.setZoomLevel(175, null)
+        vm.saveAsDefaultZoom(175)
+        assertEquals(175, repository.getDefaultZoomLevel())
+        assertEquals(175, vm.uiState.value.currentZoomLevel)
+
+        // Tap Reset
+        vm.resetZoom(null)
+
+        // All indicators and persistence must be exactly 100
+        assertEquals(100, vm.uiState.value.currentZoomLevel)
+        assertEquals(100, vm.uiState.value.defaultZoomLevel)
+        assertEquals(100, repository.getDefaultZoomLevel())
+
+        // Recreate ViewModel (simulating app restart)
+        val restartedVm = BrowserViewModel(app)
+        assertEquals(100, restartedVm.uiState.value.currentZoomLevel)
+        assertEquals(100, restartedVm.uiState.value.defaultZoomLevel)
+        assertEquals(100, repository.getDefaultZoomLevel())
+    }
 }

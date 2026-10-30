@@ -113,6 +113,16 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun resetZoom(webView: WebView?) {
         setZoomLevel(ZoomController.DEFAULT_ZOOM, webView)
+        repository.setDefaultZoomLevel(ZoomController.DEFAULT_ZOOM)
+        _uiState.update {
+            it.copy(
+                currentZoomLevel = ZoomController.DEFAULT_ZOOM,
+                defaultZoomLevel = ZoomController.DEFAULT_ZOOM
+            )
+        }
+        if (webView != null) {
+            ZoomController.resetZoom(webView)
+        }
     }
 
     fun saveAsDefaultZoom(percent: Int) {
