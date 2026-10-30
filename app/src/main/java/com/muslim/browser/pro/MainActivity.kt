@@ -516,6 +516,24 @@ class MainActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                     super.onPageStarted(view, url, favicon)
                     url?.let { safeUrl: String ->
+                        val decision = NavigationController.evaluate(
+                            url = safeUrl,
+                            customKeywords = viewModel.uiState.value.customKeywords,
+                            searchEngine = viewModel.uiState.value.selectedSearchEngine,
+                            isAdBlockingEnabled = viewModel.uiState.value.isAdBlockingEnabled,
+                            timeLimitedDomains = viewModel.uiState.value.timeLimitedDomains,
+                            domainUsageSeconds = viewModel.uiState.value.timeLimitUsageSeconds
+                        )
+                        if (decision is com.muslim.browser.pro.browser.NavigationDecision.Blocked) {
+                            view?.stopLoading()
+                            viewModel.setBlockedUrl(safeUrl, decision.reason, decision.detail)
+                            return
+                        }
+                        if (decision is com.muslim.browser.pro.browser.NavigationDecision.Redirect && decision.url != safeUrl) {
+                            view?.stopLoading()
+                            view?.loadUrl(decision.url)
+                            return
+                        }
                         viewModel.onPageStarted(safeUrl)
                         DesktopCore.handlePageLifecycle(
                             this@apply,

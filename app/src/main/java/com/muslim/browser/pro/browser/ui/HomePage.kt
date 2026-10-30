@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shield
+import com.muslim.browser.pro.ui.theme.GoogleSansFlexFontFamily
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -220,32 +222,56 @@ fun HomePage(
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // 1. Header: App Name + Subtitle
+        // 1. Header: Complete Logo (Icon + Modernized Wordmark & Subtitle)
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start,
-            modifier = Modifier.fillMaxWidth()
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
         ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(
+                        color = if (colors.isLight) Color(0xFFE8F0FE) else colors.accent.copy(alpha = 0.18f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = "Shield Protection",
+                    tint = colors.accent,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
             Column {
                 Text(
-                    text = "MUSLIM BROWSER",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = "Muslim Browser",
+                    fontFamily = GoogleSansFlexFontFamily,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary,
-                    letterSpacing = 0.5.sp
+                    letterSpacing = 0.sp
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Ultra-Lightweight • Protected Browser",
+                    fontFamily = GoogleSansFlexFontFamily,
                     fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
                     color = colors.textSecondary
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         // 2. Pill-shaped Search Bar (Matching Screenshot)
         Surface(

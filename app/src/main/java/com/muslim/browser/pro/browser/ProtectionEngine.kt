@@ -104,6 +104,14 @@ object ProtectionEngine {
             return SearchEngine.DUCKDUCKGO.buildSearchUrl(q)
         }
 
+        val host = uri.host?.lowercase(Locale.ROOT)
+        if (host == null || !isDuckDuckGoHost(host)) {
+            return url
+        }
+        if (!isDuckDuckGoSearchPath(uri.path)) {
+            return url
+        }
+
         val builder = uri.buildUpon()
             .scheme("https")
             .authority("safe.duckduckgo.com")
@@ -130,6 +138,72 @@ object ProtectionEngine {
         builder.encodedQuery(keptPairs.joinToString("&"))
 
         return builder.build().toString()
+    }
+
+    fun isGoogleSearchPath(path: String?): Boolean {
+        if (path == null) return false
+        val clean = path.lowercase(Locale.ROOT).trimEnd('/')
+        return clean == "/search" || clean.startsWith("/search/") || clean == "/webhp"
+    }
+
+    fun isGoogleSafeSearchUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        return try {
+            val uri = Uri.parse(url)
+            val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return false
+            if (scheme != "http" && scheme != "https") return false
+            val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+            if (!isGoogleHost(host)) return false
+            if (!isGoogleSearchPath(uri.path)) return false
+            val q = uri.getQueryParameter("q")
+            if (q.isNullOrBlank()) return false
+            val safeNames = uri.queryParameterNames.filter { it.equals("safe", ignoreCase = true) }
+            if (safeNames.isEmpty()) return false
+            val allSafeValues = safeNames.flatMap { uri.getQueryParameters(it) }
+            allSafeValues.size == 1 && allSafeValues[0].equals("active", ignoreCase = true)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun buildGoogleStrictSearchUrl(url: String): String {
+        val uri = try { Uri.parse(url) } catch (_: Exception) { null }
+        if (uri == null) {
+            val q = extractSearchEngineQuery(url) ?: ""
+            return SearchEngine.GOOGLE.buildSearchUrl(q)
+        }
+
+        val host = uri.host?.lowercase(Locale.ROOT)
+        if (host == null || !isGoogleHost(host)) {
+            return url
+        }
+
+        val path = uri.path?.lowercase(Locale.ROOT) ?: ""
+        if (!isGoogleSearchPath(path)) {
+            return url
+        }
+
+        val builder = uri.buildUpon()
+            .scheme("https")
+            .clearQuery()
+
+        for (paramName in uri.queryParameterNames) {
+            if (!paramName.equals("safe", ignoreCase = true)) {
+                for (paramValue in uri.getQueryParameters(paramName)) {
+                    builder.appendQueryParameter(paramName, paramValue)
+                }
+            }
+        }
+        builder.appendQueryParameter("safe", "active")
+
+        return builder.build().toString()
+    }
+
+    fun enforceSafeSearch(url: String, searchEngine: SearchEngine): String {
+        return when (searchEngine) {
+            SearchEngine.GOOGLE -> buildGoogleStrictSearchUrl(url)
+            SearchEngine.DUCKDUCKGO -> buildDuckDuckGoStrictSearchUrl(url)
+        }
     }
 
     private val GOOGLE_HOST_REGEX = Regex("^google\\.(com|co\\.[a-z]{2,3}|com\\.[a-z]{2,3}|[a-z]{2,3})$")

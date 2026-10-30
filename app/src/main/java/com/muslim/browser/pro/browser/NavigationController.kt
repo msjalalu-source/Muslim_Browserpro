@@ -70,25 +70,14 @@ object NavigationController {
                         return NavigationDecision.Redirect(safeUrl)
                     }
                     SearchEngine.GOOGLE -> {
-                        val safeParam = parsedUri?.getQueryParameter("safe")
-                        if (safeParam.equals("active", ignoreCase = true)) {
+                        if (ProtectionEngine.isGoogleSafeSearchUrl(trimmed)) {
                             return NavigationDecision.Allowed
                         }
-                        val path = parsedUri?.path?.lowercase(Locale.ROOT) ?: ""
-                        if (path.contains("/search") && parsedUri != null) {
-                            val builder = parsedUri.buildUpon().clearQuery()
-                            for (paramName in parsedUri.queryParameterNames) {
-                                if (!paramName.equals("safe", ignoreCase = true)) {
-                                    for (paramValue in parsedUri.getQueryParameters(paramName)) {
-                                        builder.appendQueryParameter(paramName, paramValue)
-                                    }
-                                }
-                            }
-                            builder.appendQueryParameter("safe", "active")
-                            return NavigationDecision.Redirect(builder.build().toString())
-                        } else {
-                            return NavigationDecision.Redirect(searchEngine.buildSearchUrl(searchEngineQuery))
+                        val safeUrl = ProtectionEngine.buildGoogleStrictSearchUrl(trimmed)
+                        if (safeUrl == trimmed) {
+                            return NavigationDecision.Allowed
                         }
+                        return NavigationDecision.Redirect(safeUrl)
                     }
                 }
             }
