@@ -42,13 +42,23 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import android.graphics.drawable.ColorDrawable
+import android.view.WindowManager
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
+import com.muslim.browser.pro.ui.theme.AppTheme
+import com.muslim.browser.pro.ui.theme.BlackWhiteColors
+import com.muslim.browser.pro.ui.theme.WhiteColors
 import com.muslim.browser.pro.browser.BrowserViewModel
 import com.muslim.browser.pro.browser.DesktopArchitecture
 import com.muslim.browser.pro.browser.DesktopCore
@@ -59,9 +69,11 @@ import com.muslim.browser.pro.browser.NavigationController
 import com.muslim.browser.pro.browser.ProtectionEngine
 import com.muslim.browser.pro.browser.SslSecurityPolicy
 import com.muslim.browser.pro.browser.TabWebViewManager
+import com.muslim.browser.pro.browser.ZoomController
 import com.muslim.browser.pro.browser.ui.BottomNavBar
 import com.muslim.browser.pro.browser.ui.BrowserMenuSheet
 import com.muslim.browser.pro.browser.ui.BrowserWebView
+import com.muslim.browser.pro.browser.ui.ZoomControlPanel
 import com.muslim.browser.pro.browser.ui.DownloadsDialog
 import com.muslim.browser.pro.browser.ui.HistoryDialog
 import com.muslim.browser.pro.browser.ui.HomePage
@@ -98,6 +110,30 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         DesktopCore.migrateSavedArchitecture(this)
 
+        // 1. Configure layout to extend into display cutout (notch/punch-hole)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            @Suppress("DEPRECATION")
+            window.attributes.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+
+        // 2. Enable edge-to-edge window decor fitting
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // 3. Clear translucency flag and ensure system bar backgrounds are drawn transparently
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+
+        // 4. Disable contrast enforcement on Android 10+ (API 29+) to eliminate artificial gray status bar scrims
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
         tabWebViewManager = TabWebViewManager(
             context = this,
             webViewFactory = { tabId -> createConfiguredWebView(tabId) },
@@ -121,6 +157,21 @@ class MainActivity : ComponentActivity() {
             val uiState by viewModel.uiState.collectAsState()
 
             MyApplicationTheme(appTheme = uiState.appTheme) {
+                val currentThemeColors = when (uiState.appTheme) {
+                    AppTheme.WHITE -> WhiteColors
+                    AppTheme.BLACK_WHITE -> BlackWhiteColors
+                }
+                val resolvedBarColor = if (uiState.isHomePage) currentThemeColors.background else currentThemeColors.surface
+
+                LaunchedEffect(uiState.appTheme, uiState.isHomePage) {
+                    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.isAppearanceLightStatusBars = currentThemeColors.isLight
+                    insetsController.isAppearanceLightNavigationBars = currentThemeColors.isLight
+
+                    window.statusBarColor = android.graphics.Color.TRANSPARENT
+                    window.setBackgroundDrawable(ColorDrawable(resolvedBarColor.toArgb()))
+                }
+
                 val currentWebView = tabWebViewManager.getOrCreateWebView(
                     tabId = uiState.currentTabId,
                     url = uiState.currentUrl
@@ -129,6 +180,8 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(uiState.currentTabId) {
                     tabWebViewManager.pauseAll(exceptTabId = uiState.currentTabId)
                     tabWebViewManager.resumeTab(uiState.currentTabId)
+                    val tabZoom = uiState.currentZoomLevel
+                    ZoomController.applyZoom(currentWebView, tabZoom)
                 }
 
                 LaunchedEffect(Unit) {
@@ -147,6 +200,7 @@ class MainActivity : ComponentActivity() {
 
                 BackHandler(enabled = true) {
                     when {
+                        uiState.isZoomPanelOpen -> viewModel.closeZoomPanel()
                         uiState.isMenuOpen -> viewModel.closeMenu()
                         uiState.isTabsDialogOpen -> viewModel.closeTabsDialog()
                         uiState.isDownloadsOpen -> viewModel.closeDownloads()
@@ -158,6 +212,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     bottomBar = {
                         BottomNavBar(
                             canGoBack = uiState.canGoBack,
@@ -274,8 +329,31 @@ class MainActivity : ComponentActivity() {
                                         }
                                     )
                                 },
+                                onOpenZoom = { viewModel.openZoomPanel() },
                                 onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
                                 onAddTimeLimitedDomain = { domain -> viewModel.addTimeLimitedDomain(domain) }
+                            )
+                        }
+
+                        if (uiState.isZoomPanelOpen) {
+                            ZoomControlPanel(
+                                currentZoom = uiState.currentZoomLevel,
+                                defaultZoom = uiState.defaultZoomLevel,
+                                onZoomChange = { newZoom ->
+                                    viewModel.setZoomLevel(newZoom, currentWebView)
+                                },
+                                onReset = {
+                                    viewModel.resetZoom(currentWebView)
+                                },
+                                onSaveDefault = {
+                                    viewModel.saveAsDefaultZoom(uiState.currentZoomLevel)
+                                },
+                                onClose = {
+                                    viewModel.closeZoomPanel()
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
 
@@ -367,6 +445,7 @@ class MainActivity : ComponentActivity() {
                 viewModel.uiState.value.desktopArchitecture,
                 true
             )
+            ZoomController.attachFocalTracker(this)
 
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
@@ -449,8 +528,11 @@ class MainActivity : ComponentActivity() {
                     super.onPageCommitVisible(view, url)
                     view?.settings?.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                     val arch = viewModel.uiState.value.desktopArchitecture
+                    val tabZoom = viewModel.uiState.value.currentZoomLevel
                     view?.let {
                         DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                        ZoomController.installTracker(it)
+                        ZoomController.applyZoom(it, tabZoom)
                         if (viewModel.uiState.value.customKeywords.isNotEmpty()) {
                             it.evaluateJavascript(ProtectionEngine.buildKeywordBlockingScript(viewModel.uiState.value.customKeywords), null)
                         }
@@ -461,8 +543,11 @@ class MainActivity : ComponentActivity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     val arch = viewModel.uiState.value.desktopArchitecture
+                    val tabZoom = viewModel.uiState.value.currentZoomLevel
                     view?.let {
                         DesktopCore.handlePageLifecycle(it, arch, url ?: "")
+                        ZoomController.installTracker(it)
+                        ZoomController.applyZoom(it, tabZoom)
                         if (viewModel.uiState.value.customKeywords.isNotEmpty()) {
                             it.evaluateJavascript(ProtectionEngine.buildKeywordBlockingScript(viewModel.uiState.value.customKeywords), null)
                         }

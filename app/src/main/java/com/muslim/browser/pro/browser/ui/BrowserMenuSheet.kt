@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -68,6 +69,7 @@ fun BrowserMenuSheet(
     onToggleDesktopMode4: (Boolean) -> Unit = {},
     onToggleWindows10Touch: (Boolean) -> Unit = {},
     onTranslateToBengali: () -> Unit,
+    onOpenZoom: () -> Unit = {},
     onSelectTheme: (AppTheme) -> Unit,
     onAddTimeLimitedDomain: (String) -> Boolean = { false },
     currentWebView: android.webkit.WebView? = null,
@@ -208,6 +210,21 @@ fun BrowserMenuSheet(
                         }
                     } else null,
                     modifier = Modifier.testTag("menu_item_translate_bengali")
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Page Zoom (Fulguris-style Live Zoom Control)
+                MenuRow(
+                    title = "Zoom",
+                    icon = Icons.Default.ZoomIn,
+                    contentDescription = "Page Zoom",
+                    onClick = {
+                        onDismiss()
+                        onOpenZoom()
+                    },
+                    trailingContent = { MenuBadge(text = "${uiState.currentZoomLevel}%") },
+                    modifier = Modifier.testTag("menu_item_zoom")
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

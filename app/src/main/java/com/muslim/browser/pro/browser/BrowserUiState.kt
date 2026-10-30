@@ -33,7 +33,10 @@ data class BrowserUiState(
     val sslWarningState: SslWarningState? = null,
     val isPageContentVisible: Boolean = true,
     val timeLimitedDomains: Set<String> = emptySet(),
-    val timeLimitUsageSeconds: Map<String, Long> = emptyMap()
+    val timeLimitUsageSeconds: Map<String, Long> = emptyMap(),
+    val defaultZoomLevel: Int = 100,
+    val currentZoomLevel: Int = 100,
+    val isZoomPanelOpen: Boolean = false
 ) {
     val isWindows10TouchEnabled: Boolean
         get() = desktopArchitecture.isWindows10Touch()

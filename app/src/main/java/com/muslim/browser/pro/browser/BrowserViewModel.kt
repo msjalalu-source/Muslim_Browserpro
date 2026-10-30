@@ -72,16 +72,52 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             selectedSearchEngine = repository.getSearchEngine(),
             isPageContentVisible = true,
             timeLimitedDomains = repository.getTimeLimitedDomains(),
-            timeLimitUsageSeconds = repository.getDomainUsageSeconds()
+            timeLimitUsageSeconds = repository.getDomainUsageSeconds(),
+            defaultZoomLevel = repository.getDefaultZoomLevel(),
+            currentZoomLevel = repository.getDefaultZoomLevel()
         )
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    private val tabZoomMap = mutableMapOf<String, Int>().apply {
+        put(initialTab.id, repository.getDefaultZoomLevel())
+    }
 
     private val _blockedKeywordToast = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val blockedKeywordToast: SharedFlow<String> = _blockedKeywordToast.asSharedFlow()
 
     fun openMenu() { _uiState.update { it.copy(isMenuOpen = true) } }
     fun closeMenu() { _uiState.update { it.copy(isMenuOpen = false) } }
+
+    fun openZoomPanel() { _uiState.update { it.copy(isZoomPanelOpen = true, isMenuOpen = false) } }
+    fun closeZoomPanel() { _uiState.update { it.copy(isZoomPanelOpen = false) } }
+
+    fun setZoomLevel(newPercent: Int, webView: WebView?) {
+        val clamped = newPercent.coerceIn(ZoomController.MIN_ZOOM, ZoomController.MAX_ZOOM)
+        tabZoomMap[_uiState.value.currentTabId] = clamped
+        _uiState.update { it.copy(currentZoomLevel = clamped) }
+        if (webView != null) {
+            ZoomController.applyZoom(webView, clamped)
+        }
+    }
+
+    fun zoomIn(webView: WebView?) {
+        setZoomLevel(_uiState.value.currentZoomLevel + ZoomController.STEP_ZOOM, webView)
+    }
+
+    fun zoomOut(webView: WebView?) {
+        setZoomLevel(_uiState.value.currentZoomLevel - ZoomController.STEP_ZOOM, webView)
+    }
+
+    fun resetZoom(webView: WebView?) {
+        setZoomLevel(ZoomController.DEFAULT_ZOOM, webView)
+    }
+
+    fun saveAsDefaultZoom(percent: Int) {
+        val clamped = percent.coerceIn(ZoomController.MIN_ZOOM, ZoomController.MAX_ZOOM)
+        repository.setDefaultZoomLevel(clamped)
+        _uiState.update { it.copy(defaultZoomLevel = clamped) }
+    }
 
     fun openTabsDialog() { _uiState.update { it.copy(isTabsDialogOpen = true) } }
     fun closeTabsDialog() { _uiState.update { it.copy(isTabsDialogOpen = false) } }
@@ -221,6 +257,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             canGoBack = false,
             canGoForward = false
         )
+        val defaultZoom = _uiState.value.defaultZoomLevel
+        tabZoomMap[newTab.id] = defaultZoom
         _uiState.update { state ->
             state.copy(
                 tabs = state.tabs + newTab,
@@ -231,7 +269,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isLoading = url.isNotBlank(),
                 loadingProgress = if (url.isNotBlank()) 10 else 0,
                 searchInput = url,
-                isTabsDialogOpen = false
+                isTabsDialogOpen = false,
+                currentZoomLevel = defaultZoom
             )
         }
         updateActiveTimeTrackingForUrl(url)
@@ -244,12 +283,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             goHome()
             return
         }
+        tabZoomMap.remove(tabId)
         val remaining = currentTabs.filterNot { it.id == tabId }
         val nextTab = if (tabId == _uiState.value.currentTabId) {
             remaining.last()
         } else {
             remaining.first { it.id == _uiState.value.currentTabId }
         }
+        val nextZoom = tabZoomMap[nextTab.id] ?: _uiState.value.defaultZoomLevel
         _uiState.update { state ->
             state.copy(
                 tabs = remaining,
@@ -259,7 +300,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 isHomePage = nextTab.url.isBlank(),
                 canGoBack = nextTab.canGoBack,
                 canGoForward = nextTab.canGoForward,
-                searchInput = nextTab.url
+                searchInput = nextTab.url,
+                currentZoomLevel = nextZoom
             )
         }
         updateActiveTimeTrackingForUrl(nextTab.url)
@@ -267,6 +309,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectTab(tabId: String) {
         val target = _uiState.value.tabs.firstOrNull { it.id == tabId } ?: return
+        val zoom = tabZoomMap[target.id] ?: _uiState.value.defaultZoomLevel
         _uiState.update { state ->
             state.copy(
                 currentTabId = target.id,
@@ -276,7 +319,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 canGoBack = target.canGoBack,
                 canGoForward = target.canGoForward,
                 searchInput = target.url,
-                isTabsDialogOpen = false
+                isTabsDialogOpen = false,
+                currentZoomLevel = zoom
             )
         }
         updateActiveTimeTrackingForUrl(target.url)
@@ -410,6 +454,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
      * ensuring no stale navigation bundles or form snapshots remain in memory.
      */
     fun resetAllTabsToCleanHome() {
+        val defaultZoom = _uiState.value.defaultZoomLevel
         val initialTab = BrowserTab(
             id = UUID.randomUUID().toString(),
             url = "",
@@ -417,6 +462,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             canGoBack = false,
             canGoForward = false
         )
+        tabZoomMap.clear()
+        tabZoomMap[initialTab.id] = defaultZoom
         _uiState.update { state ->
             state.copy(
                 tabs = listOf(initialTab),
@@ -432,7 +479,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 blockedInfo = BlockedInfo(),
                 searchInput = "",
                 browsingHistory = emptyList(),
-                isTabsDialogOpen = false
+                isTabsDialogOpen = false,
+                currentZoomLevel = defaultZoom,
+                isZoomPanelOpen = false
             )
         }
     }

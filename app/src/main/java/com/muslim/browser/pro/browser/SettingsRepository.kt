@@ -38,6 +38,8 @@ class SettingsRepository(private val context: Context) {
         const val KEY_TIME_LIMIT_DOMAINS = "key_time_limit_domains"
         const val KEY_TIME_LIMIT_DATE = "key_time_limit_date"
         const val KEY_TIME_LIMIT_USAGE = "key_time_limit_usage"
+        const val KEY_DEFAULT_ZOOM_LEVEL = "key_default_zoom_level"
+        const val DEFAULT_ZOOM_LEVEL = 100
 
         val DEFAULT_PROTECTED_KEYWORDS = listOf(
             "Aashiq Banaya",
@@ -443,5 +445,14 @@ class SettingsRepository(private val context: Context) {
             .putString(KEY_TIME_LIMIT_DATE, today)
             .putString(KEY_TIME_LIMIT_USAGE, jsonObj.toString())
             .apply()
+    }
+
+    fun getDefaultZoomLevel(): Int {
+        return prefs.getInt(KEY_DEFAULT_ZOOM_LEVEL, DEFAULT_ZOOM_LEVEL)
+    }
+
+    fun setDefaultZoomLevel(zoom: Int) {
+        val clamped = zoom.coerceIn(50, 300)
+        prefs.edit().putInt(KEY_DEFAULT_ZOOM_LEVEL, clamped).apply()
     }
 }
