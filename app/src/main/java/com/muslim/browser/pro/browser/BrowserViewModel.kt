@@ -95,7 +95,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun setZoomLevel(newPercent: Int, webView: WebView?) {
         val clamped = newPercent.coerceIn(ZoomController.MIN_ZOOM, ZoomController.MAX_ZOOM)
         tabZoomMap[_uiState.value.currentTabId] = clamped
-        _uiState.update { it.copy(currentZoomLevel = clamped) }
+        if (_uiState.value.currentZoomLevel != clamped) {
+            _uiState.update { it.copy(currentZoomLevel = clamped) }
+        }
         if (webView != null) {
             ZoomController.applyZoom(webView, clamped)
         }

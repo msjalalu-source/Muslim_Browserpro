@@ -1,5 +1,7 @@
 package com.muslim.browser.pro.browser
 
+import android.os.Handler
+import android.os.Looper
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.webkit.WebView
@@ -11,6 +13,7 @@ import java.util.WeakHashMap
  *
  * Designed to preserve content under the user's cursor or touch position during Zoom In and Zoom Out,
  * completely independent of Desktop Width and viewport configurations.
+ * Optimized with asynchronous frame-collapsing to eliminate lag and IPC queue congestion during slider dragging.
  */
 object ZoomController {
 
@@ -30,6 +33,10 @@ object ZoomController {
     )
 
     private val focalMap = WeakHashMap<WebView, FocalPoint>()
+    private val pendingTargetZoom = WeakHashMap<WebView, Int>()
+    private val inFlightZoom = WeakHashMap<WebView, Boolean>()
+    private val lastDispatchedZoom = WeakHashMap<WebView, Int>()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
      * In-page tracking script that captures real-time DOM cursor and touch positions.
@@ -140,7 +147,6 @@ object ZoomController {
      * and in-page JavaScript event listeners.
      */
     fun attachFocalTracker(webView: WebView) {
-        // Track mouse hover and scroll events on Android view level
         webView.setOnGenericMotionListener { _, event ->
             val isMouse = (event.source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE) ||
                     (event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE)
@@ -156,7 +162,6 @@ object ZoomController {
             false
         }
 
-        // Track touch events on Android view level
         webView.setOnTouchListener { _, event ->
             val isMouse = (event.source and InputDevice.SOURCE_MOUSE == InputDevice.SOURCE_MOUSE) ||
                     (event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE)
@@ -172,8 +177,12 @@ object ZoomController {
 
     /**
      * Injects the in-page tracker script to ensure client-side DOM events are tracked as well.
+     * Also resets the dispatched cache so the new page receives its initial zoom immediately.
      */
     fun installTracker(webView: WebView) {
+        lastDispatchedZoom.remove(webView)
+        inFlightZoom.remove(webView)
+        pendingTargetZoom.remove(webView)
         try {
             webView.evaluateJavascript(TRACKER_SCRIPT, null)
         } catch (_: Throwable) {}
@@ -181,19 +190,65 @@ object ZoomController {
 
     /**
      * Applies the target zoom percentage to the WebView with focal point preservation.
+     * Employs real-time queue collapsing so subsequent slider movements cancel/supersede
+     * older pending zoom evaluations without backlog or frame stutter.
      */
     fun applyZoom(webView: WebView, targetPercent: Int) {
+        val clamped = targetPercent.coerceIn(MIN_ZOOM, MAX_ZOOM)
+
+        // If an evaluation is already in flight in Chromium, buffer the newest target.
+        // Intermediate obsolete steps are superseded.
+        if (inFlightZoom[webView] == true) {
+            pendingTargetZoom[webView] = clamped
+            return
+        }
+
+        // If already rendered at this exact zoom level and no pending request, skip redundant work.
+        if (lastDispatchedZoom[webView] == clamped && pendingTargetZoom[webView] == null) {
+            return
+        }
+
+        executeZoom(webView, clamped)
+    }
+
+    private fun executeZoom(webView: WebView, targetPercent: Int) {
         val lastPoint = focalMap[webView]
         val script = buildZoomScript(targetPercent, lastPoint?.x, lastPoint?.y)
+        inFlightZoom[webView] = true
+        lastDispatchedZoom[webView] = targetPercent
+
+        var completed = false
+        val finishCallback = {
+            if (!completed) {
+                completed = true
+                inFlightZoom[webView] = false
+                val pending = pendingTargetZoom.remove(webView)
+                if (pending != null && pending != lastDispatchedZoom[webView]) {
+                    executeZoom(webView, pending)
+                }
+            }
+        }
+
+        // Watchdog timeout to prevent getting permanently stuck if WebView evaluation doesn't return
+        val watchdog = Runnable { finishCallback() }
+        mainHandler.postDelayed(watchdog, 150)
+
         try {
-            webView.evaluateJavascript(script, null)
-        } catch (_: Throwable) {}
+            webView.evaluateJavascript(script) {
+                mainHandler.removeCallbacks(watchdog)
+                finishCallback()
+            }
+        } catch (_: Throwable) {
+            mainHandler.removeCallbacks(watchdog)
+            inFlightZoom[webView] = false
+        }
     }
 
     /**
      * Resets the zoom of the given WebView back to 100%.
      */
     fun resetZoom(webView: WebView) {
+        pendingTargetZoom.remove(webView)
         applyZoom(webView, DEFAULT_ZOOM)
     }
 

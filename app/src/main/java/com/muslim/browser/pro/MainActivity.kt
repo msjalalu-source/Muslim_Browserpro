@@ -39,9 +39,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.remember
 import android.graphics.drawable.ColorDrawable
 import android.view.WindowManager
 import androidx.compose.foundation.layout.WindowInsets
@@ -337,25 +340,42 @@ class MainActivity : ComponentActivity() {
                         }
 
                         if (uiState.isZoomPanelOpen) {
-                            ZoomControlPanel(
-                                currentZoom = uiState.currentZoomLevel,
-                                defaultZoom = uiState.defaultZoomLevel,
-                                onZoomChange = { newZoom ->
-                                    viewModel.setZoomLevel(newZoom, currentWebView)
-                                },
-                                onReset = {
-                                    viewModel.resetZoom(currentWebView)
-                                },
-                                onSaveDefault = {
-                                    viewModel.saveAsDefaultZoom(uiState.currentZoomLevel)
-                                },
-                                onClose = {
-                                    viewModel.closeZoomPanel()
-                                },
+                            Box(
                                 modifier = Modifier
-                                    .align(Alignment.BottomCenter)
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                            )
+                                    .fillMaxSize()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        viewModel.closeZoomPanel()
+                                    }
+                            ) {
+                                ZoomControlPanel(
+                                    currentZoom = uiState.currentZoomLevel,
+                                    defaultZoom = uiState.defaultZoomLevel,
+                                    onZoomChange = { newZoom ->
+                                        viewModel.setZoomLevel(newZoom, currentWebView)
+                                    },
+                                    onReset = {
+                                        viewModel.resetZoom(currentWebView)
+                                    },
+                                    onSaveDefault = {
+                                        viewModel.saveAsDefaultZoom(uiState.currentZoomLevel)
+                                    },
+                                    onClose = {
+                                        viewModel.closeZoomPanel()
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            // Consume clicks on the zoom panel itself
+                                        }
+                                )
+                            }
                         }
 
                         if (uiState.isTabsDialogOpen) {

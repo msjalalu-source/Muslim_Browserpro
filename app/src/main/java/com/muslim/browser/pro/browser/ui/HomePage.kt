@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +36,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shield
 import com.muslim.browser.pro.ui.theme.GoogleSansFlexFontFamily
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -213,65 +213,49 @@ fun HomePage(
     var newSiteName by remember { mutableStateOf("") }
     var newSiteUrl by remember { mutableStateOf("") }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(colors.background)
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.displayCutout.only(WindowInsetsSides.Top)))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(28.dp))
+        val topOffset = maxHeight * 0.20f
 
-        // 1. Header: Complete Logo (Icon + Modernized Wordmark & Subtitle)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .background(
-                        color = if (colors.isLight) Color(0xFFE8F0FE) else colors.accent.copy(alpha = 0.18f),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
+            Spacer(modifier = Modifier.height(topOffset))
+
+            // 1. Header: Centered App Title & Subtitle
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.Shield,
-                    contentDescription = "Shield Protection",
-                    tint = colors.accent,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column {
                 Text(
                     text = "Muslim Browser",
                     fontFamily = GoogleSansFlexFontFamily,
-                    fontSize = 21.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textPrimary,
-                    letterSpacing = 0.sp
+                    letterSpacing = 0.sp,
+                    textAlign = TextAlign.Center
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = "Ultra-Lightweight • Protected Browser",
                     fontFamily = GoogleSansFlexFontFamily,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Normal,
-                    color = colors.textSecondary
+                    color = colors.textSecondary,
+                    textAlign = TextAlign.Center
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
         // 2. Pill-shaped Search Bar (Matching Screenshot)
         Surface(
@@ -426,23 +410,9 @@ fun HomePage(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // 3. Section Title: FAVOURITE WEBSITES
-        Text(
-            text = "FAVOURITE WEBSITES",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color = colors.textSecondary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 4. 4-Column Grid of Favorite Sites & Add Tile
+        // 3. 4-Column Grid of Favorite Sites & Add Tile
         val allItems = favoriteSites
         val rows = allItems.chunked(4)
 
@@ -514,6 +484,7 @@ fun HomePage(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
     }
 
     // Add Website Dialog
