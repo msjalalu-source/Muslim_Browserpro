@@ -52,7 +52,7 @@ fun BottomNavBar(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(colors.surface.copy(alpha = 0.95f))
+            .background(if (colors.isLight) colors.surface.copy(alpha = 0.95f) else colors.surface)
             .windowInsetsPadding(WindowInsets.navigationBars)
     ) {
         HorizontalDivider(

@@ -28,12 +28,12 @@ class LegacyThemeMigrationTest {
     }
 
     @Test
-    fun testDefaultThemeIsBlackAndWhite() {
+    fun testDefaultThemeIsBlack() {
         val repo = SettingsRepository(context)
-        assertEquals(AppTheme.BLACK_WHITE, repo.getAppTheme())
+        assertEquals(AppTheme.BLACK, repo.getAppTheme())
 
         val uiState = BrowserUiState()
-        assertEquals(AppTheme.BLACK_WHITE, uiState.appTheme)
+        assertEquals(AppTheme.BLACK, uiState.appTheme)
     }
 
     @Test
@@ -46,12 +46,22 @@ class LegacyThemeMigrationTest {
     }
 
     @Test
-    fun testExistingSavedBlackWhiteThemeIsPreserved() {
+    fun testExistingSavedBlackWhiteThemeMigratesToBlack() {
         val prefs = context.getSharedPreferences(MuslimBrowserApp.PREFS_NAME, Context.MODE_PRIVATE)
+        // Previously saved "BLACK_WHITE" preference migrates safely to Black theme
         prefs.edit().putString(MuslimBrowserApp.KEY_APP_THEME, "BLACK_WHITE").commit()
 
         val repo = SettingsRepository(context)
-        assertEquals(AppTheme.BLACK_WHITE, repo.getAppTheme())
+        assertEquals(AppTheme.BLACK, repo.getAppTheme())
+    }
+
+    @Test
+    fun testExistingSavedBlackThemeIsPreserved() {
+        val prefs = context.getSharedPreferences(MuslimBrowserApp.PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(MuslimBrowserApp.KEY_APP_THEME, "BLACK").commit()
+
+        val repo = SettingsRepository(context)
+        assertEquals(AppTheme.BLACK, repo.getAppTheme())
     }
 
     @Test
@@ -61,11 +71,11 @@ class LegacyThemeMigrationTest {
         prefs.edit().putString(MuslimBrowserApp.KEY_APP_THEME, "FORCE_DARK_ON").commit()
 
         val repo = SettingsRepository(context)
-        assertEquals(AppTheme.BLACK_WHITE, repo.getAppTheme())
+        assertEquals(AppTheme.BLACK, repo.getAppTheme())
 
         // Completely arbitrary invalid value
         prefs.edit().putString(MuslimBrowserApp.KEY_APP_THEME, "SOME_UNKNOWN_VALUE").commit()
-        assertEquals(AppTheme.BLACK_WHITE, repo.getAppTheme())
+        assertEquals(AppTheme.BLACK, repo.getAppTheme())
     }
 
     @Test
@@ -76,9 +86,9 @@ class LegacyThemeMigrationTest {
         val repo2 = SettingsRepository(context)
         assertEquals(AppTheme.WHITE, repo2.getAppTheme())
 
-        repo2.setAppTheme(AppTheme.BLACK_WHITE)
+        repo2.setAppTheme(AppTheme.BLACK)
         val repo3 = SettingsRepository(context)
-        assertEquals(AppTheme.BLACK_WHITE, repo3.getAppTheme())
+        assertEquals(AppTheme.BLACK, repo3.getAppTheme())
     }
 
     @Test
@@ -86,10 +96,11 @@ class LegacyThemeMigrationTest {
         val themes = AppTheme.entries.map { it.name }
         assertEquals(2, themes.size)
         assertTrue(themes.contains("WHITE"))
-        assertTrue(themes.contains("BLACK_WHITE"))
+        assertTrue(themes.contains("BLACK"))
         assertFalse(themes.contains("FORCE_DARK_ON"))
 
         assertEquals("White", AppTheme.WHITE.displayName)
-        assertEquals("Black & White", AppTheme.BLACK_WHITE.displayName)
+        assertEquals("Black", AppTheme.BLACK.displayName)
+        assertEquals(AppTheme.BLACK, AppTheme.BLACK_WHITE)
     }
 }

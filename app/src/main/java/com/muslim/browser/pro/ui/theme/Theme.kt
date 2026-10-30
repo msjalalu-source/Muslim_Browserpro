@@ -12,7 +12,11 @@ import androidx.compose.ui.graphics.Color
 
 enum class AppTheme(val displayName: String) {
     WHITE("White"),
-    BLACK_WHITE("Black & White")
+    BLACK("Black");
+
+    companion object {
+        val BLACK_WHITE: AppTheme get() = BLACK
+    }
 }
 
 data class AppColors(
@@ -27,7 +31,8 @@ data class AppColors(
     val buttonBackground: Color,
     val buttonText: Color,
     val isLight: Boolean,
-    val isMonochrome: Boolean
+    val isMonochrome: Boolean,
+    val disabledText: Color = Color(0xFF757575)
 )
 
 val WhiteColors = AppColors(
@@ -42,49 +47,64 @@ val WhiteColors = AppColors(
     buttonBackground = Color(0xFF1A73E8),
     buttonText = Color(0xFFFFFFFF),
     isLight = true,
-    isMonochrome = false
+    isMonochrome = false,
+    disabledText = Color(0xFF757575)
 )
 
-val BlackWhiteColors = AppColors(
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    surfaceVariant = Color(0xFF2D2D2D),
-    textPrimary = Color(0xFFE8EAED),
-    textSecondary = Color(0xFF9AA0A6),
-    border = Color(0xFF3C4043),
+val BlackColors = AppColors(
+    background = Color(0xFF000000),
+    surface = Color(0xFF000000),
+    surfaceVariant = Color(0xFF1E1E1E),
+    textPrimary = Color(0xFFFFFFFF),
+    textSecondary = Color(0xFFBDBDBD),
+    border = Color(0xFF333333),
     accent = Color(0xFF8AB4F8),
-    iconTint = Color(0xFF9AA0A6),
+    iconTint = Color(0xFFBDBDBD),
     buttonBackground = Color(0xFF8AB4F8),
-    buttonText = Color(0xFF202124),
+    buttonText = Color(0xFF000000),
     isLight = false,
-    isMonochrome = true
+    isMonochrome = true,
+    disabledText = Color(0xFF757575)
 )
 
-val LocalAppColors: ProvidableCompositionLocal<AppColors> = staticCompositionLocalOf { BlackWhiteColors }
+val BlackWhiteColors: AppColors get() = BlackColors
+
+val LocalAppColors: ProvidableCompositionLocal<AppColors> = staticCompositionLocalOf { BlackColors }
 
 @Composable
 fun MyApplicationTheme(
-    appTheme: AppTheme = AppTheme.BLACK_WHITE,
+    appTheme: AppTheme = AppTheme.BLACK,
     content: @Composable () -> Unit
 ) {
     val colors = when (appTheme) {
         AppTheme.WHITE -> WhiteColors
-        AppTheme.BLACK_WHITE -> BlackWhiteColors
+        AppTheme.BLACK -> BlackColors
     }
 
     val m3Scheme: ColorScheme = if (colors.isLight) {
         lightColorScheme(
             primary = colors.accent,
+            onPrimary = Color.White,
             background = colors.background,
+            onBackground = colors.textPrimary,
             surface = colors.surface,
-            surfaceVariant = colors.surfaceVariant
+            onSurface = colors.textPrimary,
+            surfaceVariant = colors.surfaceVariant,
+            onSurfaceVariant = colors.textSecondary,
+            outline = colors.border
         )
     } else {
         darkColorScheme(
             primary = colors.accent,
+            onPrimary = Color.Black,
             background = colors.background,
+            onBackground = colors.textPrimary,
             surface = colors.surface,
-            surfaceVariant = colors.surfaceVariant
+            onSurface = colors.textPrimary,
+            surfaceVariant = colors.surfaceVariant,
+            onSurfaceVariant = colors.textSecondary,
+            outline = colors.border,
+            surfaceTint = Color.Transparent
         )
     }
 

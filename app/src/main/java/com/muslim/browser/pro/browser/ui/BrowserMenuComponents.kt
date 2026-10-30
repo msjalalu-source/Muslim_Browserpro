@@ -396,7 +396,7 @@ fun ThemeSelectionDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(AppTheme.WHITE, AppTheme.BLACK_WHITE).forEach { theme ->
+                listOf(AppTheme.WHITE, AppTheme.BLACK).forEach { theme ->
                     val isSelected = currentTheme == theme
                     Surface(
                         onClick = {

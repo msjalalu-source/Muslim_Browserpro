@@ -57,6 +57,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.muslim.browser.pro.ui.theme.AppTheme
+import com.muslim.browser.pro.ui.theme.BlackColors
 import com.muslim.browser.pro.ui.theme.BlackWhiteColors
 import com.muslim.browser.pro.ui.theme.WhiteColors
 import com.muslim.browser.pro.browser.BrowserViewModel
@@ -159,7 +160,7 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme(appTheme = uiState.appTheme) {
                 val currentThemeColors = when (uiState.appTheme) {
                     AppTheme.WHITE -> WhiteColors
-                    AppTheme.BLACK_WHITE -> BlackWhiteColors
+                    AppTheme.BLACK -> BlackColors
                 }
                 val resolvedBarColor = if (uiState.isHomePage) currentThemeColors.background else currentThemeColors.surface
 

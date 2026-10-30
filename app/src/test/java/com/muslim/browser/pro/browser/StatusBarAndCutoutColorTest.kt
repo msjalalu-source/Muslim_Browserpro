@@ -74,10 +74,14 @@ class StatusBarAndCutoutColorTest {
         assertEquals(androidx.compose.ui.graphics.Color(0xFFFFFFFF), WhiteColors.surface)
         assertEquals(androidx.compose.ui.graphics.Color(0xFFF8F9FA), WhiteColors.background)
 
-        // Black & White Theme: dark status bar icons (light text/icons), dark surfaces
+        // Pure Black Theme: dark status bar icons (light text/icons), pure black surfaces (#000000)
         assertFalse(BlackWhiteColors.isLight)
-        assertEquals(androidx.compose.ui.graphics.Color(0xFF1E1E1E), BlackWhiteColors.surface)
-        assertEquals(androidx.compose.ui.graphics.Color(0xFF121212), BlackWhiteColors.background)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF000000), BlackWhiteColors.surface)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF000000), BlackWhiteColors.background)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFFFFFFF), BlackWhiteColors.textPrimary)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFBDBDBD), BlackWhiteColors.textSecondary)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF333333), BlackWhiteColors.border)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF8AB4F8), BlackWhiteColors.accent)
     }
 
     @Test
@@ -92,9 +96,9 @@ class StatusBarAndCutoutColorTest {
         activity.viewModel.setAppTheme(AppTheme.WHITE)
         assertEquals(AppTheme.WHITE, activity.viewModel.uiState.value.appTheme)
 
-        // Switch to Black & White theme
-        activity.viewModel.setAppTheme(AppTheme.BLACK_WHITE)
-        assertEquals(AppTheme.BLACK_WHITE, activity.viewModel.uiState.value.appTheme)
+        // Switch to Black theme
+        activity.viewModel.setAppTheme(AppTheme.BLACK)
+        assertEquals(AppTheme.BLACK, activity.viewModel.uiState.value.appTheme)
         controller.destroy()
     }
 }

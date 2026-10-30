@@ -28,7 +28,7 @@ data class BrowserUiState(
     val desktopArchitecture: DesktopArchitecture = DesktopArchitecture.NONE,
     val isPageTranslated: Boolean = false,
     val isTranslating: Boolean = false,
-    val appTheme: AppTheme = AppTheme.BLACK_WHITE,
+    val appTheme: AppTheme = AppTheme.BLACK,
     val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,
     val isPageContentVisible: Boolean = true,
