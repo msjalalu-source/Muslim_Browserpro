@@ -680,6 +680,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         trackingJob?.cancel()
         trackingJob = viewModelScope.launch(Dispatchers.Main) {
             var tickCount = 0
+            var baseUsageSec = repository.getDomainUsageSeconds()[domain] ?: 0L
             while (isActive) {
                 delay(1000L)
                 tickCount++
@@ -691,14 +692,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                     repository.saveDomainUsage(emptyMap())
                     _uiState.update { it.copy(timeLimitUsageSeconds = emptyMap()) }
                     activeStartTimeRealtime = SystemClock.elapsedRealtime()
+                    baseUsageSec = 0L
                 } else if (lastPersistedDate.isBlank()) {
                     lastPersistedDate = today
                 }
 
                 val now = SystemClock.elapsedRealtime()
                 val sessionElapsed = ((now - activeStartTimeRealtime) / 1000L).coerceAtLeast(0L)
-                val base = repository.getDomainUsageSeconds()[domain] ?: 0L
-                val totalUsed = (base + sessionElapsed).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
+                val totalUsed = (baseUsageSec + sessionElapsed).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
 
                 // Update UI state live
                 val liveMap = _uiState.value.timeLimitUsageSeconds.toMutableMap()
@@ -721,6 +722,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 // Periodically persist (every 15s) to avoid per-second disk writes
                 if (tickCount % 15 == 0) {
                     commitElapsedSeconds(domain, sessionElapsed)
+                    baseUsageSec = (baseUsageSec + sessionElapsed).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
                     activeStartTimeRealtime = SystemClock.elapsedRealtime()
                 }
             }

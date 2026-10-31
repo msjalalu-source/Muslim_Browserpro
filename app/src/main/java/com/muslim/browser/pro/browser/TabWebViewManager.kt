@@ -17,12 +17,19 @@ class TabWebViewManager(
     val architectureProvider: () -> DesktopArchitecture = { DesktopArchitecture.NONE }
 ) {
     private val liveWebViews = ConcurrentHashMap<String, WebView>()
+    private val tabLastAccessed = ConcurrentHashMap<String, Long>()
 
     companion object {
         const val MAX_LIVE_WEBVIEWS = 5
     }
 
-    fun getLiveWebView(tabId: String): WebView? = liveWebViews[tabId]
+    fun getLiveWebView(tabId: String): WebView? {
+        val webView = liveWebViews[tabId]
+        if (webView != null) {
+            tabLastAccessed[tabId] = System.currentTimeMillis()
+        }
+        return webView
+    }
 
     fun hasLiveWebView(tabId: String): Boolean = liveWebViews.containsKey(tabId)
 
@@ -37,6 +44,7 @@ class TabWebViewManager(
     ): Pair<WebView, Boolean> {
         val existing = liveWebViews[tabId]
         if (existing != null) {
+            tabLastAccessed[tabId] = System.currentTimeMillis()
             return Pair(existing, false)
         }
         ensureCapacity(tabId)
@@ -47,13 +55,16 @@ class TabWebViewManager(
             webView.loadUrl(url)
         }
         liveWebViews[tabId] = webView
+        tabLastAccessed[tabId] = System.currentTimeMillis()
         onCreated()
         return Pair(webView, true)
     }
 
     fun ensureCapacity(protectedTabId: String) {
         if (liveWebViews.size >= maxLiveWebViews) {
-            val evictKey = liveWebViews.keys.firstOrNull { it != protectedTabId }
+            val evictKey = liveWebViews.keys
+                .filter { it != protectedTabId }
+                .minByOrNull { tabLastAccessed[it] ?: 0L }
             if (evictKey != null) {
                 destroyWebView(evictKey)
             }
@@ -63,6 +74,7 @@ class TabWebViewManager(
     fun getLiveWebViews(): Collection<WebView> = liveWebViews.values
 
     fun destroyWebView(tabId: String, saveState: Boolean = true) {
+        tabLastAccessed.remove(tabId)
         val webView = liveWebViews.remove(tabId) ?: return
         try {
             if (saveState) {
@@ -112,6 +124,7 @@ class TabWebViewManager(
 
     fun resumeTab(tabId: String) {
         liveWebViews[tabId]?.let { webView ->
+            tabLastAccessed[tabId] = System.currentTimeMillis()
             webView.onResume()
             webView.resumeTimers()
         }

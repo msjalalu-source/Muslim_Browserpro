@@ -6,6 +6,8 @@ import com.muslim.browser.pro.ui.theme.AppTheme
 import org.json.JSONArray
 import org.json.JSONObject
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
 class SettingsRepository(private val context: Context) {
 
     private val prefs: SharedPreferences =
@@ -60,7 +62,7 @@ class SettingsRepository(private val context: Context) {
         val ALL_PROTECTED_KEYWORDS = DEFAULT_PROTECTED_KEYWORDS + LEGACY_PROTECTED_KEYWORDS
 
         fun normalizeKeyword(kw: String): String {
-            return kw.replace(Regex("\\s+"), " ").trim().lowercase(java.util.Locale.ROOT)
+            return kw.replace(WHITESPACE_REGEX, " ").trim().lowercase(java.util.Locale.ROOT)
         }
 
         fun isProtected(keyword: String): Boolean {
@@ -173,7 +175,7 @@ class SettingsRepository(private val context: Context) {
         if (current.any { normalizeKeyword(it) == norm }) {
             return false
         }
-        val cleaned = keyword.trim().replace(Regex("\\s+"), " ")
+        val cleaned = keyword.trim().replace(WHITESPACE_REGEX, " ")
         current.add(cleaned)
         cachedKeywords = current
         prefs.edit().putStringSet(KEY_CUSTOM_KEYWORDS, current).apply()

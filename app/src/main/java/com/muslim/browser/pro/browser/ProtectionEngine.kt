@@ -7,7 +7,12 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
 object ProtectionEngine {
+
+    private var lastKeywordsForScript: Set<String>? = null
+    private var lastBuiltScript: String? = null
 
     sealed class FilterResult {
         data object Allowed : FilterResult()
@@ -381,7 +386,7 @@ object ProtectionEngine {
     }
 
     private fun normalizeKeyword(kw: String): String {
-        return kw.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        return kw.replace(WHITESPACE_REGEX, " ").trim().lowercase(Locale.ROOT)
     }
 
     private fun findKeywordMatch(
@@ -421,7 +426,7 @@ object ProtectionEngine {
         } catch (_: Exception) {
             text
         }
-        val normalizedRaw = decoded.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        val normalizedRaw = decoded.replace(WHITESPACE_REGEX, " ").trim().lowercase(Locale.ROOT)
         if (normalizedRaw.isNotEmpty()) {
             val match = findKeywordMatch(normalizedRaw, customKeywords, normalizedKeywords)
             if (match != null) return match
@@ -429,7 +434,7 @@ object ProtectionEngine {
 
         // 2. Also check with '+' treated as space (for URL search query parameters like "hot+scenes")
         val plusReplaced = decoded.replace('+', ' ')
-        val normalizedPlus = plusReplaced.replace(Regex("\\s+"), " ").trim().lowercase(Locale.ROOT)
+        val normalizedPlus = plusReplaced.replace(WHITESPACE_REGEX, " ").trim().lowercase(Locale.ROOT)
         if (normalizedPlus.isNotEmpty() && normalizedPlus != normalizedRaw) {
             val match = findKeywordMatch(normalizedPlus, customKeywords, normalizedKeywords)
             if (match != null) return match
@@ -443,6 +448,10 @@ object ProtectionEngine {
      * across all websites and SPAs before navigation occurs.
      */
     fun buildKeywordBlockingScript(customKeywords: Set<String>): String {
+        if (customKeywords == lastKeywordsForScript && lastBuiltScript != null) {
+            return lastBuiltScript!!
+        }
+
         val jsonArray = JSONArray()
         for (kw in customKeywords) {
             val trimmed = kw.trim()
@@ -452,7 +461,7 @@ object ProtectionEngine {
         }
         val keywordsJson = jsonArray.toString()
 
-        return """
+        val script = """
 (function() {
     window.__mbp_keywords = $keywordsJson;
     if (window.__mbp_kw_installed) return;
@@ -622,6 +631,9 @@ object ProtectionEngine {
     } catch(_) {}
 })();
         """.trimIndent()
+        lastKeywordsForScript = HashSet(customKeywords)
+        lastBuiltScript = script
+        return script
     }
 
     fun checkDirectUrl(
