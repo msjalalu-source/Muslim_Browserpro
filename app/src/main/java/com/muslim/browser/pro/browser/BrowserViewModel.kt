@@ -840,14 +840,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         }
                     } else {
                         val err = result.exceptionOrNull()
-                        android.util.Log.e("BrowserViewModel", "Translation failed: ${err?.message}", err)
+                        android.util.Log.w("BrowserViewModel", "Translation unavailable: ${err?.message}")
                         withContext(Dispatchers.Main) {
                             _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
                             showToast("Translation unavailable. Please try again.")
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("BrowserViewModel", "Translation exception: ${e.message}", e)
+                    android.util.Log.w("BrowserViewModel", "Translation exception: ${e.message}")
                     withContext(Dispatchers.Main) {
                         _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
                         showToast("Translation unavailable. Please try again.")

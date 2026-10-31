@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -25,6 +26,7 @@ import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * High-performance, memory-conscious translation engine for Bengali translations
@@ -35,12 +37,29 @@ object BengaliTranslator {
     const val TARGET_LANGUAGE: String = "bn"
     const val LIBRE_TRANSLATE_URL: String = "https://translate.disroot.org/translate"
 
-    private const val CONNECT_TIMEOUT_MS: Int = 5000
-    private const val READ_TIMEOUT_MS: Int = 7000
+    private const val CONNECT_TIMEOUT_MS: Int = 4000
+    private const val READ_TIMEOUT_MS: Int = 6000
     private const val MAX_BATCH_CHARS: Int = 4000
     private const val MAX_BATCH_ITEMS: Int = 40
     private const val MIN_DISPATCH_INTERVAL_MS: Long = 200L
     private const val TAG: String = "BengaliTranslator"
+
+    open class TranslationApiException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
+    class SplittablePayloadException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
+    class ServerUnavailableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
+    class NonSplittableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
+    class TranslationUnavailableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
+
+    private fun isSplittableError(error: Throwable?): Boolean {
+        return error is SplittablePayloadException
+    }
+
+    private fun isServerDownError(error: Throwable?): Boolean {
+        if (error is ServerUnavailableException || error is TranslationUnavailableException) return true
+        if (error is java.io.IOException) return true
+        val msg = error?.message?.lowercase(Locale.ROOT) ?: ""
+        return msg.contains("timeout") || msg.contains("connect") || msg.contains("unknownhost") || msg.contains("http 5") || msg.contains("502") || msg.contains("bad gateway")
+    }
 
     private val dispatchMutex = Mutex()
     private var lastDispatchTimeMs: Long = 0L
@@ -440,27 +459,35 @@ object BengaliTranslator {
 
         val batches = chunkIntoBatches(neededTexts.toList())
         val semaphore = Semaphore(3)
+        val serverDownFlag = AtomicBoolean(false)
 
-        val batchResults = coroutineScope {
-            batches.map { batch ->
-                async {
-                    semaphore.withPermit {
-                        val res = processBatchWithFallback(batch, translationMap)
-                        if (res.first > 0 && onProgress != null) {
-                            onProgress.invoke(mapFinalResults(texts, translationMap))
+        val batchResults = withTimeoutOrNull(9500L) {
+            coroutineScope {
+                batches.map { batch ->
+                    async {
+                        semaphore.withPermit {
+                            if (serverDownFlag.get()) {
+                                return@withPermit Pair(0, ServerUnavailableException("Server marked down"))
+                            }
+                            val res = processBatchWithFallback(batch, translationMap, serverDownFlag)
+                            if (res.first > 0 && onProgress != null) {
+                                onProgress.invoke(mapFinalResults(texts, translationMap))
+                            }
+                            res
                         }
-                        res
                     }
-                }
-            }.awaitAll()
+                }.awaitAll()
+            }
         }
 
         var successCount = 0
         var lastError: Throwable? = null
-        for ((s, err) in batchResults) {
-            successCount += s
-            if (err != null) {
-                lastError = err
+        if (batchResults != null) {
+            for ((s, err) in batchResults) {
+                successCount += s
+                if (err != null) {
+                    lastError = err
+                }
             }
         }
 
@@ -471,7 +498,7 @@ object BengaliTranslator {
 
         if (neededTexts.isNotEmpty() && successCount == 0 && modifiedCount == 0) {
             return@withContext Result.failure(
-                IllegalStateException("Translation unavailable with LibreTranslate. Please try again.", lastError)
+                TranslationUnavailableException("Translation unavailable with LibreTranslate. Please try again.", lastError)
             )
         }
 
@@ -494,9 +521,13 @@ object BengaliTranslator {
 
     private suspend fun processBatchWithFallback(
         batch: List<String>,
-        translationMap: ConcurrentHashMap<String, String>
+        translationMap: ConcurrentHashMap<String, String>,
+        serverDownFlag: AtomicBoolean? = null
     ): Pair<Int, Throwable?> {
         if (batch.isEmpty()) return Pair(0, null)
+        if (serverDownFlag?.get() == true) {
+            return Pair(0, ServerUnavailableException("Server marked down"))
+        }
 
         val batchRes = translateBatchWithLibreTranslate(batch)
         if (batchRes.isSuccess) {
@@ -517,10 +548,19 @@ object BengaliTranslator {
         val error = batchRes.exceptionOrNull()
         Log.w(TAG, "LibreTranslate batch (${batch.size} items) error: ${error?.message}")
 
+        if (isServerDownError(error)) {
+            serverDownFlag?.set(true)
+            return Pair(0, error)
+        }
+
+        if (!isSplittableError(error)) {
+            return Pair(0, error)
+        }
+
         if (batch.size > 1) {
             val mid = batch.size / 2
-            val (s1, e1) = processBatchWithFallback(batch.subList(0, mid), translationMap)
-            val (s2, e2) = processBatchWithFallback(batch.subList(mid, batch.size), translationMap)
+            val (s1, e1) = processBatchWithFallback(batch.subList(0, mid), translationMap, serverDownFlag)
+            val (s2, e2) = processBatchWithFallback(batch.subList(mid, batch.size), translationMap, serverDownFlag)
             return Pair(s1 + s2, e1 ?: e2 ?: error)
         } else {
             val single = batch[0]
@@ -533,7 +573,11 @@ object BengaliTranslator {
                     return Pair(1, null)
                 }
             }
-            return Pair(0, singleRes.exceptionOrNull() ?: error)
+            val singleErr = singleRes.exceptionOrNull() ?: error
+            if (isServerDownError(singleErr)) {
+                serverDownFlag?.set(true)
+            }
+            return Pair(0, singleErr)
         }
     }
 
@@ -585,8 +629,11 @@ object BengaliTranslator {
                             it.readText()
                         }
                         val trimmed = responseText.trimStart()
+                        if (trimmed.startsWith("<")) {
+                            return Result.failure(ServerUnavailableException("HTML response from LibreTranslate"))
+                        }
                         if (!trimmed.startsWith("{")) {
-                            return Result.failure(IllegalStateException("Non-JSON response from LibreTranslate"))
+                            return Result.failure(SplittablePayloadException("Non-JSON response from LibreTranslate"))
                         }
                         val json = JSONObject(responseText)
                         val transArray = json.optJSONArray("translatedText")
@@ -601,7 +648,7 @@ object BengaliTranslator {
                             if (single.isNotEmpty()) {
                                 return Result.success(listOf(single))
                             } else {
-                                return Result.failure(IllegalStateException("Empty translatedText array from LibreTranslate"))
+                                return Result.failure(SplittablePayloadException("Empty translatedText array from LibreTranslate"))
                             }
                         }
                     }
@@ -612,27 +659,39 @@ object BengaliTranslator {
                             delay(700L)
                             continue
                         } else {
-                            return Result.failure(IllegalStateException("LibreTranslate rate limit (HTTP 429)"))
+                            return Result.failure(NonSplittableException("LibreTranslate rate limit (HTTP 429)"))
                         }
+                    }
+                    400, 413, 414, 422 -> {
+                        val errStream = conn.errorStream
+                        val errText = errStream?.let {
+                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
+                        } ?: ""
+                        return Result.failure(SplittablePayloadException("LibreTranslate HTTP $code: $errText"))
+                    }
+                    in 500..599 -> {
+                        val errStream = conn.errorStream
+                        val errText = errStream?.let {
+                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
+                        } ?: ""
+                        return Result.failure(ServerUnavailableException("LibreTranslate HTTP $code: $errText"))
                     }
                     else -> {
                         val errStream = conn.errorStream
                         val errText = errStream?.let {
                             BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
                         } ?: ""
-                        return Result.failure(IllegalStateException("LibreTranslate HTTP $code: $errText"))
+                        return Result.failure(NonSplittableException("LibreTranslate HTTP $code: $errText"))
                     }
                 }
             } catch (e: Exception) {
-                if (attempts >= maxAttempts) {
-                    return Result.failure(e)
-                }
-                delay(1000L)
+                // Do not retry on network timeout/connect error
+                return Result.failure(ServerUnavailableException("Network error: ${e.message}", e))
             } finally {
                 conn?.disconnect()
             }
         }
-        return Result.failure(IllegalStateException("LibreTranslate batch request failed"))
+        return Result.failure(ServerUnavailableException("LibreTranslate batch request failed"))
     }
 
     suspend fun translateWithLibreTranslate(text: String): Result<String> {
@@ -678,15 +737,18 @@ object BengaliTranslator {
                             it.readText()
                         }
                         val trimmed = responseText.trimStart()
+                        if (trimmed.startsWith("<")) {
+                            return Result.failure(ServerUnavailableException("HTML response from LibreTranslate"))
+                        }
                         if (!trimmed.startsWith("{")) {
-                            return Result.failure(IllegalStateException("Non-JSON response from LibreTranslate"))
+                            return Result.failure(SplittablePayloadException("Non-JSON response from LibreTranslate"))
                         }
                         val json = JSONObject(responseText)
                         val trans = json.optString("translatedText", "")
                         if (trans.isNotEmpty()) {
                             return Result.success(trans)
                         } else {
-                            return Result.failure(IllegalStateException("Empty translatedText from LibreTranslate"))
+                            return Result.failure(SplittablePayloadException("Empty translatedText from LibreTranslate"))
                         }
                     }
                     429 -> {
@@ -696,27 +758,39 @@ object BengaliTranslator {
                             delay(700L)
                             continue
                         } else {
-                            return Result.failure(IllegalStateException("LibreTranslate rate limit (HTTP 429)"))
+                            return Result.failure(NonSplittableException("LibreTranslate rate limit (HTTP 429)"))
                         }
+                    }
+                    400, 413, 414, 422 -> {
+                        val errStream = conn.errorStream
+                        val errText = errStream?.let {
+                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
+                        } ?: ""
+                        return Result.failure(SplittablePayloadException("LibreTranslate HTTP $code: $errText"))
+                    }
+                    in 500..599 -> {
+                        val errStream = conn.errorStream
+                        val errText = errStream?.let {
+                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
+                        } ?: ""
+                        return Result.failure(ServerUnavailableException("LibreTranslate HTTP $code: $errText"))
                     }
                     else -> {
                         val errStream = conn.errorStream
                         val errText = errStream?.let {
                             BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
                         } ?: ""
-                        return Result.failure(IllegalStateException("LibreTranslate HTTP $code: $errText"))
+                        return Result.failure(NonSplittableException("LibreTranslate HTTP $code: $errText"))
                     }
                 }
             } catch (e: Exception) {
-                if (attempts >= maxAttempts) {
-                    return Result.failure(e)
-                }
-                delay(1000L)
+                // Do not retry on network timeout/connect error
+                return Result.failure(ServerUnavailableException("Network error: ${e.message}", e))
             } finally {
                 conn?.disconnect()
             }
         }
-        return Result.failure(IllegalStateException("LibreTranslate request failed"))
+        return Result.failure(ServerUnavailableException("LibreTranslate request failed"))
     }
 
     fun decodeHtmlEntities(input: String): String {
