@@ -283,7 +283,18 @@ class SettingsRepository(private val context: Context) {
 
     fun addHistoryEntry(title: String, url: String): HistoryEntry {
         val current = if (cachedHistory != null) cachedHistory!! else getHistory().toMutableList()
-        val entry = HistoryEntry(title = title, url = url)
+        val now = System.currentTimeMillis()
+        if (current.isNotEmpty()) {
+            val latest = current[0]
+            if (latest.url == url && Math.abs(now - latest.timestamp) < 5 * 60 * 1000L) {
+                val updated = latest.copy(title = title, timestamp = now)
+                current[0] = updated
+                cachedHistory = current
+                saveHistory(current)
+                return updated
+            }
+        }
+        val entry = HistoryEntry(title = title, url = url, timestamp = now)
         current.add(0, entry)
         if (current.size > 200) current.removeAt(current.size - 1)
         cachedHistory = current

@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import android.graphics.drawable.ColorDrawable
 import android.view.WindowManager
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -218,6 +219,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
+                    modifier = Modifier.imePadding(),
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     bottomBar = {
                         BottomNavBar(

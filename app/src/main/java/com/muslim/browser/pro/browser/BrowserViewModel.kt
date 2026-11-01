@@ -714,10 +714,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 val sessionElapsed = ((now - activeStartTimeRealtime) / 1000L).coerceAtLeast(0L)
                 val totalUsed = (baseUsageSec + sessionElapsed).coerceAtMost(WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS)
 
-                // Update UI state live
-                val liveMap = _uiState.value.timeLimitUsageSeconds.toMutableMap()
-                liveMap[domain] = totalUsed
-                _uiState.update { it.copy(timeLimitUsageSeconds = liveMap) }
+                // Update UI state live (throttled to avoid per-second screen recomposition)
+                val reachedLimit = totalUsed >= WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS
+                if (tickCount % 10 == 0 || _uiState.value.isMenuOpen || reachedLimit) {
+                    val liveMap = _uiState.value.timeLimitUsageSeconds.toMutableMap()
+                    liveMap[domain] = totalUsed
+                    _uiState.update { it.copy(timeLimitUsageSeconds = liveMap) }
+                }
 
                 // Check if 20-minute limit reached
                 if (totalUsed >= WebsiteTimeLimitPolicy.DAILY_LIMIT_SECONDS) {
