@@ -26,6 +26,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository = SettingsRepository(application)
     private var activeTranslationJob: Job? = null
+    private var translationStartedAt: Long = 0L
     private var activeDomain: String? = null
     private var activeStartTimeRealtime: Long = 0L
     private var trackingJob: Job? = null
@@ -771,8 +772,13 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         if (state.isTranslating) {
-            showToast("Translation in progress...")
-            return
+            val elapsed = System.currentTimeMillis() - translationStartedAt
+            if (elapsed < 15_000L) {
+                showToast("Translation in progress...")
+                return
+            }
+            activeTranslationJob?.cancel()
+            _uiState.update { it.copy(isTranslating = false) }
         }
         if (state.isPageTranslated) {
             reloadPage()
@@ -782,12 +788,24 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        translationStartedAt = System.currentTimeMillis()
+        val runId = translationStartedAt
         _uiState.update { it.copy(isTranslating = true) }
         showToast("Translating to বাংলা...")
+
+        viewModelScope.launch {
+            delay(22_000L)
+            if (translationStartedAt == runId && _uiState.value.isTranslating) {
+                activeTranslationJob?.cancel()
+                _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
+                showToast("Translation unavailable. Please try again.")
+            }
+        }
 
         execJs(BengaliTranslator.buildExtractScript()) { jsonResult ->
             if (jsonResult.isNullOrBlank() || jsonResult == "null") {
                 _uiState.update { it.copy(isTranslating = false) }
+                showToast("পেজ থেকে লেখা পাওয়া যায়নি, আবার চেষ্টা করুন")
                 return@execJs
             }
 
