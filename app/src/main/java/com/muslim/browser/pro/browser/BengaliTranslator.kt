@@ -17,7 +17,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -30,32 +29,37 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * High-performance, memory-conscious translation engine for Bengali translations
- * using LibreTranslate (https://translate.disroot.org/translate).
- * Ported faithfully from build 117's prebuilt jar.
+ * using the Google Gemini API.
  */
 object BengaliTranslator {
     const val TARGET_LANGUAGE: String = "bn"
-    const val LIBRE_TRANSLATE_URL: String = "https://translate.disroot.org/translate"
+    const val DEFAULT_MODEL: String = "gemini-flash-latest"
 
-    private const val CONNECT_TIMEOUT_MS: Int = 4000
-    private const val READ_TIMEOUT_MS: Int = 6000
+    private const val CONNECT_TIMEOUT_MS: Int = 5000
+    private const val READ_TIMEOUT_MS: Int = 15000
     private const val MAX_BATCH_CHARS: Int = 4000
     private const val MAX_BATCH_ITEMS: Int = 40
     private const val MIN_DISPATCH_INTERVAL_MS: Long = 200L
     private const val TAG: String = "BengaliTranslator"
 
-    open class TranslationApiException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
-    class SplittablePayloadException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
-    class ServerUnavailableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
-    class NonSplittableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
-    class TranslationUnavailableException(message: String, cause: Throwable? = null) : TranslationApiException(message, cause)
+    open class TranslationApiException(
+        val userMessage: String,
+        cause: Throwable? = null
+    ) : IllegalStateException(userMessage, cause)
 
-    private fun isSplittableError(error: Throwable?): Boolean {
+    class SplittablePayloadException(
+        message: String,
+        cause: Throwable? = null
+    ) : IllegalStateException(message, cause)
+
+    internal class RateLimitException(message: String) : Exception(message)
+
+    fun isSplittableError(error: Throwable?): Boolean {
         return error is SplittablePayloadException
     }
 
     private fun isServerDownError(error: Throwable?): Boolean {
-        if (error is ServerUnavailableException || error is TranslationUnavailableException) return true
+        if (error is TranslationApiException) return true
         if (error is java.io.IOException) return true
         val msg = error?.message?.lowercase(Locale.ROOT) ?: ""
         return msg.contains("timeout") || msg.contains("connect") || msg.contains("unknownhost") || msg.contains("http 5") || msg.contains("502") || msg.contains("bad gateway")
@@ -157,16 +161,7 @@ object BengaliTranslator {
         sourceLang: String = "auto",
         targetLang: String = TARGET_LANGUAGE
     ): String {
-        return "LIBRE_TRANSLATE:$sourceLang:$targetLang:${text.trim()}"
-    }
-
-    fun cacheKey(
-        engine: TranslationEngine,
-        text: String,
-        sourceLang: String = "auto",
-        targetLang: String = TARGET_LANGUAGE
-    ): String {
-        return "${engine.name}:$sourceLang:$targetLang:${text.trim()}"
+        return "GEMINI:$sourceLang:$targetLang:${text.trim()}"
     }
 
     fun isLikelyEnglish(text: String): Boolean {
@@ -182,95 +177,41 @@ object BengaliTranslator {
         }
         if (!hasAsciiLetter) return false
 
-        if (trimmed.startsWith("http://", ignoreCase = true) ||
-            trimmed.startsWith("https://", ignoreCase = true) ||
-            trimmed.startsWith("www.", ignoreCase = true) ||
-            trimmed.contains("://") ||
-            trimmed.contains("{") ||
-            trimmed.contains("}") ||
-            trimmed.contains("();") ||
-            trimmed.contains("</") ||
-            trimmed.contains("var ") ||
-            trimmed.contains("function(")
-        ) {
-            return false
-        }
-
-        val words = NON_ASCII_WORD_REGEX.split(trimmed).filter { it.isNotBlank() }
+        val words = trimmed.split(NON_ASCII_WORD_REGEX).filter { it.length >= 2 }
         if (words.isEmpty()) return false
-
-        for (word in words) {
-            if (ENGLISH_INDICATORS.contains(word.lowercase(Locale.ROOT))) {
-                return true
-            }
-        }
-
-        return trimmed.contains("'s", ignoreCase = true) ||
-                trimmed.contains("'t", ignoreCase = true) ||
-                trimmed.contains("'re", ignoreCase = true) ||
-                trimmed.contains("'ve", ignoreCase = true) ||
-                trimmed.contains("'ll", ignoreCase = true)
-    }
-
-    private suspend fun awaitDispatchSlot() {
-        dispatchMutex.withLock {
-            val now = System.currentTimeMillis()
-            val elapsed = now - lastDispatchTimeMs
-            if (elapsed < MIN_DISPATCH_INTERVAL_MS) {
-                delay(MIN_DISPATCH_INTERVAL_MS - elapsed)
-            }
-            lastDispatchTimeMs = System.currentTimeMillis()
-        }
+        val matchCount = words.count { ENGLISH_INDICATORS.contains(it.lowercase(Locale.ROOT)) }
+        return matchCount > 0 || words.size <= 2
     }
 
     fun shouldSkipText(text: String): Boolean {
         val trimmed = text.trim()
-        if (trimmed.length < 2) return true
+        if (trimmed.length <= 1) return true
 
-        var allDigitsPunct = true
+        var allDigitsOrPunct = true
         for (i in 0 until trimmed.length) {
             val c = trimmed[i]
-            if (!(c.isDigit() || c.isWhitespace() || PUNCTUATION_CHARS.contains(c))) {
-                allDigitsPunct = false
+            if (!c.isDigit() && !PUNCTUATION_CHARS.contains(c) && !c.isWhitespace()) {
+                allDigitsOrPunct = false
                 break
             }
         }
-        if (allDigitsPunct) return true
-
-        var hasLetter = false
-        for (i in 0 until trimmed.length) {
-            if (trimmed[i].isLetter()) {
-                hasLetter = true
-                break
-            }
-        }
-        if (!hasLetter) return true
+        if (allDigitsOrPunct) return true
 
         if (trimmed.startsWith("http://", ignoreCase = true) ||
             trimmed.startsWith("https://", ignoreCase = true) ||
-            trimmed.startsWith("www.", ignoreCase = true) ||
-            trimmed.contains("://")
+            trimmed.contains("@") && trimmed.contains(".")
         ) {
             return true
         }
 
-        if (trimmed.contains("@") && trimmed.contains(".") && !trimmed.contains(" ")) {
-            return true
-        }
-
-        var totalLetters = 0
-        var bengaliChars = 0
+        var bengaliCharCount = 0
         for (i in 0 until trimmed.length) {
-            val c = trimmed[i]
-            if (c.isLetter()) {
-                totalLetters++
-                val code = c.code
-                if (code in 2432 until 2560) {
-                    bengaliChars++
-                }
+            val code = trimmed[i].code
+            if (code in 0x0980..0x09FF) {
+                bengaliCharCount++
             }
         }
-        if (totalLetters > 0 && (bengaliChars.toDouble() / totalLetters.toDouble() > 0.6)) {
+        if (bengaliCharCount.toDouble() / trimmed.length.toDouble() > 0.60) {
             return true
         }
 
@@ -300,29 +241,21 @@ object BengaliTranslator {
 
     suspend fun translate(
         text: String,
-        engine: TranslationEngine = TranslationEngine.LIBRE_TRANSLATE,
-        sourceLang: String = "auto"
-    ): Result<String> = translate(text, sourceLang)
-
-    suspend fun translate(
-        text: String,
+        apiKey: String = "",
+        model: String = DEFAULT_MODEL,
         sourceLang: String = "auto"
     ): Result<String> = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || shouldSkipText(trimmed)) {
             return@withContext Result.success(text)
         }
-        translateSingleTextCoalesced(trimmed, sourceLang)
+        translateSingleTextCoalesced(trimmed, apiKey, model, sourceLang)
     }
 
     suspend fun translateSingleTextCoalesced(
         text: String,
-        engine: TranslationEngine,
-        sourceLang: String = "auto"
-    ): Result<String> = translateSingleTextCoalesced(text, sourceLang)
-
-    suspend fun translateSingleTextCoalesced(
-        text: String,
+        apiKey: String = "",
+        model: String = DEFAULT_MODEL,
         sourceLang: String = "auto"
     ): Result<String> {
         val trimmed = text.trim()
@@ -344,7 +277,7 @@ object BengaliTranslator {
         }
 
         val result: Result<String> = try {
-            val res = translateSingleText(trimmed, sourceLang)
+            val res = translateSingleText(trimmed, apiKey, model, sourceLang)
             if (res.isSuccess) {
                 val trans = res.getOrNull()
                 if (!trans.isNullOrBlank()) {
@@ -369,6 +302,8 @@ object BengaliTranslator {
 
     private suspend fun translateSingleText(
         text: String,
+        apiKey: String = "",
+        model: String = DEFAULT_MODEL,
         sourceLang: String = "auto"
     ): Result<String> {
         val trimmed = text.trim()
@@ -384,33 +319,30 @@ object BengaliTranslator {
             }
         }
 
-        awaitDispatchSlot()
         val startTime = System.currentTimeMillis()
         TranslationStats.totalRequests++
 
-        val result = translateWithLibreTranslate(trimmed)
+        val batchRes = translateBatchWithGemini(listOf(trimmed), apiKey, model)
 
         val duration = System.currentTimeMillis() - startTime
         if (TranslationStats.requestDurations.size < 100) {
             TranslationStats.requestDurations.add(duration)
         }
 
-        if (result.isSuccess) {
+        if (batchRes.isSuccess) {
             TranslationStats.successfulRequests++
+            val translated = batchRes.getOrNull()?.firstOrNull() ?: trimmed
+            return Result.success(translated)
         } else {
             TranslationStats.failedRequests++
+            return Result.failure(batchRes.exceptionOrNull() ?: TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
         }
-
-        return result
     }
 
     suspend fun translateBatch(
         texts: List<String>,
-        engine: TranslationEngine
-    ): Result<List<String>> = translateBatch(texts)
-
-    suspend fun translateBatch(
-        texts: List<String>,
+        apiKey: String = "",
+        model: String = DEFAULT_MODEL,
         onProgress: (suspend (List<String>) -> Unit)? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         if (texts.isEmpty()) {
@@ -461,15 +393,15 @@ object BengaliTranslator {
         val semaphore = Semaphore(3)
         val serverDownFlag = AtomicBoolean(false)
 
-        val batchResults = withTimeoutOrNull(9500L) {
+        val batchResults = withTimeoutOrNull(18000L) {
             coroutineScope {
                 batches.map { batch ->
                     async {
                         semaphore.withPermit {
                             if (serverDownFlag.get()) {
-                                return@withPermit Pair(0, ServerUnavailableException("Server marked down"))
+                                return@withPermit Pair(0, TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
                             }
-                            val res = processBatchWithFallback(batch, translationMap, serverDownFlag)
+                            val res = processBatchWithFallback(batch, translationMap, apiKey, model, serverDownFlag)
                             if (res.first > 0 && onProgress != null) {
                                 onProgress.invoke(mapFinalResults(texts, translationMap))
                             }
@@ -497,9 +429,12 @@ object BengaliTranslator {
         }
 
         if (neededTexts.isNotEmpty() && successCount == 0 && modifiedCount == 0) {
-            return@withContext Result.failure(
-                TranslationUnavailableException("Translation unavailable with LibreTranslate. Please try again.", lastError)
-            )
+            val failureException = if (lastError is TranslationApiException) {
+                lastError
+            } else {
+                TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা", lastError)
+            }
+            return@withContext Result.failure(failureException)
         }
 
         return@withContext Result.success(mapFinalResults(texts, translationMap))
@@ -522,14 +457,16 @@ object BengaliTranslator {
     private suspend fun processBatchWithFallback(
         batch: List<String>,
         translationMap: ConcurrentHashMap<String, String>,
+        apiKey: String,
+        model: String,
         serverDownFlag: AtomicBoolean? = null
     ): Pair<Int, Throwable?> {
         if (batch.isEmpty()) return Pair(0, null)
         if (serverDownFlag?.get() == true) {
-            return Pair(0, ServerUnavailableException("Server marked down"))
+            return Pair(0, TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
         }
 
-        val batchRes = translateBatchWithLibreTranslate(batch)
+        val batchRes = translateBatchWithGemini(batch, apiKey, model)
         if (batchRes.isSuccess) {
             val transList = batchRes.getOrNull() ?: emptyList()
             var successes = 0
@@ -546,7 +483,6 @@ object BengaliTranslator {
         }
 
         val error = batchRes.exceptionOrNull()
-        Log.w(TAG, "LibreTranslate batch (${batch.size} items) error: ${error?.message}")
 
         if (isServerDownError(error)) {
             serverDownFlag?.set(true)
@@ -559,238 +495,225 @@ object BengaliTranslator {
 
         if (batch.size > 1) {
             val mid = batch.size / 2
-            val (s1, e1) = processBatchWithFallback(batch.subList(0, mid), translationMap, serverDownFlag)
-            val (s2, e2) = processBatchWithFallback(batch.subList(mid, batch.size), translationMap, serverDownFlag)
+            val (s1, e1) = processBatchWithFallback(batch.subList(0, mid), translationMap, apiKey, model, serverDownFlag)
+            val (s2, e2) = processBatchWithFallback(batch.subList(mid, batch.size), translationMap, apiKey, model, serverDownFlag)
             return Pair(s1 + s2, e1 ?: e2 ?: error)
         } else {
-            val single = batch[0]
-            val singleRes = translateSingleTextCoalesced(single)
-            if (singleRes.isSuccess) {
-                val trans = singleRes.getOrNull()
-                if (!trans.isNullOrBlank() && trans != single) {
-                    putInCache(cacheKey(single), trans)
-                    translationMap[single] = trans
-                    return Pair(1, null)
-                }
-            }
-            val singleErr = singleRes.exceptionOrNull() ?: error
-            if (isServerDownError(singleErr)) {
-                serverDownFlag?.set(true)
-            }
-            return Pair(0, singleErr)
+            return Pair(0, error)
         }
     }
 
-    suspend fun translateBatchWithLibreTranslate(texts: List<String>): Result<List<String>> {
+    suspend fun translateBatchWithGemini(
+        texts: List<String>,
+        apiKey: String = "",
+        model: String = DEFAULT_MODEL
+    ): Result<List<String>> {
+        val trimmedKey = apiKey.trim()
+        if (trimmedKey.isEmpty()) {
+            return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
+        }
+
+        val effectiveModel = model.trim().ifEmpty { DEFAULT_MODEL }
+        val targetUrl = "https://generativelanguage.googleapis.com/v1beta/models/$effectiveModel:generateContent"
+
         var attempts = 0
         val maxAttempts = 2
+
         while (attempts < maxAttempts) {
             attempts++
             awaitDispatchSlot()
-            var conn: HttpURLConnection? = null
-            try {
-                val url = URL(LIBRE_TRANSLATE_URL)
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
-                    setRequestProperty("Connection", "keep-alive")
-                    connectTimeout = CONNECT_TIMEOUT_MS
-                    readTimeout = READ_TIMEOUT_MS
-                    doOutput = true
-                    doInput = true
-                }
+            val result = executeGeminiRequest(
+                endpointUrl = targetUrl,
+                apiKey = trimmedKey,
+                texts = texts,
+                includeThinkingConfig = true
+            )
 
-                val qArray = JSONArray()
-                for (t in texts) {
-                    qArray.put(t)
-                }
-
-                val jsonBody = JSONObject().apply {
-                    put("q", qArray)
-                    put("source", "auto")
-                    put("target", TARGET_LANGUAGE)
-                    put("format", "text")
-                }
-
-                val postBytes = jsonBody.toString().toByteArray(StandardCharsets.UTF_8)
-                conn.setFixedLengthStreamingMode(postBytes.size)
-
-                conn.outputStream.use { os ->
-                    os.write(postBytes)
-                    os.flush()
-                }
-
-                val code = conn.responseCode
-                when (code) {
-                    200 -> {
-                        val responseText = BufferedReader(InputStreamReader(conn.inputStream, StandardCharsets.UTF_8)).use {
-                            it.readText()
-                        }
-                        val trimmed = responseText.trimStart()
-                        if (trimmed.startsWith("<")) {
-                            return Result.failure(ServerUnavailableException("HTML response from LibreTranslate"))
-                        }
-                        if (!trimmed.startsWith("{")) {
-                            return Result.failure(SplittablePayloadException("Non-JSON response from LibreTranslate"))
-                        }
-                        val json = JSONObject(responseText)
-                        val transArray = json.optJSONArray("translatedText")
-                        if (transArray != null) {
-                            val list = ArrayList<String>(transArray.length())
-                            for (i in 0 until transArray.length()) {
-                                list.add(transArray.getString(i))
-                            }
-                            return Result.success(list)
-                        } else {
-                            val single = json.optString("translatedText", "")
-                            if (single.isNotEmpty()) {
-                                return Result.success(listOf(single))
-                            } else {
-                                return Result.failure(SplittablePayloadException("Empty translatedText array from LibreTranslate"))
-                            }
-                        }
-                    }
-                    429 -> {
-                        TranslationStats.http429Count++
-                        if (attempts < maxAttempts) {
-                            TranslationStats.retryCount++
-                            delay(700L)
-                            continue
-                        } else {
-                            return Result.failure(NonSplittableException("LibreTranslate rate limit (HTTP 429)"))
-                        }
-                    }
-                    400, 413, 414, 422 -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(SplittablePayloadException("LibreTranslate HTTP $code: $errText"))
-                    }
-                    in 500..599 -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(ServerUnavailableException("LibreTranslate HTTP $code: $errText"))
-                    }
-                    else -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(NonSplittableException("LibreTranslate HTTP $code: $errText"))
-                    }
-                }
-            } catch (e: Exception) {
-                // Do not retry on network timeout/connect error
-                return Result.failure(ServerUnavailableException("Network error: ${e.message}", e))
-            } finally {
-                conn?.disconnect()
+            if (result.isSuccess) {
+                return result
             }
+
+            val err = result.exceptionOrNull()
+            if (err is RateLimitException && attempts < maxAttempts) {
+                TranslationStats.http429Count++
+                TranslationStats.retryCount++
+                delay(700L)
+                continue
+            }
+
+            return result
         }
-        return Result.failure(ServerUnavailableException("LibreTranslate batch request failed"))
+        return Result.failure(TranslationApiException("ব্যবহারের সীমা শেষ, পরে চেষ্টা করুন"))
     }
 
-    suspend fun translateWithLibreTranslate(text: String): Result<String> {
-        var attempts = 0
-        val maxAttempts = 2
-        while (attempts < maxAttempts) {
-            attempts++
-            awaitDispatchSlot()
-            var conn: HttpURLConnection? = null
-            try {
-                val url = URL(LIBRE_TRANSLATE_URL)
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
-                    setRequestProperty("Connection", "keep-alive")
-                    connectTimeout = CONNECT_TIMEOUT_MS
-                    readTimeout = READ_TIMEOUT_MS
-                    doOutput = true
-                    doInput = true
-                }
+    private fun executeGeminiRequest(
+        endpointUrl: String,
+        apiKey: String,
+        texts: List<String>,
+        includeThinkingConfig: Boolean
+    ): Result<List<String>> {
+        var conn: HttpURLConnection? = null
+        try {
+            val url = URL(endpointUrl)
+            conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("x-goog-api-key", apiKey)
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "MuslimBrowser-App/1.0 (Android)")
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                doOutput = true
+                doInput = true
+            }
 
-                val jsonBody = JSONObject().apply {
-                    put("q", text)
-                    put("source", "auto")
-                    put("target", TARGET_LANGUAGE)
-                    put("format", "text")
-                }
+            val requestBody = buildRequestBody(texts, includeThinkingConfig)
+            val postBytes = requestBody.toString().toByteArray(StandardCharsets.UTF_8)
+            conn.setFixedLengthStreamingMode(postBytes.size)
 
-                val postBytes = jsonBody.toString().toByteArray(StandardCharsets.UTF_8)
-                conn.setFixedLengthStreamingMode(postBytes.size)
+            conn.outputStream.use { os ->
+                os.write(postBytes)
+                os.flush()
+            }
 
-                conn.outputStream.use { os ->
-                    os.write(postBytes)
-                    os.flush()
+            val code = conn.responseCode
+            when (code) {
+                200 -> {
+                    val responseText = BufferedReader(InputStreamReader(conn.inputStream, StandardCharsets.UTF_8)).use {
+                        it.readText()
+                    }
+                    return parseGeminiResponse(responseText, texts.size)
                 }
+                400 -> {
+                    val errStream = conn.errorStream
+                    val errText = errStream?.let {
+                        BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
+                    } ?: ""
+                    val errLower = errText.lowercase(Locale.ROOT)
+                    if (includeThinkingConfig && errLower.contains("thinking")) {
+                        return executeGeminiRequest(
+                            endpointUrl = endpointUrl,
+                            apiKey = apiKey,
+                            texts = texts,
+                            includeThinkingConfig = false
+                        )
+                    }
+                    if (errLower.contains("api_key") || errLower.contains("api key") || errLower.contains("key not valid") || errLower.contains("invalid api key")) {
+                        return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
+                    }
+                    return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
+                }
+                401, 403 -> {
+                    return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
+                }
+                404 -> {
+                    return Result.failure(TranslationApiException("মডেলের নাম ভুল"))
+                }
+                429 -> {
+                    return Result.failure(RateLimitException("Rate limit 429"))
+                }
+                in 500..599 -> {
+                    return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
+                }
+                else -> {
+                    return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
+                }
+            }
+        } catch (e: Exception) {
+            if (e is TranslationApiException || e is SplittablePayloadException || e is RateLimitException) {
+                return Result.failure(e)
+            }
+            return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা", e))
+        } finally {
+            conn?.disconnect()
+        }
+    }
 
-                val code = conn.responseCode
-                when (code) {
-                    200 -> {
-                        val responseText = BufferedReader(InputStreamReader(conn.inputStream, StandardCharsets.UTF_8)).use {
-                            it.readText()
-                        }
-                        val trimmed = responseText.trimStart()
-                        if (trimmed.startsWith("<")) {
-                            return Result.failure(ServerUnavailableException("HTML response from LibreTranslate"))
-                        }
-                        if (!trimmed.startsWith("{")) {
-                            return Result.failure(SplittablePayloadException("Non-JSON response from LibreTranslate"))
-                        }
-                        val json = JSONObject(responseText)
-                        val trans = json.optString("translatedText", "")
-                        if (trans.isNotEmpty()) {
-                            return Result.success(trans)
-                        } else {
-                            return Result.failure(SplittablePayloadException("Empty translatedText from LibreTranslate"))
-                        }
-                    }
-                    429 -> {
-                        TranslationStats.http429Count++
-                        if (attempts < maxAttempts) {
-                            TranslationStats.retryCount++
-                            delay(700L)
-                            continue
-                        } else {
-                            return Result.failure(NonSplittableException("LibreTranslate rate limit (HTTP 429)"))
-                        }
-                    }
-                    400, 413, 414, 422 -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(SplittablePayloadException("LibreTranslate HTTP $code: $errText"))
-                    }
-                    in 500..599 -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(ServerUnavailableException("LibreTranslate HTTP $code: $errText"))
-                    }
-                    else -> {
-                        val errStream = conn.errorStream
-                        val errText = errStream?.let {
-                            BufferedReader(InputStreamReader(it, StandardCharsets.UTF_8)).use { r -> r.readText() }
-                        } ?: ""
-                        return Result.failure(NonSplittableException("LibreTranslate HTTP $code: $errText"))
-                    }
-                }
-            } catch (e: Exception) {
-                // Do not retry on network timeout/connect error
-                return Result.failure(ServerUnavailableException("Network error: ${e.message}", e))
-            } finally {
-                conn?.disconnect()
+    fun buildRequestBody(texts: List<String>, includeThinkingConfig: Boolean): JSONObject {
+        val sysPart = JSONObject().put(
+            "text",
+            "Translate every string in the given JSON array from English to Bengali (bn). Return ONLY a JSON array of strings with exactly the same length and order. Keep numbers, URLs, email addresses, code, brand names and HTML entities unchanged."
+        )
+        val sysInstruction = JSONObject().put("parts", JSONArray().put(sysPart))
+
+        val textsArray = JSONArray()
+        for (t in texts) {
+            textsArray.put(t)
+        }
+        val contentPart = JSONObject().put("text", textsArray.toString())
+        val contentObj = JSONObject().put("parts", JSONArray().put(contentPart))
+        val contentsArray = JSONArray().put(contentObj)
+
+        val genConfig = JSONObject().apply {
+            put("temperature", 0)
+            put("responseMimeType", "application/json")
+            put("responseSchema", JSONObject().apply {
+                put("type", "ARRAY")
+                put("items", JSONObject().apply {
+                    put("type", "STRING")
+                })
+            })
+            if (includeThinkingConfig) {
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", 0)
+                })
             }
         }
-        return Result.failure(ServerUnavailableException("LibreTranslate request failed"))
+
+        return JSONObject().apply {
+            put("systemInstruction", sysInstruction)
+            put("contents", contentsArray)
+            put("generationConfig", genConfig)
+        }
+    }
+
+    fun parseGeminiResponse(responseText: String, expectedCount: Int): Result<List<String>> {
+        try {
+            val json = JSONObject(responseText)
+            val candidates = json.optJSONArray("candidates")
+            if (candidates == null || candidates.length() == 0) {
+                return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
+            }
+            val firstCandidate = candidates.getJSONObject(0)
+            val content = firstCandidate.optJSONObject("content")
+            val parts = content?.optJSONArray("parts")
+            val rawText = parts?.optJSONObject(0)?.optString("text") ?: ""
+
+            var cleanedText = rawText.trim()
+            if (cleanedText.startsWith("```json")) {
+                cleanedText = cleanedText.removePrefix("```json").removeSuffix("```").trim()
+            } else if (cleanedText.startsWith("```")) {
+                cleanedText = cleanedText.removePrefix("```").removeSuffix("```").trim()
+            }
+
+            val parsedArray = JSONArray(cleanedText)
+            val list = ArrayList<String>(parsedArray.length())
+            for (i in 0 until parsedArray.length()) {
+                list.add(parsedArray.getString(i))
+            }
+
+            if (list.size != expectedCount) {
+                return Result.failure(
+                    SplittablePayloadException("Response length (${list.size}) does not match input length ($expectedCount)")
+                )
+            }
+            return Result.success(list)
+        } catch (e: Exception) {
+            return Result.failure(
+                SplittablePayloadException("Failed to parse Gemini translation array: ${e.message}", e)
+            )
+        }
+    }
+
+    private suspend fun awaitDispatchSlot() {
+        dispatchMutex.withLock {
+            val now = System.currentTimeMillis()
+            val elapsed = now - lastDispatchTimeMs
+            if (elapsed < MIN_DISPATCH_INTERVAL_MS) {
+                delay(MIN_DISPATCH_INTERVAL_MS - elapsed)
+            }
+            lastDispatchTimeMs = System.currentTimeMillis()
+        }
     }
 
     fun decodeHtmlEntities(input: String): String {

@@ -75,7 +75,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             timeLimitedDomains = repository.getTimeLimitedDomains(),
             timeLimitUsageSeconds = repository.getDomainUsageSeconds(),
             defaultZoomLevel = repository.getDefaultZoomLevel(),
-            currentZoomLevel = repository.getDefaultZoomLevel()
+            currentZoomLevel = repository.getDefaultZoomLevel(),
+            translationEnabled = repository.isTranslationEnabled(),
+            geminiApiKeySaved = repository.getGeminiApiKey().isNotBlank(),
+            geminiModel = repository.getGeminiModel()
         )
     )
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
@@ -168,6 +171,35 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     fun closeHistory() { _uiState.update { it.copy(isHistoryOpen = false) } }
+
+    fun setTranslationEnabled(enabled: Boolean) {
+        repository.setTranslationEnabled(enabled)
+        _uiState.update { it.copy(translationEnabled = enabled) }
+    }
+
+    fun saveGeminiApiKey(apiKey: String) {
+        val trimmed = apiKey.trim()
+        if (trimmed.isEmpty()) {
+            showToast("API Key খালি রাখা যাবে না")
+            return
+        }
+        repository.setGeminiApiKey(trimmed)
+        _uiState.update { it.copy(geminiApiKeySaved = true) }
+        showToast("API Key সেভ করা হয়েছে")
+    }
+
+    fun clearGeminiApiKey() {
+        repository.clearGeminiApiKey()
+        _uiState.update { it.copy(geminiApiKeySaved = false) }
+        showToast("API Key মুছে ফেলা হয়েছে")
+    }
+
+    fun saveGeminiModel(model: String) {
+        val trimmed = model.trim().ifEmpty { BengaliTranslator.DEFAULT_MODEL }
+        repository.setGeminiModel(trimmed)
+        _uiState.update { it.copy(geminiModel = repository.getGeminiModel()) }
+        showToast("মডেল সেভ করা হয়েছে")
+    }
 
 
     fun submitQueryOrUrl(input: String): Boolean {
@@ -786,15 +818,6 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             showToast("Translate works on active webpages")
             return
         }
-        if (state.isTranslating) {
-            val elapsed = System.currentTimeMillis() - translationStartedAt
-            if (elapsed < 15_000L) {
-                showToast("Translation in progress...")
-                return
-            }
-            activeTranslationJob?.cancel()
-            _uiState.update { it.copy(isTranslating = false) }
-        }
         if (state.isPageTranslated) {
             reloadPage()
             _uiState.update { it.copy(isPageTranslated = false, isTranslating = false) }
@@ -803,13 +826,34 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        if (!state.translationEnabled) {
+            showToast("সেটিংসে অনুবাদ চালু করুন")
+            return
+        }
+
+        val apiKey = repository.getGeminiApiKey().trim()
+        if (apiKey.isEmpty()) {
+            showToast("সেটিংসে API Key দিন")
+            return
+        }
+
+        if (state.isTranslating) {
+            val elapsed = System.currentTimeMillis() - translationStartedAt
+            if (elapsed < 20_000L) {
+                showToast("Translation in progress...")
+                return
+            }
+            activeTranslationJob?.cancel()
+            _uiState.update { it.copy(isTranslating = false) }
+        }
+
         translationStartedAt = System.currentTimeMillis()
         val runId = translationStartedAt
         _uiState.update { it.copy(isTranslating = true) }
         showToast("Translating to বাংলা...")
 
         viewModelScope.launch {
-            delay(22_000L)
+            delay(25_000L)
             if (translationStartedAt == runId && _uiState.value.isTranslating) {
                 activeTranslationJob?.cancel()
                 _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
@@ -820,7 +864,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         execJs(BengaliTranslator.buildExtractScript()) { jsonResult ->
             if (jsonResult.isNullOrBlank() || jsonResult == "null") {
                 _uiState.update { it.copy(isTranslating = false) }
-                showToast("পেজ থেকে লেখা পাওয়া যায়নি, আবার চেষ্টা করুন")
+                showToast("পেজ থেকে লেখা পাওয়া যায়নি, আবার চেষ্টা করুন")
                 return@execJs
             }
 
@@ -850,7 +894,12 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         texts.add(textsJsonArray.getString(i))
                     }
 
-                    val result = BengaliTranslator.translateBatch(texts) { partialList ->
+                    val model = repository.getGeminiModel()
+                    val result = BengaliTranslator.translateBatch(
+                        texts = texts,
+                        apiKey = apiKey,
+                        model = model
+                    ) { partialList ->
                         val progressiveScript = BengaliTranslator.buildReplaceScript(partialList)
                         withContext(Dispatchers.Main) {
                             execJs(progressiveScript, null)
@@ -873,17 +922,27 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                         }
                     } else {
                         val err = result.exceptionOrNull()
+                        val toastMsg = if (err is BengaliTranslator.TranslationApiException) {
+                            err.userMessage
+                        } else {
+                            "Translation unavailable. Please try again."
+                        }
                         android.util.Log.w("BrowserViewModel", "Translation unavailable: ${err?.message}")
                         withContext(Dispatchers.Main) {
                             _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
-                            showToast("Translation unavailable. Please try again.")
+                            showToast(toastMsg)
                         }
                     }
                 } catch (e: Exception) {
+                    val toastMsg = if (e is BengaliTranslator.TranslationApiException) {
+                        e.userMessage
+                    } else {
+                        "Translation unavailable. Please try again."
+                    }
                     android.util.Log.w("BrowserViewModel", "Translation exception: ${e.message}")
                     withContext(Dispatchers.Main) {
                         _uiState.update { it.copy(isTranslating = false, isPageTranslated = false) }
-                        showToast("Translation unavailable. Please try again.")
+                        showToast(toastMsg)
                     }
                 }
             }

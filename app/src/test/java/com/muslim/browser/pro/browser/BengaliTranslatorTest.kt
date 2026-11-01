@@ -24,17 +24,9 @@ class BengaliTranslatorTest {
     }
 
     @Test
-    fun testTranslationEngineEnum() {
-        val engines = TranslationEngine.values()
-        assertEquals(1, engines.size)
-        assertEquals(TranslationEngine.LIBRE_TRANSLATE, engines[0])
-        assertEquals("LibreTranslate", engines[0].displayName)
-    }
-
-    @Test
     fun testBengaliTranslatorConstants() {
         assertEquals("bn", BengaliTranslator.TARGET_LANGUAGE)
-        assertEquals("https://translate.disroot.org/translate", BengaliTranslator.LIBRE_TRANSLATE_URL)
+        assertEquals("gemini-flash-latest", BengaliTranslator.DEFAULT_MODEL)
     }
 
     @Test
@@ -64,7 +56,7 @@ class BengaliTranslatorTest {
             sourceLang = "en",
             targetLang = "bn"
         )
-        assertEquals("LIBRE_TRANSLATE:en:bn:Hello world", key)
+        assertEquals("GEMINI:en:bn:Hello world", key)
     }
 
     @Test
@@ -222,5 +214,94 @@ class BengaliTranslatorTest {
         assertTrue(r2.isSuccess)
         assertEquals("অনুবাদ Concurrent Word", r1.getOrThrow())
         assertEquals("অনুবাদ Concurrent Word", r2.getOrThrow())
+    }
+
+    @Test
+    fun testParseGeminiResponseSuccess() {
+        val json = """
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": "[\"হ্যালো\", \"বিশ্ব\"]"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        """.trimIndent()
+        val result = BengaliTranslator.parseGeminiResponse(json, expectedCount = 2)
+        assertTrue(result.isSuccess)
+        val list = result.getOrThrow()
+        assertEquals(2, list.size)
+        assertEquals("হ্যালো", list[0])
+        assertEquals("বিশ্ব", list[1])
+    }
+
+    @Test
+    fun testParseGeminiResponseWithMarkdownFences() {
+        val json = """
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": "```json\n[\"ক\", \"খ\"]\n```"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        """.trimIndent()
+        val result = BengaliTranslator.parseGeminiResponse(json, expectedCount = 2)
+        assertTrue(result.isSuccess)
+        val list = result.getOrThrow()
+        assertEquals(2, list.size)
+        assertEquals("ক", list[0])
+        assertEquals("খ", list[1])
+    }
+
+    @Test
+    fun testParseGeminiResponseLengthMismatchThrowsSplittable() {
+        val json = """
+            {
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [
+                                {
+                                    "text": "[\"শুধুমাত্র একটি\"]"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        """.trimIndent()
+        val result = BengaliTranslator.parseGeminiResponse(json, expectedCount = 2)
+        assertTrue(result.isFailure)
+        val ex = result.exceptionOrNull()
+        assertTrue("Error should be splittable when length mismatches", BengaliTranslator.isSplittableError(ex))
+    }
+
+    @Test
+    fun testTranslationApiExceptionMessages() {
+        val keyEx = BengaliTranslator.TranslationApiException("API Key ভুল বা অনুমতি নেই")
+        assertEquals("API Key ভুল বা অনুমতি নেই", keyEx.userMessage)
+        assertFalse(BengaliTranslator.isSplittableError(keyEx))
+
+        val modelEx = BengaliTranslator.TranslationApiException("মডেলের নাম ভুল")
+        assertEquals("মডেলের নাম ভুল", modelEx.userMessage)
+
+        val quotaEx = BengaliTranslator.TranslationApiException("ব্যবহারের সীমা শেষ, পরে চেষ্টা করুন")
+        assertEquals("ব্যবহারের সীমা শেষ, পরে চেষ্টা করুন", quotaEx.userMessage)
+
+        val netEx = BengaliTranslator.TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা")
+        assertEquals("ইন্টারনেট বা সার্ভার সমস্যা", netEx.userMessage)
     }
 }

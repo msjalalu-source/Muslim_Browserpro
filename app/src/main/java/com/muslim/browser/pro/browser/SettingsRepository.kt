@@ -42,6 +42,10 @@ class SettingsRepository(private val context: Context) {
         const val KEY_TIME_LIMIT_USAGE = "key_time_limit_usage"
         const val KEY_DEFAULT_ZOOM_LEVEL = "key_default_zoom_level"
         const val DEFAULT_ZOOM_LEVEL = 100
+        const val KEY_TRANSLATION_ENABLED = "key_translation_enabled"
+        const val KEY_GEMINI_API_KEY = "key_gemini_api_key"
+        const val KEY_GEMINI_MODEL = "key_gemini_model"
+        const val DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 
         val DEFAULT_PROTECTED_KEYWORDS = listOf(
             "Aashiq Banaya",
@@ -136,6 +140,35 @@ class SettingsRepository(private val context: Context) {
 
     fun setDesktopArchitecture(arch: DesktopArchitecture) {
         prefs.edit().putString(KEY_DESKTOP_ARCHITECTURE, arch.name).apply()
+    }
+
+    fun isTranslationEnabled(): Boolean {
+        return prefs.getBoolean(KEY_TRANSLATION_ENABLED, false)
+    }
+
+    fun setTranslationEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_TRANSLATION_ENABLED, enabled).apply()
+    }
+
+    fun getGeminiApiKey(): String {
+        return prefs.getString(KEY_GEMINI_API_KEY, "") ?: ""
+    }
+
+    fun setGeminiApiKey(apiKey: String) {
+        prefs.edit().putString(KEY_GEMINI_API_KEY, apiKey.trim()).apply()
+    }
+
+    fun clearGeminiApiKey() {
+        prefs.edit().remove(KEY_GEMINI_API_KEY).apply()
+    }
+
+    fun getGeminiModel(): String {
+        return prefs.getString(KEY_GEMINI_MODEL, DEFAULT_GEMINI_MODEL) ?: DEFAULT_GEMINI_MODEL
+    }
+
+    fun setGeminiModel(model: String) {
+        val trimmed = model.trim().ifEmpty { DEFAULT_GEMINI_MODEL }
+        prefs.edit().putString(KEY_GEMINI_MODEL, trimmed).apply()
     }
 
     fun isProtectedKeyword(keyword: String): Boolean = isProtected(keyword)

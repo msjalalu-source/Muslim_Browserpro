@@ -7,8 +7,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -32,8 +35,13 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -46,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.muslim.browser.pro.browser.BrowserUiState
@@ -72,6 +81,10 @@ fun BrowserMenuSheet(
     onOpenZoom: () -> Unit = {},
     onSelectTheme: (AppTheme) -> Unit,
     onAddTimeLimitedDomain: (String) -> Boolean = { false },
+    onToggleTranslation: (Boolean) -> Unit = {},
+    onSaveGeminiApiKey: (String) -> Unit = {},
+    onClearGeminiApiKey: () -> Unit = {},
+    onSaveGeminiModel: (String) -> Unit = {},
     currentWebView: android.webkit.WebView? = null,
     modifier: Modifier = Modifier
 ) {
@@ -390,6 +403,17 @@ fun BrowserMenuSheet(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
+                // Gemini Translation Settings
+                GeminiTranslationSection(
+                    uiState = uiState,
+                    onToggleTranslation = onToggleTranslation,
+                    onSaveApiKey = onSaveGeminiApiKey,
+                    onClearApiKey = onClearGeminiApiKey,
+                    onSaveModel = onSaveGeminiModel
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 // Website Time Limit (20-minute daily allowance, permanent domains)
                 WebsiteTimeLimitSection(
                     timeLimitedDomains = uiState.timeLimitedDomains,
@@ -442,6 +466,180 @@ internal fun FloatingPanelHost(
             tonalElevation = 6.dp
         ) {
             content()
+        }
+    }
+}
+
+@Composable
+fun GeminiTranslationSection(
+    uiState: BrowserUiState,
+    onToggleTranslation: (Boolean) -> Unit,
+    onSaveApiKey: (String) -> Unit,
+    onClearApiKey: () -> Unit,
+    onSaveModel: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalAppColors.current
+    var apiKeyInput by remember { mutableStateOf("") }
+    var modelInput by remember(uiState.geminiModel) { mutableStateOf(uiState.geminiModel) }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("section_gemini_translation"),
+        shape = RoundedCornerShape(8.dp),
+        color = colors.surfaceVariant,
+        border = BorderStroke(1.dp, colors.border)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+            // Header Row: Icon + Title + Switch "অনুবাদ চালু"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Translate,
+                        contentDescription = null,
+                        tint = colors.iconTint,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "অনুবাদ (Gemini)",
+                        color = colors.textPrimary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "অনুবাদ চালু",
+                        color = colors.textSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(end = 6.dp)
+                    )
+                    Switch(
+                        checked = uiState.translationEnabled,
+                        onCheckedChange = onToggleTranslation,
+                        modifier = Modifier.testTag("gemini_translation_switch")
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // API Key Input Row
+            Text(
+                text = "Gemini API Key",
+                color = colors.textPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = apiKeyInput,
+                    onValueChange = { apiKeyInput = it },
+                    placeholder = {
+                        Text(
+                            text = if (uiState.geminiApiKeySaved) "সেভ করা আছে" else "API Key দিন...",
+                            color = colors.textSecondary,
+                            fontSize = 11.sp
+                        )
+                    },
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("input_gemini_api_key"),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = colors.textPrimary)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = {
+                        if (apiKeyInput.isNotBlank()) {
+                            onSaveApiKey(apiKeyInput)
+                            apiKeyInput = ""
+                        }
+                    },
+                    enabled = apiKeyInput.isNotBlank(),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(38.dp).testTag("btn_save_gemini_api_key")
+                ) {
+                    Text("সেভ", fontSize = 11.sp)
+                }
+                if (uiState.geminiApiKeySaved) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Button(
+                        onClick = {
+                            onClearApiKey()
+                            apiKeyInput = ""
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.accent.copy(alpha = 0.2f),
+                            contentColor = colors.accent
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(38.dp).testTag("btn_clear_gemini_api_key")
+                    ) {
+                        Text("মুছুন", fontSize = 11.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Model Input Row
+            Text(
+                text = "মডেল",
+                color = colors.textPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = modelInput,
+                    onValueChange = { modelInput = it },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("input_gemini_model"),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp, color = colors.textPrimary)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = {
+                        if (modelInput.isNotBlank()) {
+                            onSaveModel(modelInput)
+                        }
+                    },
+                    enabled = modelInput.isNotBlank() && modelInput != uiState.geminiModel,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(38.dp).testTag("btn_save_gemini_model")
+                ) {
+                    Text("সেভ", fontSize = 11.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Note
+            Text(
+                text = "অনুবাদের সময় পেজের লেখা Google এর সার্ভারে পাঠানো হয়।",
+                color = colors.textSecondary,
+                fontSize = 10.sp,
+                lineHeight = 13.sp
+            )
         }
     }
 }

@@ -359,7 +359,11 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenZoom = { viewModel.openZoomPanel() },
                                 onSelectTheme = { theme -> viewModel.setAppTheme(theme) },
-                                onAddTimeLimitedDomain = { domain -> viewModel.addTimeLimitedDomain(domain) }
+                                onAddTimeLimitedDomain = { domain -> viewModel.addTimeLimitedDomain(domain) },
+                                onToggleTranslation = { enabled -> viewModel.setTranslationEnabled(enabled) },
+                                onSaveGeminiApiKey = { key -> viewModel.saveGeminiApiKey(key) },
+                                onClearGeminiApiKey = { viewModel.clearGeminiApiKey() },
+                                onSaveGeminiModel = { model -> viewModel.saveGeminiModel(model) }
                             )
                         }
 
