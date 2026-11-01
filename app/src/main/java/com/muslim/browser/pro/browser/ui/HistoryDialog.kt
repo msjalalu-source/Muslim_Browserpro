@@ -63,26 +63,17 @@ fun HistoryDialog(
     val colors = LocalAppColors.current
     val history = uiState.browsingHistory
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    FloatingPanelHost(
+        onDismiss = onDismiss,
+        overlayTag = "history_dialog",
+        panelTag = "history_dialog"
     ) {
-        Surface(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .heightIn(max = 580.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .testTag("history_dialog"),
-            color = colors.surface,
-            shape = RoundedCornerShape(20.dp),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+                .padding(14.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
                 // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -197,7 +188,6 @@ fun HistoryDialog(
                 }
             }
         }
-    }
 }
 
 @Composable

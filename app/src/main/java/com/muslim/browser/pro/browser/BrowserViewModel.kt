@@ -90,6 +90,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     fun openMenu() { _uiState.update { it.copy(isMenuOpen = true) } }
     fun closeMenu() { _uiState.update { it.copy(isMenuOpen = false) } }
 
+    fun closeAllOverlays() {
+        _uiState.update {
+            it.copy(
+                isMenuOpen = false,
+                isZoomPanelOpen = false,
+                isHistoryOpen = false,
+                isDownloadsOpen = false,
+                isTabsDialogOpen = false
+            )
+        }
+    }
+
     fun openZoomPanel() { _uiState.update { it.copy(isZoomPanelOpen = true, isMenuOpen = false) } }
     fun closeZoomPanel() { _uiState.update { it.copy(isZoomPanelOpen = false) } }
 

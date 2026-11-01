@@ -64,26 +64,17 @@ fun DownloadsDialog(
     val colors = LocalAppColors.current
     val downloads = uiState.downloadHistory
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    FloatingPanelHost(
+        onDismiss = onDismiss,
+        overlayTag = "downloads_dialog",
+        panelTag = "downloads_dialog"
     ) {
-        Surface(
+        Column(
             modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .heightIn(max = 580.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .testTag("downloads_dialog"),
-            color = colors.surface,
-            shape = RoundedCornerShape(20.dp),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+                .padding(14.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
                 // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -209,7 +200,6 @@ fun DownloadsDialog(
                 }
             }
         }
-    }
 }
 
 @Composable

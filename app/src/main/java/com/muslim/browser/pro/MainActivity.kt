@@ -224,16 +224,36 @@ class MainActivity : ComponentActivity() {
                             canGoBack = uiState.canGoBack,
                             canGoForward = uiState.canGoForward,
                             isDesktopModeEnabled = uiState.desktopArchitecture.isAnyDesktop(),
-                            onGoBack = { if (currentWebView.canGoBack()) currentWebView.goBack() },
-                            onGoForward = { if (currentWebView.canGoForward()) currentWebView.goForward() },
-                            onNewTab = { viewModel.openNewTab() },
-                            onShowTabs = { viewModel.openTabsDialog() },
+                            onGoBack = {
+                                viewModel.closeAllOverlays()
+                                if (currentWebView.canGoBack()) currentWebView.goBack()
+                            },
+                            onGoForward = {
+                                viewModel.closeAllOverlays()
+                                if (currentWebView.canGoForward()) currentWebView.goForward()
+                            },
+                            onNewTab = {
+                                viewModel.closeAllOverlays()
+                                viewModel.openNewTab()
+                            },
+                            onShowTabs = {
+                                viewModel.closeAllOverlays()
+                                viewModel.openTabsDialog()
+                            },
                             onToggleDesktopMode = {
+                                viewModel.closeAllOverlays()
                                 val newEnabled = !uiState.desktopArchitecture.isAnyDesktop()
                                 val target = if (newEnabled) DesktopArchitecture.WINDOWS_10_TOUCH else DesktopArchitecture.NONE
                                 applyDesktopArchitecture(target, currentWebView)
                             },
-                            onOpenMenu = { viewModel.openMenu() }
+                            onOpenMenu = {
+                                if (uiState.isMenuOpen) {
+                                    viewModel.closeMenu()
+                                } else {
+                                    viewModel.closeAllOverlays()
+                                    viewModel.openMenu()
+                                }
+                            }
                         )
                     }
                 ) { innerPadding ->

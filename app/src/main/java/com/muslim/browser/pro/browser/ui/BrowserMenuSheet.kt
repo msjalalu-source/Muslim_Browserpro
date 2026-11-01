@@ -128,41 +128,18 @@ fun BrowserMenuSheet(
 
 
 
-    // Semi-transparent overlay to ensure background home page/web page is visible outside the compact floating panel
-    Box(
+    FloatingPanelHost(
+        onDismiss = onDismiss,
+        overlayTag = "browser_menu_sheet",
+        panelTag = "floating_menu_panel",
         modifier = modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.40f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) { onDismiss() }
-            .testTag("browser_menu_sheet"),
-        contentAlignment = Alignment.BottomEnd
     ) {
-        // Compact Floating Window
-        Surface(
+        Column(
             modifier = Modifier
-                .padding(end = 12.dp, bottom = 10.dp)
-                .widthIn(max = 330.dp)
-                .fillMaxWidth(0.88f)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { /* Consume clicks inside panel to prevent dismissing */ }
-                .testTag("floating_menu_panel"),
-            shape = RoundedCornerShape(18.dp),
-            color = colors.surface,
-            border = BorderStroke(1.dp, colors.border),
-            shadowElevation = 14.dp,
-            tonalElevation = 6.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 // Header
                 MenuHeader(onDismiss = onDismiss)
@@ -425,6 +402,46 @@ fun BrowserMenuSheet(
                 // Download Protection (Compact)
                 DownloadProtectionSection()
             }
+        }
+}
+
+@Composable
+internal fun FloatingPanelHost(
+    onDismiss: () -> Unit,
+    overlayTag: String,
+    panelTag: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val colors = LocalAppColors.current
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.40f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onDismiss() }
+            .testTag(overlayTag),
+        contentAlignment = Alignment.BottomEnd
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(end = 12.dp, bottom = 10.dp)
+                .widthIn(max = 330.dp)
+                .fillMaxWidth(0.88f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { /* Consume clicks inside panel to prevent dismissing */ }
+                .testTag(panelTag),
+            shape = RoundedCornerShape(18.dp),
+            color = colors.surface,
+            border = BorderStroke(1.dp, colors.border),
+            shadowElevation = 14.dp,
+            tonalElevation = 6.dp
+        ) {
+            content()
         }
     }
 }
