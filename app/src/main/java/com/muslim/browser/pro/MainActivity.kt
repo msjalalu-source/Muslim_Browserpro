@@ -22,6 +22,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.util.Base64
@@ -437,6 +439,8 @@ class MainActivity : ComponentActivity() {
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
 
+            settings.userAgentString = DesktopCore.cleanedMobileUserAgent(context)
+
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
@@ -451,6 +455,12 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 settings.safeBrowsingEnabled = true
             }
+
+            try {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                    WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                }
+            } catch (_: Throwable) {}
 
             addJavascriptInterface(blobDownloadBridge, "AndroidBlobBridge")
 

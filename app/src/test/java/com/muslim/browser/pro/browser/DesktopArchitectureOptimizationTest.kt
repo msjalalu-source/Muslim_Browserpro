@@ -112,20 +112,22 @@ class DesktopArchitectureOptimizationTest {
         val expectedWinUa = winUaField.get(null) as String
         assertEquals(expectedWinUa, webView.settings.userAgentString)
 
+        val expectedMobileUa = DesktopCore.cleanedMobileUserAgent(context)
+
         // Authentication protection: keep mobile UA
         DesktopCore.synchronizeDesktopWebView(webView, "https://accounts.google.com/signin", DesktopArchitecture.WINDOWS_10_TOUCH, true)
-        assertNull(webView.settings.userAgentString)
+        assertEquals(expectedMobileUa, webView.settings.userAgentString)
 
         // Mobile / NONE reset
         DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.NONE, true)
-        assertNull(webView.settings.userAgentString)
+        assertEquals(expectedMobileUa, webView.settings.userAgentString)
 
         // Inactive modes fallback to mobile
         DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.STANDARD, true)
-        assertNull(webView.settings.userAgentString)
+        assertEquals(expectedMobileUa, webView.settings.userAgentString)
 
         DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.DESKTOP_MODE_4, true)
-        assertNull(webView.settings.userAgentString)
+        assertEquals(expectedMobileUa, webView.settings.userAgentString)
     }
 
     @Test
@@ -205,7 +207,7 @@ class DesktopArchitectureOptimizationTest {
 
         // Switch back to mobile
         DesktopCore.synchronizeDesktopWebView(webView, "https://example.com", DesktopArchitecture.NONE, true)
-        assertNull(webView.settings.userAgentString)
+        assertEquals(DesktopCore.cleanedMobileUserAgent(context), webView.settings.userAgentString)
     }
 
     @Test
@@ -257,9 +259,10 @@ class DesktopArchitectureOptimizationTest {
         assertTrue(wv2.settings.useWideViewPort)
 
         // Sync back to Mobile
+        val expectedMobileUa = DesktopCore.cleanedMobileUserAgent(context)
         twm.syncAllLiveWebViewsArchitecture(DesktopArchitecture.NONE)
-        assertNull(wv1.settings.userAgentString)
-        assertNull(wv2.settings.userAgentString)
+        assertEquals(expectedMobileUa, wv1.settings.userAgentString)
+        assertEquals(expectedMobileUa, wv2.settings.userAgentString)
     }
 
     @Test

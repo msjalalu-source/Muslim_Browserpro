@@ -2,6 +2,7 @@ package com.muslim.browser.pro.browser
 
 import android.content.Context
 import android.net.Uri
+import android.webkit.WebSettings
 import android.webkit.WebView
 import java.util.Locale
 
@@ -9,6 +10,25 @@ object DesktopCore {
     const val TARGET_WIDTH: Int = 1280
     const val VIEWPORT_CONTENT: String = "width=1280"
     const val WINDOWS_10_TOUCH_USER_AGENT: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+    @Volatile
+    private var cachedCleanedMobileUa: String? = null
+
+    fun cleanedMobileUserAgent(context: Context): String {
+        cachedCleanedMobileUa?.let { return it }
+        val defaultUa = try {
+            WebSettings.getDefaultUserAgent(context.applicationContext ?: context)
+        } catch (_: Throwable) {
+            null
+        } ?: return ""
+        val cleaned = defaultUa
+            .replace("; wv)", ")")
+            .replace(" Version/4.0", "")
+        if (cleaned.isNotBlank()) {
+            cachedCleanedMobileUa = cleaned
+        }
+        return cleaned
+    }
 
     /**
      * Windows 10 Touch Desktop Profile Script:
@@ -511,10 +531,10 @@ object DesktopCore {
 
         val targetUa = when (effectiveArchitecture) {
             DesktopArchitecture.WINDOWS_10_TOUCH -> {
-                if (isAuthenticationUrl(url)) null
+                if (isAuthenticationUrl(url)) cleanedMobileUserAgent(webView.context)
                 else WINDOWS_10_TOUCH_USER_AGENT
             }
-            else -> null
+            else -> cleanedMobileUserAgent(webView.context)
         }
 
         val settings = webView.settings
