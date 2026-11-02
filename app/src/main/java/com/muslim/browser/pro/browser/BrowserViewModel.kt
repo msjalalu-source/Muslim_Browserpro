@@ -201,6 +201,53 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         showToast("মডেল সেভ করা হয়েছে")
     }
 
+    private var isTestingGeminiConnection: Boolean = false
+
+    fun testGeminiConnection(onComplete: (() -> Unit)? = null) {
+        if (isTestingGeminiConnection) return
+        val key = repository.getGeminiApiKey().trim()
+        if (key.isEmpty()) {
+            showToast("সেটিংসে API Key দিন")
+            onComplete?.invoke()
+            return
+        }
+
+        isTestingGeminiConnection = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val model = repository.getGeminiModel()
+                val result = BengaliTranslator.translateBatchWithGemini(listOf("Hello"), key, model)
+                withContext(Dispatchers.Main) {
+                    if (result.isSuccess) {
+                        showToast("সংযোগ ঠিক আছে")
+                    } else {
+                        val err = result.exceptionOrNull()
+                        val msg = if (err is BengaliTranslator.TranslationApiException) {
+                            err.userMessage
+                        } else {
+                            "ইন্টারনেট বা সার্ভার সমস্যা"
+                        }
+                        showToast(msg)
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    val msg = if (e is BengaliTranslator.TranslationApiException) {
+                        e.userMessage
+                    } else {
+                        "ইন্টারনেট বা সার্ভার সমস্যা"
+                    }
+                    showToast(msg)
+                }
+            } finally {
+                isTestingGeminiConnection = false
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke()
+                }
+            }
+        }
+    }
+
 
     fun submitQueryOrUrl(input: String): Boolean {
         val trimmed = input.trim()

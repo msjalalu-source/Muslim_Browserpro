@@ -85,6 +85,7 @@ fun BrowserMenuSheet(
     onSaveGeminiApiKey: (String) -> Unit = {},
     onClearGeminiApiKey: () -> Unit = {},
     onSaveGeminiModel: (String) -> Unit = {},
+    onTestGeminiConnection: ((onComplete: () -> Unit) -> Unit) = {},
     currentWebView: android.webkit.WebView? = null,
     modifier: Modifier = Modifier
 ) {
@@ -409,7 +410,8 @@ fun BrowserMenuSheet(
                     onToggleTranslation = onToggleTranslation,
                     onSaveApiKey = onSaveGeminiApiKey,
                     onClearApiKey = onClearGeminiApiKey,
-                    onSaveModel = onSaveGeminiModel
+                    onSaveModel = onSaveGeminiModel,
+                    onTestConnection = onTestGeminiConnection
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -477,11 +479,13 @@ fun GeminiTranslationSection(
     onSaveApiKey: (String) -> Unit,
     onClearApiKey: () -> Unit,
     onSaveModel: (String) -> Unit,
+    onTestConnection: ((onComplete: () -> Unit) -> Unit) = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalAppColors.current
     var apiKeyInput by remember { mutableStateOf("") }
     var modelInput by remember(uiState.geminiModel) { mutableStateOf(uiState.geminiModel) }
+    var isTestingConnection by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -629,6 +633,34 @@ fun GeminiTranslationSection(
                 ) {
                     Text("সেভ", fontSize = 11.sp)
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Test Connection Button
+            Button(
+                onClick = {
+                    isTestingConnection = true
+                    onTestConnection {
+                        isTestingConnection = false
+                    }
+                },
+                enabled = !isTestingConnection,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.accent.copy(alpha = 0.2f),
+                    contentColor = colors.accent
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp)
+                    .testTag("btn_test_gemini_connection")
+            ) {
+                Text(
+                    text = if (isTestingConnection) "পরীক্ষা করা হচ্ছে..." else "সংযোগ পরীক্ষা",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

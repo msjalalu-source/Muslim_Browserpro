@@ -363,7 +363,8 @@ class MainActivity : ComponentActivity() {
                                 onToggleTranslation = { enabled -> viewModel.setTranslationEnabled(enabled) },
                                 onSaveGeminiApiKey = { key -> viewModel.saveGeminiApiKey(key) },
                                 onClearGeminiApiKey = { viewModel.clearGeminiApiKey() },
-                                onSaveGeminiModel = { model -> viewModel.saveGeminiModel(model) }
+                                onSaveGeminiModel = { model -> viewModel.saveGeminiModel(model) },
+                                onTestGeminiConnection = { onComplete -> viewModel.testGeminiConnection(onComplete) }
                             )
                         }
 

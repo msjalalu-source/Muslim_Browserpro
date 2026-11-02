@@ -90,12 +90,12 @@ class BengaliTranslatorTest {
 
     @Test
     fun testBengaliTranslatorChunkIntoBatches() {
-        val texts = (1..50).map { "Item $it" }
+        val texts = (1..75).map { "Item $it" }
         val batches = BengaliTranslator.chunkIntoBatches(texts)
         assertTrue(batches.isNotEmpty())
-        assertEquals(2, batches.size) // 40 items max per batch
-        assertEquals(40, batches[0].size)
-        assertEquals(10, batches[1].size)
+        assertEquals(2, batches.size) // 60 items max per batch
+        assertEquals(60, batches[0].size)
+        assertEquals(15, batches[1].size)
     }
 
     @Test
@@ -303,5 +303,38 @@ class BengaliTranslatorTest {
 
         val netEx = BengaliTranslator.TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা")
         assertEquals("ইন্টারনেট বা সার্ভার সমস্যা", netEx.userMessage)
+
+        val regionEx = BengaliTranslator.TranslationApiException("আপনার অঞ্চলে এই সেবা সমর্থিত নয়")
+        assertEquals("আপনার অঞ্চলে এই সেবা সমর্থিত নয়", regionEx.userMessage)
+
+        val reqEx = BengaliTranslator.TranslationApiException("অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন")
+        assertEquals("অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন", reqEx.userMessage)
+    }
+
+    @Test
+    fun testPickMostSpecificErrorPrefersSpecificOverGeneric() {
+        val generic = BengaliTranslator.TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা")
+        val quota = BengaliTranslator.TranslationApiException("ব্যবহারের সীমা শেষ, পরে চেষ্টা করুন")
+        val chosen = BengaliTranslator.pickMostSpecificError(listOf(generic, quota))
+        assertEquals(quota, chosen)
+
+        val keyErr = BengaliTranslator.TranslationApiException("API Key ভুল বা অনুমতি নেই")
+        val chosen2 = BengaliTranslator.pickMostSpecificError(listOf(generic, keyErr, generic))
+        assertEquals(keyErr, chosen2)
+    }
+
+    @Test
+    fun testPickMostSpecificErrorFallbackToGenericWhenAllGeneric() {
+        val generic1 = BengaliTranslator.TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা")
+        val generic2 = BengaliTranslator.TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা")
+        val chosen = BengaliTranslator.pickMostSpecificError(listOf(generic1, generic2))
+        assertEquals(generic1, chosen)
+    }
+
+    @Test
+    fun testPickMostSpecificErrorReturnsNullWhenAllNull() {
+        val chosen = BengaliTranslator.pickMostSpecificError(listOf(null, null))
+        org.junit.Assert.assertNull(chosen)
+        org.junit.Assert.assertNull(BengaliTranslator.pickMostSpecificError(emptyList()))
     }
 }

@@ -37,8 +37,8 @@ object BengaliTranslator {
 
     private const val CONNECT_TIMEOUT_MS: Int = 5000
     private const val READ_TIMEOUT_MS: Int = 15000
-    private const val MAX_BATCH_CHARS: Int = 4000
-    private const val MAX_BATCH_ITEMS: Int = 40
+    private const val MAX_BATCH_CHARS: Int = 6000
+    private const val MAX_BATCH_ITEMS: Int = 60
     private const val MIN_DISPATCH_INTERVAL_MS: Long = 200L
     private const val TAG: String = "BengaliTranslator"
 
@@ -53,6 +53,17 @@ object BengaliTranslator {
     ) : IllegalStateException(message, cause)
 
     internal class RateLimitException(message: String) : Exception(message)
+    internal class TransientServerException(message: String) : Exception(message)
+
+    internal fun pickMostSpecificError(errors: List<Throwable?>): Throwable? {
+        val nonNullErrors = errors.filterNotNull()
+        if (nonNullErrors.isEmpty()) return null
+        val specific = nonNullErrors.firstOrNull { err ->
+            err is TranslationApiException && err.userMessage != "ইন্টারনেট বা সার্ভার সমস্যা"
+        }
+        if (specific != null) return specific
+        return nonNullErrors.first()
+    }
 
     fun isSplittableError(error: Throwable?): Boolean {
         return error is SplittablePayloadException
@@ -413,12 +424,12 @@ object BengaliTranslator {
         }
 
         var successCount = 0
-        var lastError: Throwable? = null
+        val collectedErrors = ArrayList<Throwable?>()
         if (batchResults != null) {
             for ((s, err) in batchResults) {
                 successCount += s
                 if (err != null) {
-                    lastError = err
+                    collectedErrors.add(err)
                 }
             }
         }
@@ -429,10 +440,11 @@ object BengaliTranslator {
         }
 
         if (neededTexts.isNotEmpty() && successCount == 0 && modifiedCount == 0) {
-            val failureException = if (lastError is TranslationApiException) {
-                lastError
+            val chosenError = pickMostSpecificError(collectedErrors)
+            val failureException = if (chosenError is TranslationApiException) {
+                chosenError
             } else {
-                TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা", lastError)
+                TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা", chosenError)
             }
             return@withContext Result.failure(failureException)
         }
@@ -534,11 +546,25 @@ object BengaliTranslator {
             }
 
             val err = result.exceptionOrNull()
-            if (err is RateLimitException && attempts < maxAttempts) {
-                TranslationStats.http429Count++
-                TranslationStats.retryCount++
-                delay(700L)
-                continue
+            if (err is RateLimitException) {
+                if (attempts < maxAttempts) {
+                    TranslationStats.http429Count++
+                    TranslationStats.retryCount++
+                    delay(700L)
+                    continue
+                } else {
+                    return Result.failure(TranslationApiException("ব্যবহারের সীমা শেষ, পরে চেষ্টা করুন"))
+                }
+            }
+
+            if (err is TransientServerException) {
+                if (attempts < maxAttempts) {
+                    TranslationStats.retryCount++
+                    delay(800L)
+                    continue
+                } else {
+                    return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
+                }
             }
 
             return result
@@ -601,7 +627,10 @@ object BengaliTranslator {
                     if (errLower.contains("api_key") || errLower.contains("api key") || errLower.contains("key not valid") || errLower.contains("invalid api key")) {
                         return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
                     }
-                    return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
+                    if (errLower.contains("location is not supported") || errLower.contains("not supported for the api use")) {
+                        return Result.failure(TranslationApiException("আপনার অঞ্চলে এই সেবা সমর্থিত নয়"))
+                    }
+                    return Result.failure(TranslationApiException("অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন"))
                 }
                 401, 403 -> {
                     return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
@@ -612,7 +641,13 @@ object BengaliTranslator {
                 429 -> {
                     return Result.failure(RateLimitException("Rate limit 429"))
                 }
-                in 500..599 -> {
+                500, 503 -> {
+                    return Result.failure(TransientServerException("Server busy HTTP $code"))
+                }
+                502, 504 -> {
+                    return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
+                }
+                in 501..599 -> {
                     return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা"))
                 }
                 else -> {
@@ -620,7 +655,7 @@ object BengaliTranslator {
                 }
             }
         } catch (e: Exception) {
-            if (e is TranslationApiException || e is SplittablePayloadException || e is RateLimitException) {
+            if (e is TranslationApiException || e is SplittablePayloadException || e is RateLimitException || e is TransientServerException) {
                 return Result.failure(e)
             }
             return Result.failure(TranslationApiException("ইন্টারনেট বা সার্ভার সমস্যা", e))
@@ -632,7 +667,7 @@ object BengaliTranslator {
     fun buildRequestBody(texts: List<String>, includeThinkingConfig: Boolean): JSONObject {
         val sysPart = JSONObject().put(
             "text",
-            "Translate every string in the given JSON array from English to Bengali (bn). Return ONLY a JSON array of strings with exactly the same length and order. Keep numbers, URLs, email addresses, code, brand names and HTML entities unchanged."
+            "Translate every string in the given JSON array into Bengali (bn). The source language may be English or any other language; detect it automatically. If a string is already Bengali, return it unchanged. Return ONLY a JSON array of strings with exactly the same length and order. Keep numbers, URLs, email addresses, code, brand names and HTML entities unchanged."
         )
         val sysInstruction = JSONObject().put("parts", JSONArray().put(sysPart))
 

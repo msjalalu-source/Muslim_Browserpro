@@ -319,7 +319,7 @@ class SettingsRepository(private val context: Context) {
         val now = System.currentTimeMillis()
         if (current.isNotEmpty()) {
             val latest = current[0]
-            if (latest.url == url && Math.abs(now - latest.timestamp) < 5 * 60 * 1000L) {
+            if (latest.url == url && Math.abs(now - latest.timestamp) < 30 * 1000L) {
                 val updated = latest.copy(title = title, timestamp = now)
                 current[0] = updated
                 cachedHistory = current
