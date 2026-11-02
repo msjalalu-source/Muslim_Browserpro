@@ -30,7 +30,7 @@ data class BrowserUiState(
     val isTranslating: Boolean = false,
     val translationEnabled: Boolean = false,
     val geminiApiKeySaved: Boolean = false,
-    val geminiModel: String = "gemini-flash-latest",
+    val geminiModel: String = "gemini-3.5-flash-lite",
     val appTheme: AppTheme = AppTheme.BLACK,
     val selectedSearchEngine: SearchEngine = SearchEngine.DUCKDUCKGO,
     val sslWarningState: SslWarningState? = null,

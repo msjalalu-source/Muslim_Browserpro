@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 object BengaliTranslator {
     const val TARGET_LANGUAGE: String = "bn"
-    const val DEFAULT_MODEL: String = "gemini-flash-latest"
+    const val DEFAULT_MODEL: String = "gemini-3.5-flash-lite"
 
     private const val CONNECT_TIMEOUT_MS: Int = 5000
     private const val READ_TIMEOUT_MS: Int = 15000
@@ -63,6 +63,21 @@ object BengaliTranslator {
         }
         if (specific != null) return specific
         return nonNullErrors.first()
+    }
+
+    internal fun extractGoogleErrorMessage(errText: String): String? {
+        if (errText.isBlank()) return null
+        return try {
+            val root = JSONObject(errText)
+            val errorObj = root.optJSONObject("error") ?: return null
+            val rawMsg = errorObj.optString("message", "")
+            if (rawMsg.isBlank()) return null
+            val singleLine = rawMsg.replace(Regex("[\\r\\n]+"), " ").trim()
+            val masked = singleLine.replace(Regex("AIza[0-9A-Za-z_-]{20,}"), "***")
+            masked.take(120).trim().ifEmpty { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun isSplittableError(error: Throwable?): Boolean {
@@ -630,7 +645,13 @@ object BengaliTranslator {
                     if (errLower.contains("location is not supported") || errLower.contains("not supported for the api use")) {
                         return Result.failure(TranslationApiException("আপনার অঞ্চলে এই সেবা সমর্থিত নয়"))
                     }
-                    return Result.failure(TranslationApiException("অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন"))
+                    val googleMessage = extractGoogleErrorMessage(errText)
+                    val failureMessage = if (!googleMessage.isNullOrBlank()) {
+                        "অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন ($googleMessage)"
+                    } else {
+                        "অনুরোধে সমস্যা, মডেলের নাম পরীক্ষা করুন"
+                    }
+                    return Result.failure(TranslationApiException(failureMessage))
                 }
                 401, 403 -> {
                     return Result.failure(TranslationApiException("API Key ভুল বা অনুমতি নেই"))
@@ -680,7 +701,6 @@ object BengaliTranslator {
         val contentsArray = JSONArray().put(contentObj)
 
         val genConfig = JSONObject().apply {
-            put("temperature", 0)
             put("responseMimeType", "application/json")
             put("responseSchema", JSONObject().apply {
                 put("type", "ARRAY")

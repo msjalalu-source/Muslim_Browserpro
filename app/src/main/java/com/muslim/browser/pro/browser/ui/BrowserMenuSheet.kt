@@ -1,6 +1,7 @@
 package com.muslim.browser.pro.browser.ui
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -39,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -103,6 +105,7 @@ fun BrowserMenuSheet(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAutofillDialog by remember { mutableStateOf(false) }
     var lastPdfJobTimestamp by remember { mutableStateOf(0L) }
+    var showTranslationSettings by remember { mutableStateOf(false) }
 
     val effectiveUrl = uiState.currentUrl.ifBlank { currentWebView?.url ?: "" }
     val isWebUrlValid = ShareIntentHandler.isDirectHttpUrl(effectiveUrl)
@@ -170,38 +173,70 @@ fun BrowserMenuSheet(
                         if (uiState.isPageTranslated) {
                             onTranslateToBengali()
                         } else {
-                            val liveWv = getActiveLiveWebView(context, uiState)
-                            if (liveWv != null) {
-                                liveWv.evaluateJavascript("Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })") { result ->
-                                    val hasPassword = result?.trim()?.equals("true", ignoreCase = true) == true
-                                    if (hasPassword) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "এই পেজে অনুবাদ বন্ধ (পাসওয়ার্ড ঘর আছে)",
-                                            android.widget.Toast.LENGTH_SHORT
-                                        ).show()
-                                    } else {
-                                        onTranslateToBengali()
-                                    }
-                                }
+                            if (!uiState.translationEnabled || !uiState.geminiApiKeySaved) {
+                                showTranslationSettings = true
                             } else {
-                                onTranslateToBengali()
+                                val liveWv = getActiveLiveWebView(context, uiState)
+                                if (liveWv != null) {
+                                    liveWv.evaluateJavascript("Array.from(document.querySelectorAll('input[type=password]')).some(function(el) { var s = window.getComputedStyle(el); return (el.offsetParent !== null || s.position === 'fixed') && s.display !== 'none' && s.visibility !== 'hidden' && (el.offsetWidth > 0 || el.offsetHeight > 0); })") { result ->
+                                        val hasPassword = result?.trim()?.equals("true", ignoreCase = true) == true
+                                        if (hasPassword) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "এই পেজে অনুবাদ বন্ধ (পাসওয়ার্ড ঘর আছে)",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            onTranslateToBengali()
+                                        }
+                                    }
+                                } else {
+                                    onTranslateToBengali()
+                                }
                             }
                         }
                     },
                     surfaceColor = if (uiState.isPageTranslated) colors.surfaceVariant else colors.surface,
                     borderColor = if (uiState.isPageTranslated) colors.accent else colors.border,
-                    trailingContent = if (uiState.isTranslating) {
-                        {
+                    trailingContent = {
+                        if (uiState.isTranslating) {
                             Text(
                                 text = "Translating...",
                                 color = colors.accent,
                                 fontSize = 10.5.sp
                             )
+                        } else {
+                            IconButton(
+                                onClick = { showTranslationSettings = !showTranslationSettings },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("translation_settings_toggle")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "অনুবাদ সেটিংস",
+                                    tint = colors.iconTint,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
-                    } else null,
+                    },
                     modifier = Modifier.testTag("menu_item_translate_bengali")
                 )
+
+                AnimatedVisibility(visible = showTranslationSettings) {
+                    Column {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        GeminiTranslationSection(
+                            uiState = uiState,
+                            onToggleTranslation = onToggleTranslation,
+                            onSaveApiKey = onSaveGeminiApiKey,
+                            onClearApiKey = onClearGeminiApiKey,
+                            onSaveModel = onSaveGeminiModel,
+                            onTestConnection = onTestGeminiConnection
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -400,18 +435,6 @@ fun BrowserMenuSheet(
                     customKeywords = uiState.customKeywords,
                     onAddKeyword = onAddKeyword,
                     onRemoveKeyword = onRemoveKeyword
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Gemini Translation Settings
-                GeminiTranslationSection(
-                    uiState = uiState,
-                    onToggleTranslation = onToggleTranslation,
-                    onSaveApiKey = onSaveGeminiApiKey,
-                    onClearApiKey = onClearGeminiApiKey,
-                    onSaveModel = onSaveGeminiModel,
-                    onTestConnection = onTestGeminiConnection
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))

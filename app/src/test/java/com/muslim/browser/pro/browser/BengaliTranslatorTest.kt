@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -26,7 +27,7 @@ class BengaliTranslatorTest {
     @Test
     fun testBengaliTranslatorConstants() {
         assertEquals("bn", BengaliTranslator.TARGET_LANGUAGE)
-        assertEquals("gemini-flash-latest", BengaliTranslator.DEFAULT_MODEL)
+        assertEquals("gemini-3.5-flash-lite", BengaliTranslator.DEFAULT_MODEL)
     }
 
     @Test
@@ -336,5 +337,44 @@ class BengaliTranslatorTest {
         val chosen = BengaliTranslator.pickMostSpecificError(listOf(null, null))
         org.junit.Assert.assertNull(chosen)
         org.junit.Assert.assertNull(BengaliTranslator.pickMostSpecificError(emptyList()))
+    }
+
+    @Test
+    fun testBuildRequestBodyGenerationConfigDoesNotHaveTemperature() {
+        val body = BengaliTranslator.buildRequestBody(listOf("Hello world"), includeThinkingConfig = true)
+        val genConfig = body.getJSONObject("generationConfig")
+        assertFalse("generationConfig must not contain temperature", genConfig.has("temperature"))
+        assertTrue("generationConfig must contain responseMimeType", genConfig.has("responseMimeType"))
+        assertEquals("application/json", genConfig.getString("responseMimeType"))
+        assertTrue("generationConfig must contain responseSchema", genConfig.has("responseSchema"))
+        assertTrue("generationConfig must contain thinkingConfig when flag is true", genConfig.has("thinkingConfig"))
+    }
+
+    @Test
+    fun testExtractGoogleErrorMessageSanitization() {
+        // 1. Normal message with newlines
+        val jsonWithNewlines = """{"error": {"code": 400, "message": "Invalid model\nCheck name\r\nPlease retry"}}"""
+        val sanitized = BengaliTranslator.extractGoogleErrorMessage(jsonWithNewlines)
+        assertEquals("Invalid model Check name Please retry", sanitized)
+
+        // 2. Message containing AIza API Key pattern
+        val jsonWithKey = """{"error": {"code": 400, "message": "API key AIzaSyD12345678901234567890abc is invalid"}}"""
+        val masked = BengaliTranslator.extractGoogleErrorMessage(jsonWithKey)
+        assertNotNull(masked)
+        assertFalse(masked!!.contains("AIzaSyD"))
+        assertTrue(masked.contains("***"))
+        assertEquals("API key *** is invalid", masked)
+
+        // 3. Very long message exceeds 120 chars
+        val longMsg = "A".repeat(150)
+        val jsonLong = """{"error": {"code": 400, "message": "$longMsg"}}"""
+        val truncated = BengaliTranslator.extractGoogleErrorMessage(jsonLong)
+        assertNotNull(truncated)
+        assertEquals(120, truncated!!.length)
+
+        // 4. Invalid JSON or missing message
+        assertNull(BengaliTranslator.extractGoogleErrorMessage("not a json"))
+        assertNull(BengaliTranslator.extractGoogleErrorMessage("""{"error": {}}"""))
+        assertNull(BengaliTranslator.extractGoogleErrorMessage("""{"error": {"message": "   "}}"""))
     }
 }

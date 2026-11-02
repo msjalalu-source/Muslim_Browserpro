@@ -45,7 +45,7 @@ class SettingsRepository(private val context: Context) {
         const val KEY_TRANSLATION_ENABLED = "key_translation_enabled"
         const val KEY_GEMINI_API_KEY = "key_gemini_api_key"
         const val KEY_GEMINI_MODEL = "key_gemini_model"
-        const val DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+        const val DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
         val DEFAULT_PROTECTED_KEYWORDS = listOf(
             "Aashiq Banaya",
