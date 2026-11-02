@@ -198,6 +198,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(uiState.toastMessage) {
+                    val msg = uiState.toastMessage
+                    if (msg != null) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            msg,
+                            if (msg.length >= 20) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
+                        ).show()
+                        viewModel.clearToast()
+                    }
+                }
+
                 LaunchedEffect(uiState.customKeywords, uiState.currentTabId) {
                     if (uiState.customKeywords.isNotEmpty()) {
                         val script = ProtectionEngine.buildKeywordBlockingScript(uiState.customKeywords)

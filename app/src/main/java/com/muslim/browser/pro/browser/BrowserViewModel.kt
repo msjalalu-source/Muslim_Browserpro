@@ -673,6 +673,10 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(toastMessage = message) }
     }
 
+    fun clearToast() {
+        _uiState.update { it.copy(toastMessage = null) }
+    }
+
     fun addTimeLimitedDomain(rawInput: String): Boolean {
         val success = repository.addTimeLimitedDomain(rawInput)
         if (success) {
